@@ -20,7 +20,8 @@ use syn::{
 #[derive(Debug, FromMeta)]
 struct BlockArgs {
     base_addr: LitInt,
-    infer_offsets: bool,
+    #[darling(default)]
+    auto_increment: bool,
     entitlements: PathArray,
 }
 
@@ -308,7 +309,7 @@ fn process_state(
         let ident = &s.ident;
         quote_spanned! { span =>
             const _: () = assert!(
-                (States::#ident as u32) <= u32::MAX >> (32 - #field_width),
+                ((States::#ident as u32) >> #field_width) == 0,
                 #msg,
             );
         }

@@ -210,7 +210,7 @@ mod tests {
 
         #[block(
             base_addr = 0x4002_1000,
-            infer_offsets,
+            auto_increment,
             entitlements = [super::ahb::cordic_en::Enabled]
         )]
         mod cordic {
