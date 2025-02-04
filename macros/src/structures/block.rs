@@ -200,22 +200,22 @@ impl ToTokens for Block {
 
         let span = self.args.span();
 
-        let (stateful_registers, stateless_registers) = self
+        let (resolvable_registers, unresolvable_registers) = self
             .registers
             .iter()
             .partition::<Vec<_>, _>(|register| register.is_resolvable());
 
-        let stateful_register_idents = stateful_registers
+        let resolvable_register_idents = resolvable_registers
             .iter()
             .map(|register| &register.ident)
             .collect::<Vec<_>>();
 
-        let stateless_register_idents = stateless_registers
+        let unresolvable_register_idents = unresolvable_registers
             .iter()
             .map(|register| &register.ident)
             .collect::<Vec<_>>();
 
-        let stateful_register_tys = stateful_registers
+        let resolvable_register_tys = resolvable_registers
             .iter()
             .map(|register| {
                 Ident::new(
@@ -262,7 +262,7 @@ impl ToTokens for Block {
             /// or modified in place with accessor methods.
             pub struct Block<
                 #(
-                    #stateful_register_tys,
+                    #resolvable_register_tys,
                 )*
 
                 #(
@@ -271,24 +271,24 @@ impl ToTokens for Block {
             > {
                 // Stateful registers.
                 #(
-                    pub #stateful_register_idents: #stateful_register_tys,
+                    #resolvable_register_idents: #resolvable_register_tys,
                 )*
 
                 // Stateless registers.
                 #(
-                    pub #stateless_register_idents: #stateless_register_idents::Register,
+                    #unresolvable_register_idents: #unresolvable_register_idents::Register,
                 )*
 
                 #(
                     /// This entitlement is required to
                     /// use this block in any way.
-                    pub #entitlement_idents: #entitlement_tys,
+                    #entitlement_idents: #entitlement_tys,
                 )*
             }
 
             pub type Reset = Block<
                 #(
-                    #stateful_register_idents::Reset,
+                    #resolvable_register_idents::Reset,
                 )*
 
                 #(
@@ -315,33 +315,35 @@ impl ToTokens for Block {
         let entitlements = self
             .entitlements
             .iter()
-            .map(|path| {
-                parse_quote! {
-                    ::proto_hal::stasis::Entitlement<#path>
-                }
-            })
-            .collect::<Vec<Path>>();
+            .map(|path| path.clone())
+            .collect::<Vec<_>>();
 
-        for (i, (ident, ty)) in stateful_register_idents
+        for (i, (ident, ty)) in resolvable_register_idents
             .iter()
-            .zip(stateful_register_tys.iter())
+            .zip(resolvable_register_tys.iter())
             .enumerate()
         {
-            let prev_register_idents = stateful_register_idents.get(..i).unwrap();
-            let next_register_idents = stateful_register_idents.get(i + 1..).unwrap();
+            let prev_register_idents = resolvable_register_idents.get(..i).unwrap();
+            let next_register_idents = resolvable_register_idents.get(i + 1..).unwrap();
 
-            let prev_register_tys = stateful_register_tys.get(..i).unwrap();
-            let next_register_tys = stateful_register_tys.get(i + 1..).unwrap();
+            let prev_register_tys = resolvable_register_tys.get(..i).unwrap();
+            let next_register_tys = resolvable_register_tys.get(i + 1..).unwrap();
+
+            let transition_accessor = format_ident!("transition_{ident}");
+            let use_accessor = format_ident!("use_{ident}");
 
             body.extend(quote_spanned! { span =>
-                impl<#(#stateful_register_tys,)*> Block<#(#stateful_register_tys,)* #(#entitlements,)*>
+                impl<#(#resolvable_register_tys,)* #(#entitlement_tys,)*> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
                 where
                     #ty: ::proto_hal::macro_utils::AsBuilder,
                 {
-                    /// Access this register for in place modification.
-                    pub fn #ident<R, B>(self, f: impl FnOnce(#ty::Builder) -> B) -> Block<#(#prev_register_tys,)* R, #(#next_register_tys,)* #(#entitlements,)*>
+                    /// Access this register for in place transitioning.
+                    pub fn #transition_accessor<R, B>(self, f: impl FnOnce(#ty::Builder) -> B) -> Block<#(#prev_register_tys,)* R, #(#next_register_tys,)* #(#entitlement_tys,)*>
                     where
                         B: ::proto_hal::macro_utils::AsRegister<Register = R>,
+                        #(
+                            #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
+                        )*
                     {
                         Block {
                             #(
@@ -355,7 +357,7 @@ impl ToTokens for Block {
                             )*
 
                             #(
-                                #stateless_register_idents: self.#stateless_register_idents,
+                                #unresolvable_register_idents: self.#unresolvable_register_idents,
                             )*
 
                             #(
@@ -363,22 +365,74 @@ impl ToTokens for Block {
                             )*
                         }
                     }
+
+                    /// Access this register for use.
+                    pub fn #use_accessor<T, R>(self, f: impl FnOnce(#ty) -> (R, T)) -> (Block<#(#prev_register_tys,)* R, #(#next_register_tys,)* #(#entitlement_tys,)*>, T)
+                    where
+                        #(
+                            #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
+                        )*
+                    {
+                        let (reg, t) = f(self.#ident);
+
+                        (
+                            Block {
+                                #(
+                                    #prev_register_idents: self.#prev_register_idents,
+                                )*
+
+                                #ident: reg,
+
+                                #(
+                                    #next_register_idents: self.#next_register_idents,
+                                )*
+
+                                #(
+                                    #unresolvable_register_idents: self.#unresolvable_register_idents,
+                                )*
+
+                                #(
+                                    #entitlement_idents: self.#entitlement_idents,
+                                )*
+                            },
+                            t,
+                        )
+                    }
+                }
+            });
+        }
+
+        if !unresolvable_registers.is_empty() {
+            body.extend(quote_spanned! { span =>
+                impl<#(#resolvable_register_tys,)* #(#entitlement_tys,)*> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
+                {
+                    #(
+                        pub fn #resolvable_register_idents(&self) -> &#resolvable_register_tys {
+                            &self.#resolvable_register_idents
+                        }
+                    )*
+
+                    #(
+                        pub fn #unresolvable_register_idents(&self) -> &#unresolvable_register_idents::Register {
+                            &self.#unresolvable_register_idents
+                        }
+                    )*
                 }
             });
         }
 
         if !self.entitlements.is_empty() {
             body.extend(quote_spanned! { span =>
-                impl<#(#stateful_register_tys,)*> Block<#(#stateful_register_tys,)* #(#reset_entitlement_tys,)*> {
+                impl<#(#resolvable_register_tys,)*> Block<#(#resolvable_register_tys,)* #(#reset_entitlement_tys,)*> {
                     /// Attach to required entitlements, enabling usage of this block.
-                    pub fn attach(self, #(#entitlement_idents: #entitlements,)*) -> Block<#(#stateful_register_tys,)* #(#entitlements,)*> {
+                    pub fn attach(self, #(#entitlement_idents: #entitlements,)*) -> Block<#(#resolvable_register_tys,)* #(#entitlements,)*> {
                         Block {
                             #(
-                                #stateful_register_idents: self.#stateful_register_idents,
+                                #resolvable_register_idents: self.#resolvable_register_idents,
                             )*
 
                             #(
-                                #stateless_register_idents: self.#stateless_register_idents,
+                                #unresolvable_register_idents: self.#unresolvable_register_idents,
                             )*
 
                             #(

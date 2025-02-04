@@ -164,8 +164,12 @@ impl FieldSpec {
         })
     }
 
+    pub fn resolvability(&self) -> &Resolvability {
+        &self.resolvability
+    }
+
     pub fn is_resolvable(&self) -> bool {
-        matches!(&self.resolvability, Resolvability::Resolvable { reset: _ })
+        matches!(self.resolvability(), Resolvability::Resolvable { reset: _ })
     }
 
     pub fn width(&self) -> Width {

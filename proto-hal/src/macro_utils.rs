@@ -1,10 +1,15 @@
 pub use arbitrary_int;
 
+#[cfg_attr(feature = "defmt", derive(::defmt::Format))]
 pub struct RegisterValue(u32);
 
 impl RegisterValue {
     pub const fn new(value: u32) -> Self {
         Self(value)
+    }
+
+    pub const fn word(self) -> u32 {
+        self.0
     }
 }
 

@@ -4,9 +4,7 @@ use darling::FromMeta;
 use syn::{Ident, Item};
 
 use super::{
-    variant::{Variant, VariantArgs},
-    variant_array::{VariantArray, VariantArrayArgs},
-    Args,
+    entitlement::Entitlement, variant::{Variant, VariantArgs}, variant_array::{VariantArray, VariantArrayArgs}, Args
 };
 use crate::utils::{require_struct, Spanned, SynErrorCombinator, Width};
 use tiva::Validator;
@@ -43,7 +41,7 @@ pub struct SchemaSpec {
     pub args: Spanned<SchemaArgs>,
     pub ident: Ident,
     pub width: Width,
-    pub entitlement_fields: HashSet<Ident>,
+    pub entitlements: HashSet<Entitlement>,
 
     // computed properties
     pub numericity: Numericity,
@@ -72,7 +70,7 @@ impl SchemaSpec {
 
         let width = args.width;
         let mut variants = Vec::new();
-        let mut entitlement_fields = HashSet::new();
+        let mut entitlements = HashSet::new();
 
         let mut state_bits = 0u32;
 
@@ -87,7 +85,7 @@ impl SchemaSpec {
             };
 
             errors.try_maybe_then(get_args(), |arg_collection| {
-                let entitlements = match arg_collection {
+                let arg_entitlements = match arg_collection {
                     (Some(state_args), None) => {
                         let state =
                             Variant::parse(s.ident.clone(), state_bits, state_args.clone())?;
@@ -120,21 +118,16 @@ impl SchemaSpec {
                     }
                 }?;
 
+                let mut errors = SynErrorCombinator::new();
+
                 // collect fields of state entitlements (specified in state args)
-                for entitlement in &entitlements {
-                    // TODO: this can't be correct
-                    entitlement_fields.insert(
-                        entitlement
-                            .segments
-                            .iter()
-                            .nth_back(1)
-                            .unwrap()
-                            .ident
-                            .clone(),
-                    );
+                for entitlement in &arg_entitlements {
+                    errors.maybe_then(Entitlement::from_path(&entitlement), |entitlement| {
+                        entitlements.insert(entitlement);
+                    });
                 }
 
-                Ok(())
+                errors.coalesce()
             });
         }
 
@@ -144,7 +137,7 @@ impl SchemaSpec {
             args,
             ident,
             width,
-            entitlement_fields,
+            entitlements,
             numericity: if variants.is_empty() {
                 Numericity::Numeric
             } else {

@@ -1,9 +1,12 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 
 use darling::{util::SpannedValue, FromMeta};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote_spanned, ToTokens};
-use syn::{parse_quote, spanned::Spanned as _, Expr, Ident, Index, Item, Path};
+use syn::{parse_quote, spanned::Spanned as _, Attribute, Expr, Ident, Index, Item, Path};
 use tiva::Validator;
 
 use crate::{
@@ -773,7 +776,14 @@ impl Register {
             })
             .collect::<Vec<Path>>();
 
+        let format_derive: Option<Attribute> = if cfg!(feature = "defmt") {
+            Some(parse_quote! { #[derive(::defmt::Format)] })
+        } else {
+            None
+        };
+
         Some(quote_spanned! { span =>
+            #format_derive
             pub struct UnsafeReader {
                 value: ::proto_hal::macro_utils::RegisterValue,
             }
@@ -883,6 +893,13 @@ impl Register {
                     }
                 }
 
+                #[allow(unused)]
+                const fn with_value(value: u32) -> Self {
+                    Self {
+                        value,
+                    }
+                }
+
                 #(
                     pub fn #writable_enumerated_field_idents(&mut self) -> #refined_writer_idents<Self> {
                         #refined_writer_idents { w: self }
@@ -910,6 +927,8 @@ impl Register {
 
         if self.fields().any(|field| field.access.is_read()) {
             body.extend(quote_spanned! { span =>
+                /// Reads this register **once**, providing
+                /// an [`UnsafeReader`] for field value extraction.
                 pub unsafe fn read() -> UnsafeReader {
                     UnsafeReader::new(
                         ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32)
@@ -920,8 +939,53 @@ impl Register {
 
         if self.fields().any(|field| field.access.is_write()) {
             body.extend(quote_spanned! { span =>
-                pub unsafe fn write(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                /// Writes to this register with a base value of zero
+                /// for unspecified fields.
+                pub unsafe fn write_with_zero(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
                     let mut writer = UnsafeWriter::new();
+
+                    f(&mut writer);
+
+                    ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value);
+                }
+            });
+
+            let writable_resolvable_field_idents = self
+                .fields()
+                .writable()
+                .resolvable()
+                .idents()
+                .collect::<Vec<_>>();
+
+            if !writable_resolvable_field_idents.is_empty() {
+                body.extend(quote_spanned! { span =>
+                    /// Writes to this register where unspecified
+                    /// fields will return to their reset value.
+                    pub unsafe fn write_with_reset(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                        #[allow(unused_parens)]
+                        let mut writer = UnsafeWriter::with_value(
+                            #(
+                                (#writable_resolvable_field_idents::RESET << #writable_resolvable_field_idents::OFFSET)
+                            )|*
+                        );
+
+                        f(&mut writer);
+
+                        ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value);
+                    }
+                });
+            }
+        }
+
+        if self.fields().any(|field| field.access.is_read())
+            && self.fields().any(|field| field.access.is_write())
+        {
+            body.extend(quote_spanned! { span =>
+                /// Reads this register **once** as a source
+                /// for the base value of unspecified fields
+                /// when writing.
+                pub unsafe fn modify(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    let mut writer = UnsafeWriter::with_value(read().value.word());
 
                     f(&mut writer);
 
@@ -939,11 +1003,14 @@ impl Register {
         let resolvable_field_idents = self.fields().resolvable().idents();
         let resolvable_field_tys = self.fields().resolvable().tys().collect::<Vec<_>>();
 
-        let unresolvable_field_idents = self
-            .fields()
-            .unresolvable()
-            .idents()
-            .map(|ident| format_ident!("_{ident}"));
+        let unresolvable_field_idents = self.fields().unresolvable().idents();
+
+        // self.fields().resolvable().map(|field| {
+        //     match field.access {
+        //         Access::Write(write) | Access::ReadWrite { write, read: _ } => {
+        //             write.schema.
+        //     }
+        // });
 
         quote_spanned! { span =>
             /// A register. This type gates access to
@@ -955,12 +1022,13 @@ impl Register {
             pub struct Register<#(#resolvable_field_tys,)*> {
                 // resolvable fields.
                 #(
-                    pub #resolvable_field_idents: #resolvable_field_tys,
+                    #resolvable_field_idents: #resolvable_field_tys,
                 )*
 
                 // Q: what is this for?
                 // unresolvable fields.
                 #(
+                    #[allow(unused)]
                     #unresolvable_field_idents: (),
                 )*
             }
@@ -996,11 +1064,7 @@ impl Register {
         let resolvable_field_tys = self.fields().resolvable().tys().collect::<Vec<_>>();
         let writable_resolvable_field_idents = self.fields().writable().resolvable().idents();
         let writable_resolvable_field_tys = self.fields().writable().resolvable().tys();
-        let unresolvable_field_idents = self
-            .fields()
-            .unresolvable()
-            .idents()
-            .map(|ident| format_ident!("_{ident}"));
+        let unresolvable_field_idents = self.fields().unresolvable().idents();
 
         Some(quote_spanned! { span =>
             /// This type facilitates the static construction
@@ -1065,6 +1129,7 @@ impl Register {
 
         let resolvable_field_idents = self.fields().resolvable().idents().collect::<Vec<_>>();
         let resolvable_field_tys = self.fields().resolvable().tys().collect::<Vec<_>>();
+        let unresolvable_field_idents = self.fields().unresolvable().idents().collect::<Vec<_>>();
 
         let mut body = TokenStream2::new();
 
@@ -1108,26 +1173,61 @@ impl Register {
                         #resolvable_field_tys: #resolvable_field_idents::State,
                     )*
                 {
-                    // TODO: this is broken for now
-                    // /// Perform a state transition inferred from context.
-                    // pub fn transition<#(#new_resolvable_field_tys,)*>(self) -> Register<#(#new_resolvable_field_tys,)*>
-                    // where
-                    //     #(
-                    //         #new_resolvable_field_tys: #resolvable_field_idents::State #new_entitlement_bounds,
-                    //     )*
-                    // {
-                    //     // SAFETY: `self` is destroyed
-                    //     unsafe { StateBuilder::conjure() }.finish()
-                    // }
-
-                    /// Create a state builder for this register to perform
-                    /// a state transition.
-                    pub fn build_state(self) -> StateBuilder<#(#resolvable_field_tys,)*> {
+                    /// Transition this register into a new state, facilitated by its
+                    /// [`StateBuilder`]
+                    pub fn transition<B>(self, f: impl FnOnce(<Self as ::proto_hal::macro_utils::AsBuilder>::Builder) -> B) -> B::Register
+                    where
+                        B: ::proto_hal::macro_utils::AsRegister,
+                    {
                         // SAFETY: `self` is destroyed
-                        unsafe { StateBuilder::conjure() }
+                        f(unsafe { StateBuilder::conjure() }).into()
                     }
                 }
             });
+
+            for (i, field) in self.fields().resolvable().enumerate() {
+                let ident = &field.ident;
+                let ty = Ident::new(
+                    &inflector::cases::pascalcase::to_pascal_case(&ident.to_string()),
+                    span,
+                );
+                let detach_accessor = format_ident!("detach_{ident}");
+
+                let prev_field_idents = resolvable_field_idents.get(..i).unwrap();
+                let next_field_idents = resolvable_field_idents.get(i + 1..).unwrap();
+                let prev_field_tys = resolvable_field_tys.get(..i).unwrap();
+                let next_field_tys = resolvable_field_tys.get(i + 1..).unwrap();
+
+                body.extend(quote_spanned! { span =>
+                    impl<#(#resolvable_field_tys,)*> Register<#(#resolvable_field_tys,)*>
+                    where
+                        #(
+                            #resolvable_field_tys: #resolvable_field_idents::State,
+                        )*
+                    {
+                        pub fn #detach_accessor(self) -> (Register<#(#prev_field_tys,)* ::proto_hal::stasis::Unavailable, #(#next_field_tys,)*>, #ty) {
+                            (
+                                Register {
+                                    #(
+                                        #prev_field_idents: self.#prev_field_idents,
+                                    )*
+
+                                    #ident: ::proto_hal::stasis::Unavailable,
+
+                                    #(
+                                        #next_field_idents: self.#next_field_idents,
+                                    )*
+
+                                    #(
+                                        #unresolvable_field_idents: self.#unresolvable_field_idents,
+                                    )*
+                                },
+                                self.#ident,
+                            )
+                        }
+                    }
+                });
+            }
         }
 
         if self
@@ -1200,16 +1300,23 @@ impl Register {
                     _ => panic!("a resolvable field should not be write-only"),
                 };
 
-                if schema.entitlement_fields.is_empty() {
+                if schema.entitlements.is_empty() {
                     return None;
                 }
 
-                let entitled_field_tys = schema
-                    .entitlement_fields
+                let mut entitled_fields = HashSet::new();
+                entitled_fields.extend(
+                    schema
+                        .entitlements
+                        .iter()
+                        .map(|entitlement| entitlement.field.clone()),
+                );
+
+                let entitled_field_tys = entitled_fields
                     .iter()
-                    .map(|ident| {
+                    .map(|field| {
                         Ident::new(
-                            &inflector::cases::pascalcase::to_pascal_case(&ident.to_string()),
+                            &inflector::cases::pascalcase::to_pascal_case(&field.to_string()),
                             Span::call_site(),
                         )
                     })
@@ -1248,7 +1355,8 @@ impl Register {
                 )*
             {
                 fn into(self) -> StateBuilder<#(#resolvable_field_tys,)*> {
-                    self.build_state()
+                    // SAFETY: `self` is destroyed
+                    unsafe { StateBuilder::conjure() }
                 }
             }
 
@@ -1385,6 +1493,24 @@ impl Register {
 
         Some(body)
     }
+
+    fn maybe_generate_states_trait(&self) -> Option<TokenStream2> {
+        let span = self.args.span();
+
+        if !self.fields().any(|field| field.is_resolvable()) {
+            return None;
+        }
+
+        let resolvable_field_tys = self.fields().resolvable().tys();
+
+        Some(quote_spanned! { span =>
+            pub trait States {
+                #(
+                    type #resolvable_field_tys;
+                )*
+            }
+        })
+    }
 }
 
 impl ToTokens for Register {
@@ -1407,6 +1533,7 @@ impl ToTokens for Register {
         body.extend(self.generate_register_impls());
         body.extend(self.maybe_generate_conversion_trait_impls());
         body.extend(self.maybe_generate_builder_methods());
+        body.extend(self.maybe_generate_states_trait());
 
         tokens.extend(quote_spanned! { span =>
             pub mod #ident {

@@ -8,7 +8,7 @@ stm32 = ["pin_alternates"]
 
 pin_alternates = []
 
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "macros/defmt"]
 
 [dependencies]
 arbitrary-int = "1.2.7"

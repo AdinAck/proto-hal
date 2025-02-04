@@ -87,3 +87,7 @@ pub unsafe trait Entitled<State> {}
 /// A marker type for
 /// an unsatisfied entitlement.
 pub struct Unsatisfied;
+
+/// A marker type for
+/// an unavailable resource.
+pub struct Unavailable;

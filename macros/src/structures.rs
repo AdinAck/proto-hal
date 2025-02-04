@@ -12,6 +12,7 @@ pub mod register;
 pub mod schema;
 pub mod variant;
 pub mod variant_array;
+pub mod entitlement;
 
 pub trait Args: FromMeta + Sized {
     const NAME: &str;
