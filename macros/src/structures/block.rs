@@ -446,13 +446,13 @@ impl ToTokens for Block {
                     }
                 }
 
-                impl<#(#resolvable_register_tys,)* #(#entitlement_tys)*> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
+                impl<#(#entitlement_tys)*> Block<#(#resolvable_register_idents::Reset,)* #(#entitlement_tys,)*>
                 where
                     #(
                         #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
                     )*
                 {
-                    pub fn release(self) -> (Block<#(#resolvable_register_tys,)* #(#reset_entitlement_tys,)*>, #(#entitlement_tys,)*)
+                    pub fn release(self) -> (Reset, #(#entitlement_tys,)*)
                     {
                         (
                             Block {
