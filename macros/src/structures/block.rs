@@ -334,12 +334,11 @@ impl ToTokens for Block {
 
             body.extend(quote_spanned! { span =>
                 impl<#(#resolvable_register_tys,)* #(#entitlement_tys,)*> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
-                where
-                    #ty: ::proto_hal::macro_utils::AsBuilder,
                 {
                     /// Access this register for in place transitioning.
                     pub fn #transition_accessor<R, B>(self, f: impl FnOnce(#ty::Builder) -> B) -> Block<#(#prev_register_tys,)* R, #(#next_register_tys,)* #(#entitlement_tys,)*>
                     where
+                        #ty: ::proto_hal::macro_utils::AsBuilder,
                         B: ::proto_hal::macro_utils::AsRegister<Register = R>,
                         #(
                             #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
@@ -425,7 +424,12 @@ impl ToTokens for Block {
             body.extend(quote_spanned! { span =>
                 impl<#(#resolvable_register_tys,)*> Block<#(#resolvable_register_tys,)* #(#reset_entitlement_tys,)*> {
                     /// Attach to required entitlements, enabling usage of this block.
-                    pub fn attach(self, #(#entitlement_idents: #entitlements,)*) -> Block<#(#resolvable_register_tys,)* #(#entitlements,)*> {
+                    pub fn attach<#(#entitlement_tys,)*>(self, #(#entitlement_idents: #entitlement_tys,)*) -> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
+                    where
+                        #(
+                            #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
+                        )*
+                    {
                         Block {
                             #(
                                 #resolvable_register_idents: self.#resolvable_register_idents,
@@ -439,6 +443,35 @@ impl ToTokens for Block {
                                 #entitlement_idents,
                             )*
                         }
+                    }
+                }
+
+                impl<#(#resolvable_register_tys,)* #(#entitlement_tys)*> Block<#(#resolvable_register_tys,)* #(#entitlement_tys,)*>
+                where
+                    #(
+                        #entitlement_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlements>,
+                    )*
+                {
+                    pub fn release(self) -> (Block<#(#resolvable_register_tys,)* #(#reset_entitlement_tys,)*>, #(#entitlement_tys,)*)
+                    {
+                        (
+                            Block {
+                                #(
+                                    #resolvable_register_idents: self.#resolvable_register_idents,
+                                )*
+
+                                #(
+                                    #unresolvable_register_idents: self.#unresolvable_register_idents,
+                                )*
+
+                                #(
+                                    #entitlement_idents: #reset_entitlement_tys,
+                                )*
+                            },
+                            #(
+                                self.#entitlement_idents,
+                            )*
+                        )
                     }
                 }
             });

@@ -1192,6 +1192,7 @@ impl Register {
                     span,
                 );
                 let detach_accessor = format_ident!("detach_{ident}");
+                let attach_accessor = format_ident!("attach_{ident}");
 
                 let prev_field_idents = resolvable_field_idents.get(..i).unwrap();
                 let next_field_idents = resolvable_field_idents.get(i + 1..).unwrap();
@@ -1199,12 +1200,7 @@ impl Register {
                 let next_field_tys = resolvable_field_tys.get(i + 1..).unwrap();
 
                 body.extend(quote_spanned! { span =>
-                    impl<#(#resolvable_field_tys,)*> Register<#(#resolvable_field_tys,)*>
-                    where
-                        #(
-                            #resolvable_field_tys: #resolvable_field_idents::State,
-                        )*
-                    {
+                    impl<#(#resolvable_field_tys,)*> Register<#(#prev_field_tys,)* #ty, #(#next_field_tys,)*> {
                         pub fn #detach_accessor(self) -> (Register<#(#prev_field_tys,)* ::proto_hal::stasis::Unavailable, #(#next_field_tys,)*>, #ty) {
                             (
                                 Register {
@@ -1224,6 +1220,29 @@ impl Register {
                                 },
                                 self.#ident,
                             )
+                        }
+                    }
+
+                    impl<#(#prev_field_tys,)* #(#next_field_tys,)*> Register<#(#prev_field_tys,)* ::proto_hal::stasis::Unavailable, #(#next_field_tys,)*> {
+                        pub fn #attach_accessor<#ty>(self, field: #ty) -> Register<#(#prev_field_tys,)* #ty, #(#next_field_tys,)*>
+                        where
+                            #ty: #ident::State,
+                        {
+                            Register {
+                                #(
+                                    #prev_field_idents: self.#prev_field_idents,
+                                )*
+
+                                #ident: field,
+
+                                #(
+                                    #next_field_idents: self.#next_field_idents,
+                                )*
+
+                                #(
+                                    #unresolvable_field_idents: self.#unresolvable_field_idents,
+                                )*
+                            }
                         }
                     }
                 });
