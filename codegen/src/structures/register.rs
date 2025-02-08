@@ -10,7 +10,8 @@ use syn::{parse_quote, spanned::Spanned as _, Attribute, Expr, Ident, Index, Ite
 use tiva::Validator;
 
 use crate::{
-    access::{Access, AccessArgs},
+    access::{Access, AccessArgs, AccessSpec, Read, Write},
+    structures::entitlement::Locality,
     utils::{
         extract_items_from, require_module, FieldOffset, RegisterOffset, Spanned,
         SynErrorCombinator, Width,
@@ -18,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    field::{Field, FieldArgs, FieldSpec},
+    field::{self, Field, FieldArgs, FieldSpec},
     field_array::{FieldArray, FieldArrayArgs},
     schema::{Numericity, Schema, SchemaArgs, SchemaSpec},
     Args,
@@ -312,7 +313,9 @@ impl Filter {
             Self::Numeric(marker) => match marker {
                 AccessMarker::Read => {
                     let schema = match &field.access {
-                        Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+                        AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => {
+                            &read.schema
+                        }
                         _ => return false,
                     };
 
@@ -320,7 +323,7 @@ impl Filter {
                 }
                 AccessMarker::Write => {
                     let schema = match &field.access {
-                        Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                        AccessSpec::Write(write) | AccessSpec::ReadWrite { read: _, write } => {
                             &write.schema
                         }
                         _ => return false,
@@ -332,7 +335,9 @@ impl Filter {
             Self::Enumerated(marker) => match marker {
                 AccessMarker::Read => {
                     let schema = match &field.access {
-                        Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+                        AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => {
+                            &read.schema
+                        }
                         _ => return false,
                     };
 
@@ -340,7 +345,7 @@ impl Filter {
                 }
                 AccessMarker::Write => {
                     let schema = match &field.access {
-                        Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                        AccessSpec::Write(write) | AccessSpec::ReadWrite { read: _, write } => {
                             &write.schema
                         }
                         _ => return false,
@@ -353,17 +358,17 @@ impl Filter {
     }
 }
 
-struct FieldIter<'a, I>
+struct FieldIter<F, I>
 where
-    I: Iterator<Item = &'a Field>,
+    I: Iterator<Item = F>,
 {
     iter: I,
     filters: Vec<Filter>,
 }
 
-impl<'a, I> FieldIter<'a, I>
+impl<F, I> FieldIter<F, I>
 where
-    I: Iterator<Item = &'a Field>,
+    I: Iterator<Item = F>,
 {
     const fn new(iter: I) -> Self {
         Self {
@@ -371,48 +376,41 @@ where
             filters: Vec::new(),
         }
     }
+}
 
-    fn resolvable(mut self) -> Self {
-        self.filters.push(Filter::Resolvable);
+impl<W, I> FieldIter<Field<Access<Option<Read>, W>>, I>
+where
+    I: Iterator<Item = Field<Access<Option<Read>, W>>>,
+{
+    pub fn readable(self) -> FieldIter<Field<Access<Read, W>>, _> {
+        FieldIter::new(
+            self.iter
+                .filter_map(|field| field.refine_access(|access| access.refine_read()).ok()),
+        )
+    }
+}
 
-        self
+impl<R, I> FieldIter<Field<Access<R, Option<Write>>>, I>
+where
+    I: Iterator<Item = Field<Access<R, Option<Write>>>>,
+{
+    pub fn writable(self) -> FieldIter<Field<R, Write>, _> {
+        FieldIter::new(
+            self.iter
+                .filter_map(|field| field.refine_access(|access| access.refine_write()).ok()),
+        )
+    }
+}
+
+impl<A, I> FieldIter<Field<A>, I>
+where
+    I: Iterator<Item = Field<A>>,
+{
+    fn idents(self) -> impl Iterator<Item = Ident> {
+        self.map(|field| field.ident.clone())
     }
 
-    fn unresolvable(mut self) -> Self {
-        self.filters.push(Filter::Unresolvable);
-
-        self
-    }
-
-    fn writable(mut self) -> Self {
-        self.filters.push(Filter::Writable);
-
-        self
-    }
-
-    fn readable(mut self) -> Self {
-        self.filters.push(Filter::Readable);
-
-        self
-    }
-
-    fn numeric(mut self, access: AccessMarker) -> Self {
-        self.filters.push(Filter::Numeric(access));
-
-        self
-    }
-
-    fn enumerated(mut self, access: AccessMarker) -> Self {
-        self.filters.push(Filter::Enumerated(access));
-
-        self
-    }
-
-    fn idents(self) -> impl Iterator<Item = &'a Ident> + use<'a, I> {
-        self.map(|field| &field.ident)
-    }
-
-    fn tys(self) -> impl Iterator<Item = Ident> + use<'a, I> {
+    fn tys(self) -> impl Iterator<Item = Ident> {
         self.map(|field| {
             Ident::new(
                 &inflector::cases::pascalcase::to_pascal_case(&field.ident.to_string()),
@@ -422,24 +420,14 @@ where
     }
 }
 
-impl<'a, I> Iterator for FieldIter<'a, I>
+impl<F, I> Iterator for FieldIter<F, I>
 where
-    I: Iterator<Item = &'a Field>,
+    I: Iterator<Item = F>,
 {
-    type Item = &'a Field;
+    type Item = F;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(field) = self.iter.next() {
-                if self.filters.iter().all(|filter| filter.retains(field)) {
-                    break Some(field);
-                } else {
-                    continue;
-                }
-            } else {
-                break None;
-            }
-        }
+        self.iter.next()
     }
 }
 
@@ -499,7 +487,9 @@ impl Register {
             let field_ident = &field.ident;
 
             let schema = match &field.access {
-                Access::Write(write) | Access::ReadWrite { read: _, write } => &write.schema,
+                AccessSpec::Write(write) | AccessSpec::ReadWrite { read: _, write } => {
+                    &write.schema
+                }
                 _ => unreachable!("fields are writable"),
             };
 
@@ -1005,13 +995,6 @@ impl Register {
 
         let unresolvable_field_idents = self.fields().unresolvable().idents();
 
-        // self.fields().resolvable().map(|field| {
-        //     match field.access {
-        //         Access::Write(write) | Access::ReadWrite { write, read: _ } => {
-        //             write.schema.
-        //     }
-        // });
-
         quote_spanned! { span =>
             /// A register. This type gates access to
             /// the fields it encapsulates.
@@ -1066,16 +1049,45 @@ impl Register {
         let writable_resolvable_field_tys = self.fields().writable().resolvable().tys();
         let unresolvable_field_idents = self.fields().unresolvable().idents();
 
+        let external_entitlements = self
+            .fields()
+            .resolvable()
+            .filter_map(|field| match &field.access {
+                AccessSpec::Write(write) | AccessSpec::ReadWrite { write, read: _ } => Some(
+                    write
+                        .entitlements
+                        .iter()
+                        .cloned()
+                        .filter_map(|entitlement| entitlement.refine_register_as_external().ok())
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let external_entitlement_tys = external_entitlements
+            .iter()
+            .map(|entitlement| {
+                Ident::new(
+                    &inflector::cases::pascalcase::to_pascal_case(&entitlement.field.to_string()),
+                    Span::call_site(),
+                )
+            })
+            .collect::<Vec<_>>();
+
         Some(quote_spanned! { span =>
             /// This type facilitates the static construction
             /// of a valid register state.
-            pub struct StateBuilder<#(#resolvable_field_tys,)*> {
+            pub struct StateBuilder<#(#resolvable_field_tys,)* #(#external_entitlement_tys,)*> {
                 #(
-                    pub(crate) #resolvable_field_idents: core::marker::PhantomData<#resolvable_field_tys>,
+                    pub(crate) #resolvable_field_idents: ::core::marker::PhantomData<#resolvable_field_tys>,
                 )*
+
+                _external: ::core::marker::PhantomData<(#(#external_entitlement_tys,)*)>,
             }
 
-            impl<#(#resolvable_field_tys,)*> StateBuilder<#(#resolvable_field_tys,)*>
+            impl<#(#resolvable_field_tys,)* #(#external_entitlement_tys,)*> StateBuilder<#(#resolvable_field_tys,)* #(#external_entitlement_tys,)*>
             where
                 #(
                     #resolvable_field_tys: #resolvable_field_idents::State,
@@ -1085,8 +1097,10 @@ impl Register {
                 unsafe fn conjure() -> Self {
                     Self {
                         #(
-                            #resolvable_field_idents: core::marker::PhantomData,
+                            #resolvable_field_idents: ::core::marker::PhantomData,
                         )*
+
+                        _external: ::core::marker::PhantomData,
                     }
                 }
 
@@ -1315,7 +1329,9 @@ impl Register {
             .resolvable()
             .map(|field| {
                 let schema = match &field.access {
-                    Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+                    AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => {
+                        &read.schema
+                    }
                     _ => panic!("a resolvable field should not be write-only"),
                 };
 
@@ -1417,7 +1433,7 @@ impl Register {
             let next_field_tys = resolvable_field_tys.get(i + 1..).unwrap();
 
             let schema = match &field.access {
-                Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+                AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => &read.schema,
                 _ => panic!("a resolvable field should not be write-only"),
             };
 

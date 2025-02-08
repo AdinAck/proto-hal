@@ -7,7 +7,7 @@ use syn::{Expr, Ident, Item};
 use tiva::Validator;
 
 use crate::{
-    access::{Access, AccessArgs},
+    access::{self, Access, AccessArgs, AccessSpec, Read, Write},
     utils::{FieldOffset, Spanned, SynErrorCombinator, Width},
 };
 
@@ -63,33 +63,73 @@ pub enum Resolvability {
     Unresolvable,
 }
 
+pub struct Resolvable {
+    reset: Expr,
+}
+
+pub struct Unresolvable;
+
 #[derive(Debug)]
-pub struct FieldSpec {
+pub struct FieldSpec<A, R> {
     pub args: Spanned<FieldArgs>,
     pub ident: Ident,
     pub offset: FieldOffset,
-    pub access: Access,
+    pub access: A,
 
     // private because it is a computed
     // property
     width: Width,
-    resolvability: Resolvability,
+    resolvability: R,
 }
 
 #[derive(Debug)]
-pub struct Field {
-    spec: FieldSpec,
+pub struct Field<A, R> {
+    spec: FieldSpec<A, R>,
 }
 
-impl Deref for Field {
-    type Target = FieldSpec;
+impl<A, R> Deref for Field<A, R> {
+    type Target = FieldSpec<A, R>;
 
     fn deref(&self) -> &Self::Target {
         &self.spec
     }
 }
 
-impl FieldSpec {
+pub type Unrefined = Field<access::Unrefined, Resolvability>;
+
+impl<A, R> Field<A, R> {
+    pub fn refine_access<NewA>(
+        self,
+        f: impl FnOnce(A) -> Result<NewA, A>,
+    ) -> Result<Field<NewA, R>, Self> {
+        let spec = self.spec;
+
+        match f(spec.access) {
+            Ok(access) => Ok(Field {
+                spec: FieldSpec {
+                    args: spec.args,
+                    ident: spec.ident,
+                    offset: spec.offset,
+                    access,
+                    width: spec.width,
+                    resolvability: spec.resolvability,
+                },
+            }),
+            Err(access) => Err(Field {
+                spec: FieldSpec {
+                    args: spec.args,
+                    ident: spec.ident,
+                    offset: spec.offset,
+                    access,
+                    width: spec.width,
+                    resolvability: spec.resolvability,
+                },
+            }),
+        }
+    }
+}
+
+impl FieldSpec<access::Unrefined, Resolvability> {
     pub fn parse<'a>(
         ident: Ident,
         offset: FieldOffset,
@@ -128,27 +168,23 @@ impl FieldSpec {
 
         let offset = args.offset.unwrap_or(offset);
 
-        let access = Access::new(
+        let access = AccessSpec::parse(
             args.read.as_ref(),
             args.write.as_ref(),
             implicit_schema,
             schemas,
-        )?
-        .ok_or(syn::Error::new(
-            args.span(),
-            "fields must be readable or writable",
-        ))?;
+        )?;
 
         Self::new(args, ident, offset, access)
     }
 }
 
-impl FieldSpec {
+impl FieldSpec<access::Unrefined, Resolvability> {
     pub fn new(
         args: Spanned<FieldArgs>,
         ident: Ident,
         offset: FieldOffset,
-        access: Access,
+        access: AccessSpec,
     ) -> Result<Self, syn::Error> {
         let width = Self::compute_width(&access);
         let resolvability = Self::compute_resolvability(&args, &access)?;
@@ -176,11 +212,11 @@ impl FieldSpec {
         self.width
     }
 
-    fn compute_width(access: &Access) -> Width {
+    fn compute_width(access: &AccessSpec) -> Width {
         match access {
-            Access::Read(read) => read.schema.width,
-            Access::Write(write) => write.schema.width,
-            Access::ReadWrite { read, write } => {
+            AccessSpec::Read(read) => read.schema.width,
+            AccessSpec::Write(write) => write.schema.width,
+            AccessSpec::ReadWrite { read, write } => {
                 // unnecessary, these by definition must be equal
                 // if this fails something is broken in `access`
                 assert_eq!(read.schema.width, write.schema.width);
@@ -192,7 +228,7 @@ impl FieldSpec {
 
     fn compute_resolvability(
         args: &Spanned<FieldArgs>,
-        access: &Access,
+        access: &AccessSpec,
     ) -> Result<Resolvability, syn::Error> {
         /*
         Determining Resolvability:
@@ -228,7 +264,7 @@ impl FieldSpec {
         simply may be too dynamic to be tracked statically.
         */
 
-        Ok(if let Access::ReadWrite { read, write } = access {
+        Ok(if let AccessSpec::ReadWrite { read, write } = access {
             if read.schema == write.schema {
                 Resolvability::Resolvable {
                     reset: args.reset.clone().ok_or(syn::Error::new(
@@ -245,10 +281,12 @@ impl FieldSpec {
     }
 }
 
-impl Validator<FieldSpec> for Field {
+impl Validator<FieldSpec<access::Unrefined, Resolvability>>
+    for Field<access::Unrefined, Resolvability>
+{
     type Error = syn::Error;
 
-    fn validate(spec: FieldSpec) -> Result<Self, Self::Error> {
+    fn validate(spec: FieldSpec<access::Unrefined, Resolvability>) -> Result<Self, Self::Error> {
         let mut errors = SynErrorCombinator::new();
 
         if spec.args.width.is_some() && spec.args.schema.is_some() {
@@ -285,7 +323,7 @@ impl Field {
         // field must be from read access, as the value the field
         // holds must represent the state to be resolved
         let schema = match &self.access {
-            Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+            AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => &read.schema,
             _ => return None,
         };
 
@@ -333,7 +371,7 @@ impl Field {
         };
 
         let schema = match &self.access {
-            Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+            AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => &read.schema,
             _ => return None,
         };
 
@@ -395,7 +433,7 @@ impl Field {
 
         // TODO: there must be a better way to do this
         match &self.access {
-            Access::Read(read) => {
+            AccessSpec::Read(read) => {
                 let Numericity::Enumerated { variants } = &read.schema.numericity else {
                     return None;
                 };
@@ -408,7 +446,7 @@ impl Field {
                     #variant_enum
                 })
             }
-            Access::Write(write) => {
+            AccessSpec::Write(write) => {
                 let Numericity::Enumerated { variants } = &write.schema.numericity else {
                     return None;
                 };
@@ -421,7 +459,7 @@ impl Field {
                     #variant_enum
                 })
             }
-            Access::ReadWrite { read, write } => {
+            AccessSpec::ReadWrite { read, write } => {
                 if read.schema == write.schema {
                     let Numericity::Enumerated { variants } = &read.schema.numericity else {
                         return None;
@@ -476,7 +514,7 @@ impl Field {
         };
 
         let schema = match &self.access {
-            Access::Read(read) | Access::ReadWrite { read, write: _ } => &read.schema,
+            AccessSpec::Read(read) | AccessSpec::ReadWrite { read, write: _ } => &read.schema,
             _ => return None,
         };
 
@@ -564,9 +602,9 @@ Consider using register accessors when performing state transitions.";
         let span = self.args.span();
 
         let access_doc = match &self.access {
-            Access::Read(_) => "- Access: read",
-            Access::Write(_) => "- Access: write",
-            Access::ReadWrite { read: _, write: _ } => "- Access: read/write",
+            AccessSpec::Read(_) => "- Access: read",
+            AccessSpec::Write(_) => "- Access: write",
+            AccessSpec::ReadWrite { read: _, write: _ } => "- Access: read/write",
         };
 
         let domain_doc = format!("- Domain: {}..{}", self.offset, self.offset + self.width);

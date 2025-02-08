@@ -10,10 +10,6 @@ use structures::{
 use syn::{parse2, ItemEnum, ItemMod};
 use tiva::Validate;
 
-mod access;
-mod structures;
-mod utils;
-
 fn block_inner(args: TokenStream, item: TokenStream) -> Result<TokenStream2, syn::Error> {
     let block_args = BlockArgs::from_list(&NestedMeta::parse_meta_list(args.into())?)?
         .with_span(Span::call_site());

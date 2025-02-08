@@ -4,7 +4,10 @@ use darling::FromMeta;
 use syn::{Ident, Item};
 
 use super::{
-    entitlement::Entitlement, variant::{Variant, VariantArgs}, variant_array::{VariantArray, VariantArrayArgs}, Args
+    entitlement::{self, Entitlement},
+    variant::{Variant, VariantArgs},
+    variant_array::{VariantArray, VariantArrayArgs},
+    Args,
 };
 use crate::utils::{require_struct, Spanned, SynErrorCombinator, Width};
 use tiva::Validator;
@@ -41,7 +44,7 @@ pub struct SchemaSpec {
     pub args: Spanned<SchemaArgs>,
     pub ident: Ident,
     pub width: Width,
-    pub entitlements: HashSet<Entitlement>,
+    pub entitlements: HashSet<entitlement::Unrefined>,
 
     // computed properties
     pub numericity: Numericity,
