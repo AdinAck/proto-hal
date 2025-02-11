@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::repl::Repl;
 use clap::Args;
-use colored::Colorize;
 use prettytable::{row, Table};
 
 use super::Command;
@@ -20,7 +19,7 @@ impl Command for List {
 
         let mut table = Table::new();
 
-        table.add_row(row![b => "Address", "Identifier"]);
+        table.add_row(row![bu => "Address", "Identifier"]);
 
         for peripheral in peripherals {
             let addr = peripheral.base_addr;

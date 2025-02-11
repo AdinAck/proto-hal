@@ -3,7 +3,14 @@ use std::path::PathBuf;
 use clap::Args;
 use colored::Colorize;
 
-use crate::{repl::Repl, utils::numeric_value::NumericValue};
+use crate::{
+    repl::{commands::create::Structure, Repl},
+    utils::{
+        feedback::{error, success, warning},
+        numeric_value::NumericValue,
+        path::PathIter,
+    },
+};
 
 use super::CreateStructure;
 
@@ -22,36 +29,20 @@ pub struct Register {
 
 impl CreateStructure for Register {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = self.path.iter().rev();
+        let mut segments =
+            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let Some(ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase()) else {
-            Err(format!(
-                "{}: register identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
+        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
+            model.hal,
+            &segments.next_segment()?,
+        )?;
 
-        let Some(peripheral_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase())
-        else {
-            Err(format!(
-                "{}: peripheral identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
-
-        let Some(peripheral) = model.hal.peripherals.get_mut(&peripheral_ident) else {
-            Err(format!(
-                "{}: peripheral [{}] does not exist.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-            ))?
-        };
+        let ident = segments.next_segment()?;
 
         let None = peripheral.registers.get(&ident) else {
-            Err(format!(
-                "{}: register [{}/{}] already exists.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
+            Err(error!(
+                "register [{}/{}] already exists.",
+                peripheral.ident.bold(),
                 ident.bold(),
             ))?
         };
@@ -59,8 +50,8 @@ impl CreateStructure for Register {
         let offset = match (&self.offset, self.next) {
             (Some(offset), true) => {
                 eprintln!(
-                    "{}: next flag and offset present, using specified offset.",
-                    "warning".yellow().bold()
+                    "{}",
+                    warning!("next flag and offset present, using specified offset.",)
                 );
                 **offset
             }
@@ -71,10 +62,7 @@ impl CreateStructure for Register {
                 .map(|register| register.offset)
                 .max()
                 .map_or(0, |last| last + 4), // registers are 32 bits wide which is 4 bytes
-            (None, false) => Err(format!(
-                "{}: offset or next flag must be specified.",
-                "error".red().bold()
-            ))?,
+            (None, false) => Err(error!("offset or next flag must be specified.",))?,
         };
 
         peripheral.registers.insert(
@@ -83,10 +71,8 @@ impl CreateStructure for Register {
         );
 
         println!(
-            "{}: created [{}/{}].",
-            "success".green().bold(),
-            peripheral_ident.bold(),
-            ident.bold()
+            "{}",
+            success!("created [{}/{}].", peripheral.ident.bold(), ident.bold())
         );
 
         Ok(())

@@ -4,10 +4,11 @@ use clap::{Args, ValueEnum};
 use colored::Colorize;
 
 use crate::{
-    repl::Repl,
+    repl::{commands::create::Structure, Repl},
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
+        path::PathIter,
     },
 };
 
@@ -43,44 +44,23 @@ pub struct Field {
 
 impl CreateStructure for Field {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = self.path.iter().rev();
+        let mut segments =
+            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let Some(ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase()) else {
-            Err(error!("field identifier must be specified."))?
-        };
+        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
+            model.hal,
+            &segments.next_segment()?,
+        )?;
 
-        let Some(register_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase())
-        else {
-            Err(error!("register identifier must be specified."))?
-        };
+        let register = ir::structures::register::Register::from_parent_mut(
+            peripheral,
+            &segments.next_segment()?,
+        )?;
 
-        let Some(peripheral_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase())
-        else {
-            Err(error!("peripheral identifier must be specified."))?
-        };
-
-        let Some(peripheral) = model.hal.peripherals.get_mut(&peripheral_ident) else {
-            Err(error!(
-                "peripheral [{}] does not exist.",
-                peripheral_ident.bold(),
-            ))?
-        };
-
-        let Some(register) = peripheral.registers.get_mut(&register_ident) else {
-            Err(error!(
-                "register [{}/{}] does not exist.",
-                peripheral_ident.bold(),
-                register_ident.bold(),
-            ))?
-        };
+        let ident = segments.next_segment()?;
 
         let None = register.fields.get(&ident) else {
-            Err(error!(
-                "field [{}/{}/{}] already exists.",
-                peripheral_ident.bold(),
-                register_ident.bold(),
-                ident.bold(),
-            ))?
+            Err(error!("field [{}] already exists.", ident.bold(),))?
         };
 
         let offset = match (&self.offset, self.next) {
@@ -115,15 +95,7 @@ impl CreateStructure for Field {
             ),
         );
 
-        println!(
-            "{}",
-            success!(
-                "created [{}/{}/{}].",
-                peripheral_ident.bold(),
-                register_ident.bold(),
-                ident.bold()
-            )
-        );
+        println!("{}", success!("created [{}].", ident.bold()));
 
         Ok(())
     }

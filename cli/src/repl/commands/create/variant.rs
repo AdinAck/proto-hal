@@ -4,7 +4,14 @@ use clap::Args;
 use colored::Colorize;
 use ir::structures::field::Numericity;
 
-use crate::{repl::Repl, utils::numeric_value::NumericValue};
+use crate::{
+    repl::{commands::create::Structure, Repl},
+    utils::{
+        feedback::{error, success, warning},
+        numeric_value::NumericValue,
+        path::PathIter,
+    },
+};
 
 use super::CreateStructure;
 
@@ -25,91 +32,40 @@ pub struct Variant {
 
 impl CreateStructure for Variant {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = self.path.iter().rev();
+        let mut segments =
+            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let Some(ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase()) else {
-            Err(format!(
-                "{}: variant identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
+        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
+            model.hal,
+            &segments.next_segment()?,
+        )?;
 
-        let Some(field_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase()) else {
-            Err(format!(
-                "{}: field identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
+        let register = ir::structures::register::Register::from_parent_mut(
+            peripheral,
+            &segments.next_segment()?,
+        )?;
 
-        let Some(register_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase())
-        else {
-            Err(format!(
-                "{}: register identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
+        let field =
+            ir::structures::field::Field::from_parent_mut(register, &segments.next_segment()?)?;
 
-        let Some(peripheral_ident) = segments.next().map(|s| s.to_str().unwrap().to_uppercase())
-        else {
-            Err(format!(
-                "{}: peripheral identifier must be specified.",
-                "error".red().bold()
-            ))?
-        };
-
-        let Some(peripheral) = model.hal.peripherals.get_mut(&peripheral_ident) else {
-            Err(format!(
-                "{}: peripheral [{}] does not exist.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-            ))?
-        };
-
-        let Some(register) = peripheral.registers.get_mut(&register_ident) else {
-            Err(format!(
-                "{}: register [{}/{}] does not exist.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-                register_ident.bold(),
-            ))?
-        };
-
-        let Some(field) = register.fields.get_mut(&field_ident) else {
-            Err(format!(
-                "{}: field [{}/{}/{}] does not exist.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-                register_ident.bold(),
-                field_ident.bold(),
-            ))?
-        };
+        let ident = segments.next_segment()?;
 
         let Numericity::Enumerated { variants } = &mut field.numericity else {
-            Err(format!(
-                "{}: field [{}/{}/{}] is numeric and as such holds no variants.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-                register_ident.bold(),
-                field_ident.bold(),
+            Err(error!(
+                "field [{}] is numeric and as such holds no variants.",
+                field.ident.bold(),
             ))?
         };
 
         let None = variants.get(&ident) else {
-            Err(format!(
-                "{}: variant [{}/{}/{}/{}] already exists.",
-                "error".red().bold(),
-                peripheral_ident.bold(),
-                register_ident.bold(),
-                field_ident.bold(),
-                ident.bold(),
-            ))?
+            Err(error!("variant [{}] already exists.", ident.bold(),))?
         };
 
         let bits = match (&self.bits, self.next) {
             (Some(offset), true) => {
                 eprintln!(
-                    "{}: next flag and bit value present, using specified bit value.",
-                    "warning".yellow().bold()
+                    "{}",
+                    warning!("next flag and bit value present, using specified bit value."),
                 );
                 **offset
             }
@@ -118,10 +74,7 @@ impl CreateStructure for Variant {
                 .values()
                 .max_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits))
                 .map_or(0, |last| last.bits + last.bits + 1), // next bit
-            (None, false) => Err(format!(
-                "{}: offset or next flag must be specified.",
-                "error".red().bold()
-            ))?,
+            (None, false) => Err(error!("offset or next flag must be specified."))?,
         };
 
         variants.insert(
@@ -129,14 +82,7 @@ impl CreateStructure for Variant {
             ir::structures::variant::Variant::empty(ident.clone(), bits),
         );
 
-        println!(
-            "{}: created [{}/{}/{}/{}].",
-            "success".green().bold(),
-            peripheral_ident.bold(),
-            register_ident.bold(),
-            field_ident.bold(),
-            ident.bold()
-        );
+        println!("{}", success!("created [{}].", ident.bold()));
 
         Ok(())
     }
