@@ -5,7 +5,6 @@ pub mod gpio;
 #[cfg(feature = "stm32")]
 pub mod stm32;
 
-pub use macros;
 pub mod interrupt;
 pub mod macro_utils;
 pub mod prelude;

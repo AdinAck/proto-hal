@@ -8,12 +8,11 @@ stm32 = ["pin_alternates"]
 
 pin_alternates = []
 
-defmt = ["dep:defmt", "macros/defmt"]
+defmt = ["dep:defmt"]
 
 [dependencies]
 arbitrary-int = "1.2.7"
 defmt = { version = "0.3.10", optional = true }
-macros = { path = "../macros" }
 
 [dev-dependencies]
 fixed = "1.28.0"

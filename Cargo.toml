@@ -1,16 +1,4 @@
 [workspace]
-members = ["proto-hal", "macros", "build", "codegen", "cli"]
+members = ["proto-hal", "build", "ir", "cli"]
 exclude = ["debug-bin"]
 resolver = "2"
-
-[profile.dev]
-debug = true
-lto = true
-opt-level = "z"
-incremental = true
-
-[profile.release]
-debug = false
-lto = true
-opt-level = "z"
-incremental = true

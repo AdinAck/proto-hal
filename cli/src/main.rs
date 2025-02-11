@@ -1,3 +1,42 @@
+use clap::{Parser, Subcommand};
+use repl::Repl;
+use std::{fs, path::PathBuf};
+
+use ir::structures::hal::Hal;
+
+mod repl;
+mod utils;
+
+#[derive(Subcommand)]
+enum Commands {
+    Init { path: PathBuf },
+    Open { file_path: PathBuf },
+    Check { file_path: PathBuf },
+}
+
+#[derive(Parser)]
+#[command(name = "proto-hal-cli")]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
 fn main() {
-    println!("Hello, world!");
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Init { path } => fs::write(
+            path.with_extension("toml"),
+            toml::to_string_pretty(&Hal::empty()).unwrap(),
+        )
+        .unwrap(),
+        Commands::Open { file_path } => {
+            let mut hal = toml::from_str(&fs::read_to_string(&file_path).unwrap()).unwrap();
+            let mut repl = Repl::new(&mut hal, &file_path);
+
+            repl.run().unwrap();
+        }
+        _ => todo!(),
+    }
 }

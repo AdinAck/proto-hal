@@ -1,0 +1,10 @@
+pub mod entitlement;
+pub mod field;
+pub mod field_array;
+pub mod hal;
+pub mod interrupts;
+pub mod peripheral;
+pub mod register;
+pub mod schema;
+pub mod variant;
+pub mod variant_array;
