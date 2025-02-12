@@ -5,7 +5,7 @@ use colored::Colorize;
 use ir::structures::field::Numericity;
 
 use crate::{
-    repl::{commands::create::Structure, Repl},
+    repl::{commands::create::FromParent, Repl},
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
