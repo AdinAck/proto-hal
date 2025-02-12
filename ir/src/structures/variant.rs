@@ -11,3 +11,15 @@ impl Variant {
         Self { ident, bits }
     }
 }
+
+impl PartialOrd for Variant {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Variant {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.bits.cmp(&other.bits)
+    }
+}

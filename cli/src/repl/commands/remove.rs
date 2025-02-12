@@ -1,17 +1,14 @@
 use std::path::PathBuf;
 
 use crate::{
-    repl::{commands::create::Structure, Repl},
-    utils::{
-        feedback::{error, success},
-        path::PathIter,
-    },
+    repl::{commands::create::DynStructure, Repl},
+    utils::feedback::success,
 };
 use clap::Args;
 use colored::Colorize;
-use ir::structures::{field::Numericity, hal::Hal};
+use ir::structures::hal::Hal;
 
-use super::{create::FromParent, Command};
+use super::Command;
 
 #[derive(Debug, Clone, Args)]
 pub struct Remove {
@@ -26,17 +23,17 @@ impl Remove {
             .map(|s| s.to_str().unwrap().to_uppercase())
             .peekable();
 
-        let mut structure: Box<&mut dyn Structure> = Box::new(hal);
+        let mut structure: Box<&mut dyn DynStructure> = Box::new(hal);
 
         loop {
             let ident = segments.next().unwrap();
 
             if segments.peek().is_none() {
                 break structure
-                    .remove_child(&ident)
+                    .remove_child_boxed(&ident)
                     .map(|_| success!("removed [{}].", ident.bold()));
             }
-            structure = structure.get_child_mut(&ident)?;
+            structure = structure.get_child_boxed_mut(&ident)?;
         }
     }
 }

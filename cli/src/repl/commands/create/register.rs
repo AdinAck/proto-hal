@@ -4,7 +4,7 @@ use clap::Args;
 use colored::Colorize;
 
 use crate::{
-    repl::{commands::create::FromParent, Repl},
+    repl::{commands::create::Structure, Repl},
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
@@ -32,20 +32,9 @@ impl CreateStructure for Register {
         let mut segments =
             PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
-            model.hal,
-            &segments.next_segment()?,
-        )?;
+        let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
 
         let ident = segments.next_segment()?;
-
-        let None = peripheral.registers.get(&ident) else {
-            Err(error!(
-                "register [{}/{}] already exists.",
-                peripheral.ident.bold(),
-                ident.bold(),
-            ))?
-        };
 
         let offset = match (&self.offset, self.next) {
             (Some(offset), true) => {
@@ -65,10 +54,10 @@ impl CreateStructure for Register {
             (None, false) => Err(error!("offset or next flag must be specified.",))?,
         };
 
-        peripheral.registers.insert(
+        peripheral.push_child(ir::structures::register::Register::empty(
             ident.clone(),
-            ir::structures::register::Register::empty(ident.clone(), offset),
-        );
+            offset,
+        ))?;
 
         println!(
             "{}",

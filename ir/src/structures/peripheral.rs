@@ -22,3 +22,15 @@ impl Peripheral {
         }
     }
 }
+
+impl PartialOrd for Peripheral {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Peripheral {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.base_addr.cmp(&other.base_addr)
+    }
+}

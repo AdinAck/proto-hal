@@ -4,7 +4,7 @@ use clap::{Args, ValueEnum};
 use colored::Colorize;
 
 use crate::{
-    repl::{commands::create::FromParent, Repl},
+    repl::{commands::create::Structure, Repl},
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
@@ -47,21 +47,10 @@ impl CreateStructure for Field {
         let mut segments =
             PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
-            model.hal,
-            &segments.next_segment()?,
-        )?;
-
-        let register = ir::structures::register::Register::from_parent_mut(
-            peripheral,
-            &segments.next_segment()?,
-        )?;
+        let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
+        let register = peripheral.get_child_mut(&segments.next_segment()?)?;
 
         let ident = segments.next_segment()?;
-
-        let None = register.fields.get(&ident) else {
-            Err(error!("field [{}] already exists.", ident.bold(),))?
-        };
 
         let offset = match (&self.offset, self.next) {
             (Some(offset), true) => {
@@ -80,20 +69,17 @@ impl CreateStructure for Field {
             (None, false) => Err(error!("offset or next flag must be specified.",))?,
         };
 
-        register.fields.insert(
+        register.push_child(ir::structures::field::Field::empty(
             ident.clone(),
-            ir::structures::field::Field::empty(
-                ident.clone(),
-                offset.try_into().map_err(|e| error!("{e}"))?,
-                (*self.width).try_into().map_err(|e| error!("{e}"))?,
-                match self.numericity {
-                    Numericity::Numeric => ir::structures::field::Numericity::Numeric,
-                    Numericity::Enumerated => ir::structures::field::Numericity::Enumerated {
-                        variants: HashMap::new(),
-                    },
+            offset.try_into().map_err(|e| error!("{e}"))?,
+            (*self.width).try_into().map_err(|e| error!("{e}"))?,
+            match self.numericity {
+                Numericity::Numeric => ir::structures::field::Numericity::Numeric,
+                Numericity::Enumerated => ir::structures::field::Numericity::Enumerated {
+                    variants: HashMap::new(),
                 },
-            ),
-        );
+            },
+        ))?;
 
         println!("{}", success!("created [{}].", ident.bold()));
 

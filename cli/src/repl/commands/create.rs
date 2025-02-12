@@ -5,7 +5,7 @@ use clap::Subcommand;
 use colored::Colorize;
 use enum_dispatch::enum_dispatch;
 use field::Field;
-use ir::structures::{field::Numericity, hal::Hal};
+use ir::structures::field::Numericity;
 use peripheral::Peripheral;
 use register::Register;
 use variant::Variant;
@@ -42,190 +42,169 @@ impl Command for Create {
     }
 }
 
-pub trait FromParent: Sized {
-    type Parent;
-
-    fn from_parent<'a>(parent: &'a Self::Parent, ident: &str) -> Result<&'a Self, String>;
-    fn from_parent_mut<'a>(
-        parent: &'a mut Self::Parent,
-        ident: &str,
-    ) -> Result<&'a mut Self, String>;
-}
-
-impl FromParent for ir::structures::peripheral::Peripheral {
-    type Parent = Hal;
-
-    fn from_parent<'a>(parent: &'a Self::Parent, ident: &str) -> Result<&'a Self, String> {
-        parent
-            .peripherals
-            .get(ident)
-            .ok_or(error!("peripheral [{}] does not exist.", ident.bold()))
-    }
-
-    fn from_parent_mut<'a>(
-        parent: &'a mut Self::Parent,
-        ident: &str,
-    ) -> Result<&'a mut Self, String> {
-        parent
-            .peripherals
-            .get_mut(ident)
-            .ok_or(error!("peripheral [{}] does not exist.", ident.bold()))
-    }
-}
-
-impl FromParent for ir::structures::register::Register {
-    type Parent = ir::structures::peripheral::Peripheral;
-
-    fn from_parent<'a>(parent: &'a Self::Parent, ident: &str) -> Result<&'a Self, String> {
-        parent
-            .registers
-            .get(ident)
-            .ok_or(error!("register [{}] does not exist.", ident.bold()))
-    }
-
-    fn from_parent_mut<'a>(
-        parent: &'a mut Self::Parent,
-        ident: &str,
-    ) -> Result<&'a mut Self, String> {
-        parent
-            .registers
-            .get_mut(ident)
-            .ok_or(error!("register [{}] does not exist.", ident.bold()))
-    }
-}
-
-impl FromParent for ir::structures::field::Field {
-    type Parent = ir::structures::register::Register;
-
-    fn from_parent<'a>(parent: &'a Self::Parent, ident: &str) -> Result<&'a Self, String> {
-        parent
-            .fields
-            .get(ident)
-            .ok_or(error!("field [{}] does not exist.", ident.bold()))
-    }
-
-    fn from_parent_mut<'a>(
-        parent: &'a mut Self::Parent,
-        ident: &str,
-    ) -> Result<&'a mut Self, String> {
-        parent
-            .fields
-            .get_mut(ident)
-            .ok_or(error!("field [{}] does not exist.", ident.bold()))
-    }
-}
-
-impl FromParent for ir::structures::variant::Variant {
-    type Parent = ir::structures::field::Field;
-
-    fn from_parent<'a>(parent: &'a Self::Parent, ident: &str) -> Result<&'a Self, String> {
-        let Numericity::Enumerated { variants } = &parent.numericity else {
-            Err(error!(
-                "field [{}] is numeric and as such holds no variants.",
-                parent.ident.bold()
-            ))?
-        };
-
-        variants
-            .get(ident)
-            .ok_or(error!("variant [{}] does not exist.", ident.bold()))
-    }
-
-    fn from_parent_mut<'a>(
-        parent: &'a mut Self::Parent,
-        ident: &str,
-    ) -> Result<&'a mut Self, String> {
-        let Numericity::Enumerated { variants } = &mut parent.numericity else {
-            Err(error!(
-                "field [{}] is numeric and as such holds no variants.",
-                parent.ident.bold()
-            ))?
-        };
-
-        variants
-            .get_mut(ident)
-            .ok_or(error!("variant [{}] does not exist.", ident.bold()))
-    }
-}
-
 pub trait Structure {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String>;
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String>;
+    type Child;
 
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String>;
+    fn ident(&self) -> &str;
+
+    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String>;
+    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String>;
+
+    fn get_child<'a>(&'a self, ident: &str) -> Result<&'a Self::Child, String> {
+        self.children()?.get(ident).ok_or(error!(
+            "[{}] does not exist in [{}].",
+            ident.bold(),
+            self.ident().bold()
+        ))
+    }
+    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<&'a mut Self::Child, String> {
+        let current_ident = self.ident().bold();
+        self.children_mut()?.get_mut(ident).ok_or(error!(
+            "[{}] does not exist in [{}].",
+            ident.bold(),
+            current_ident,
+        ))
+    }
+
+    fn remove_child(&mut self, ident: &str) -> Result<Self::Child, String> {
+        self.children_mut()?.remove(ident).ok_or(error!(
+            "[{}] does not exist in [{}].",
+            ident.bold(),
+            self.ident().bold()
+        ))
+    }
+    fn push_child(&mut self, child: Self::Child) -> Result<(), String>
+    where
+        Self::Child: Structure,
+    {
+        self.get_child(&child.ident()).err().ok_or(error!(
+            "[{}] already exsts in [{}].",
+            child.ident().bold(),
+            self.ident().bold()
+        ))?;
+
+        self.children_mut()?.insert(child.ident().to_owned(), child);
+
+        Ok(())
+    }
 }
 
-impl Structure for Hal {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String> {
-        self.peripherals
-            .get(ident)
-            .map(|p| (p as &dyn Structure).into())
-            .ok_or(error!("peripheral [{}] does not exist.", ident.bold()))
+pub trait DynStructure {
+    fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String>;
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String>;
+
+    fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, String>;
+}
+
+impl Structure for ir::structures::hal::Hal {
+    type Child = ir::structures::peripheral::Peripheral;
+
+    fn ident(&self) -> &str {
+        "HAL"
     }
 
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String> {
-        self.peripherals
-            .get_mut(ident)
-            .map(|p| (p as &mut dyn Structure).into())
-            .ok_or(error!("peripheral [{}] does not exist.", ident.bold()))
+    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+        Ok(&self.peripherals)
+    }
+    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+        Ok(&mut self.peripherals)
+    }
+}
+
+impl DynStructure for ir::structures::hal::Hal {
+    fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
+        <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
 
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String> {
-        self.peripherals
-            .remove(ident)
-            .map(|p| Box::new(p) as _)
-            .ok_or(error!("peripheral [{}] does not exist.", ident.bold()))
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String> {
+        <Self as Structure>::get_child_mut(self, ident).map(|s| (s as &mut dyn DynStructure).into())
+    }
+
+    fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, String> {
+        <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
     }
 }
 
 impl Structure for ir::structures::peripheral::Peripheral {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String> {
-        self.registers
-            .get(ident)
-            .map(|p| (p as &dyn Structure).into())
-            .ok_or(error!("register [{}] does not exist.", ident.bold()))
+    type Child = ir::structures::register::Register;
+
+    fn ident(&self) -> &str {
+        &self.ident
     }
 
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String> {
-        self.registers
-            .get_mut(ident)
-            .map(|p| (p as &mut dyn Structure).into())
-            .ok_or(error!("register [{}] does not exist.", ident.bold()))
+    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+        Ok(&self.registers)
     }
 
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String> {
-        self.registers
-            .remove(ident)
-            .map(|r| Box::new(r) as _)
-            .ok_or(error!("register [{}] does not exist.", ident.bold()))
+    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+        Ok(&mut self.registers)
+    }
+}
+
+impl DynStructure for ir::structures::peripheral::Peripheral {
+    fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
+        <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
+    }
+
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String> {
+        <Self as Structure>::get_child_mut(self, ident).map(|s| (s as &mut dyn DynStructure).into())
+    }
+
+    fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, String> {
+        <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
     }
 }
 
 impl Structure for ir::structures::register::Register {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String> {
-        self.fields
-            .get(ident)
-            .map(|f| (f as &dyn Structure).into())
-            .ok_or(error!("field [{}] does not exist.", ident.bold()))
+    type Child = ir::structures::field::Field;
+
+    fn ident(&self) -> &str {
+        &self.ident
     }
 
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String> {
-        self.fields
-            .get_mut(ident)
-            .map(|f| (f as &mut dyn Structure).into())
-            .ok_or(error!("field [{}] does not exist.", ident.bold()))
+    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+        Ok(&self.fields)
     }
 
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String> {
-        self.fields
-            .remove(ident)
-            .map(|f| Box::new(f) as _)
-            .ok_or(error!("field [{}] does not exist.", ident.bold()))
+    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+        Ok(&mut self.fields)
+    }
+}
+
+impl DynStructure for ir::structures::register::Register {
+    fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
+        <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
+    }
+
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String> {
+        <Self as Structure>::get_child_mut(self, ident).map(|s| (s as &mut dyn DynStructure).into())
+    }
+
+    fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, String> {
+        <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
     }
 }
 
 impl Structure for ir::structures::field::Field {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String> {
+    type Child = ir::structures::variant::Variant;
+
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
         let Numericity::Enumerated { variants } = &self.numericity else {
             Err(error!(
                 "field [{}] is numeric and as such has no variants.",
@@ -233,13 +212,10 @@ impl Structure for ir::structures::field::Field {
             ))?
         };
 
-        variants
-            .get(ident)
-            .map(|v| (v as &dyn Structure).into())
-            .ok_or(error!("variant [{}] does not exist.", ident.bold()))
+        Ok(variants)
     }
 
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String> {
+    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
         let Numericity::Enumerated { variants } = &mut self.numericity else {
             Err(error!(
                 "field [{}] is numeric and as such has no variants.",
@@ -247,37 +223,46 @@ impl Structure for ir::structures::field::Field {
             ))?
         };
 
-        variants
-            .get_mut(ident)
-            .map(|v| (v as &mut dyn Structure).into())
-            .ok_or(error!("variant [{}] does not exist.", ident.bold()))
-    }
-
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String> {
-        let Numericity::Enumerated { variants } = &mut self.numericity else {
-            Err(error!(
-                "field [{}] is numeric and as such has no variants.",
-                self.ident.bold()
-            ))?
-        };
-
-        variants
-            .remove(ident)
-            .map(|v| Box::new(v) as _)
-            .ok_or(error!("variant [{}] does not exist.", ident.bold()))
+        Ok(variants)
     }
 }
 
-impl Structure for ir::structures::variant::Variant {
-    fn get_child<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn Structure>, String> {
-        Err(error!("variants do not have sub-structures."))
+impl DynStructure for ir::structures::field::Field {
+    fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
+        <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
 
-    fn get_child_mut<'a>(&'a mut self, ident: &str) -> Result<Box<&'a mut dyn Structure>, String> {
-        Err(error!("variants do not have sub-structures."))
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String> {
+        <Self as Structure>::get_child_mut(self, ident).map(|s| (s as &mut dyn DynStructure).into())
     }
 
-    fn remove_child(&mut self, ident: &str) -> Result<Box<dyn Structure>, String> {
-        Err(error!("variants do not have sub-structures."))
+    fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, String> {
+        <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
+    }
+}
+
+impl DynStructure for ir::structures::variant::Variant {
+    fn get_child_boxed<'a>(
+        &'a self,
+        #[allow(unused)] ident: &str,
+    ) -> Result<Box<&'a dyn DynStructure>, String> {
+        Err(error!("variants have no sub-structures."))
+    }
+
+    fn get_child_boxed_mut<'a>(
+        &'a mut self,
+        #[allow(unused)] ident: &str,
+    ) -> Result<Box<&'a mut dyn DynStructure>, String> {
+        Err(error!("variants have no sub-structures."))
+    }
+
+    fn remove_child_boxed(
+        &mut self,
+        #[allow(unused)] ident: &str,
+    ) -> Result<Box<dyn DynStructure>, String> {
+        Err(error!("variants have no sub-structures."))
     }
 }

@@ -2,10 +2,9 @@ use std::path::PathBuf;
 
 use clap::Args;
 use colored::Colorize;
-use ir::structures::field::Numericity;
 
 use crate::{
-    repl::{commands::create::FromParent, Repl},
+    repl::{commands::create::Structure, Repl},
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
@@ -35,31 +34,13 @@ impl CreateStructure for Variant {
         let mut segments =
             PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
 
-        let peripheral = ir::structures::peripheral::Peripheral::from_parent_mut(
-            model.hal,
-            &segments.next_segment()?,
-        )?;
-
-        let register = ir::structures::register::Register::from_parent_mut(
-            peripheral,
-            &segments.next_segment()?,
-        )?;
-
-        let field =
-            ir::structures::field::Field::from_parent_mut(register, &segments.next_segment()?)?;
+        let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
+        let register = peripheral.get_child_mut(&segments.next_segment()?)?;
+        let field = register.get_child_mut(&segments.next_segment()?)?;
 
         let ident = segments.next_segment()?;
 
-        let Numericity::Enumerated { variants } = &mut field.numericity else {
-            Err(error!(
-                "field [{}] is numeric and as such holds no variants.",
-                field.ident.bold(),
-            ))?
-        };
-
-        let None = variants.get(&ident) else {
-            Err(error!("variant [{}] already exists.", ident.bold(),))?
-        };
+        let variants = field.children_mut()?;
 
         let bits = match (&self.bits, self.next) {
             (Some(offset), true) => {

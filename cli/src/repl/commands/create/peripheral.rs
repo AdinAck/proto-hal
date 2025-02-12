@@ -1,7 +1,10 @@
 use clap::Args;
 use colored::Colorize;
 
-use crate::{repl::Repl, utils::numeric_value::NumericValue};
+use crate::{
+    repl::{commands::create::Structure, Repl},
+    utils::numeric_value::NumericValue,
+};
 
 use super::CreateStructure;
 
@@ -17,18 +20,13 @@ pub struct Peripheral {
 impl CreateStructure for Peripheral {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
         let ident = self.ident.to_uppercase();
-        let None = model.hal.peripherals.get(&ident) else {
-            Err(format!(
-                "{}: peripheral [{}] already exists.",
-                "error".red().bold(),
-                ident.bold()
-            ))?
-        };
 
-        model.hal.peripherals.insert(
-            ident.clone(),
-            ir::structures::peripheral::Peripheral::empty(ident.clone(), *self.base_addr),
-        );
+        model
+            .hal
+            .push_child(ir::structures::peripheral::Peripheral::empty(
+                ident.clone(),
+                *self.base_addr,
+            ))?;
 
         println!("{}: created [{}].", "success".green().bold(), ident.bold());
 
