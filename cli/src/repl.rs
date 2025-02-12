@@ -69,13 +69,9 @@ impl<'a> Repl<'a> {
 
     pub fn exit(&mut self) -> Result<(), String> {
         self.quit = if self.changes_pending() {
-            let decision = Self::confirmation_dialog()?;
+            
 
-            if decision {
-                true
-            } else {
-                false
-            }
+            Self::confirmation_dialog()?
         } else {
             true
         };
@@ -131,8 +127,8 @@ impl<'a> Repl<'a> {
             }
         }
 
-        if !fs::exists(&PathBuf::from(HOME_PATH).join(LOCAL_STORAGE_PATH)).unwrap() {
-            fs::create_dir_all(&PathBuf::from(HOME_PATH).join(LOCAL_STORAGE_PATH)).unwrap();
+        if !fs::exists(PathBuf::from(HOME_PATH).join(LOCAL_STORAGE_PATH)).unwrap() {
+            fs::create_dir_all(PathBuf::from(HOME_PATH).join(LOCAL_STORAGE_PATH)).unwrap();
         }
 
         rl.save_history(

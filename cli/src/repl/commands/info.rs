@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::repl::Repl;
 use clap::Args;
-use colored::Colorize;
 
 use super::Command;
 

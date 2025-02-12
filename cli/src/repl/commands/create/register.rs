@@ -61,7 +61,12 @@ impl CreateStructure for Register {
 
         println!(
             "{}",
-            success!("created [{}/{}].", peripheral.ident.bold(), ident.bold())
+            success!(
+                "created [{}] in [{}] at offset {}.",
+                ident.bold(),
+                peripheral.ident.bold(),
+                offset.to_string().bold(),
+            )
         );
 
         Ok(())

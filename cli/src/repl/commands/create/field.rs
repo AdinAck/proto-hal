@@ -81,7 +81,15 @@ impl CreateStructure for Field {
             },
         ))?;
 
-        println!("{}", success!("created [{}].", ident.bold()));
+        println!(
+            "{}",
+            success!(
+                "created [{}] in [{}] at offset {}.",
+                ident.bold(),
+                register.ident.bold(),
+                offset.to_string().bold(),
+            )
+        );
 
         Ok(())
     }

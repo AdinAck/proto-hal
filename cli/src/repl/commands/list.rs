@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{repl::Repl, utils::feedback::success};
+use crate::repl::Repl;
 use clap::Args;
 use prettytable::{row, Table};
 

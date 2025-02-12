@@ -3,7 +3,7 @@ use colored::Colorize;
 
 use crate::{
     repl::{commands::create::Structure, Repl},
-    utils::numeric_value::NumericValue,
+    utils::{feedback::success, numeric_value::NumericValue},
 };
 
 use super::CreateStructure;
@@ -28,7 +28,14 @@ impl CreateStructure for Peripheral {
                 *self.base_addr,
             ))?;
 
-        println!("{}: created [{}].", "success".green().bold(), ident.bold());
+        println!(
+            "{}",
+            success!(
+                "created [{}] at {}.",
+                ident.bold(),
+                format!("0x{:08x}", *self.base_addr).bold()
+            )
+        );
 
         Ok(())
     }

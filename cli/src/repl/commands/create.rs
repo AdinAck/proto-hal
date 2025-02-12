@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use crate::{repl::Repl, utils::feedback::error};
 use clap::Subcommand;
@@ -47,8 +47,8 @@ pub trait Structure {
 
     fn ident(&self) -> &str;
 
-    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String>;
-    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String>;
+    fn children(&self) -> Result<&HashMap<String, Self::Child>, String>;
+    fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String>;
 
     fn get_child<'a>(&'a self, ident: &str) -> Result<&'a Self::Child, String> {
         self.children()?.get(ident).ok_or(error!(
@@ -77,7 +77,7 @@ pub trait Structure {
     where
         Self::Child: Structure,
     {
-        self.get_child(&child.ident()).err().ok_or(error!(
+        self.get_child(child.ident()).err().ok_or(error!(
             "[{}] already exsts in [{}].",
             child.ident().bold(),
             self.ident().bold()
@@ -106,10 +106,10 @@ impl Structure for ir::structures::hal::Hal {
         "HAL"
     }
 
-    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+    fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.peripherals)
     }
-    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+    fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String> {
         Ok(&mut self.peripherals)
     }
 }
@@ -138,11 +138,11 @@ impl Structure for ir::structures::peripheral::Peripheral {
         &self.ident
     }
 
-    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+    fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.registers)
     }
 
-    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+    fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String> {
         Ok(&mut self.registers)
     }
 }
@@ -171,11 +171,11 @@ impl Structure for ir::structures::register::Register {
         &self.ident
     }
 
-    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+    fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.fields)
     }
 
-    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+    fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String> {
         Ok(&mut self.fields)
     }
 }
@@ -204,7 +204,7 @@ impl Structure for ir::structures::field::Field {
         &self.ident
     }
 
-    fn children<'a>(&'a self) -> Result<&'a HashMap<String, Self::Child>, String> {
+    fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         let Numericity::Enumerated { variants } = &self.numericity else {
             Err(error!(
                 "field [{}] is numeric and as such has no variants.",
@@ -215,7 +215,7 @@ impl Structure for ir::structures::field::Field {
         Ok(variants)
     }
 
-    fn children_mut<'a>(&'a mut self) -> Result<&'a mut HashMap<String, Self::Child>, String> {
+    fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String> {
         let Numericity::Enumerated { variants } = &mut self.numericity else {
             Err(error!(
                 "field [{}] is numeric and as such has no variants.",

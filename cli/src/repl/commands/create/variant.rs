@@ -63,7 +63,15 @@ impl CreateStructure for Variant {
             ir::structures::variant::Variant::empty(ident.clone(), bits),
         );
 
-        println!("{}", success!("created [{}].", ident.bold()));
+        println!(
+            "{}",
+            success!(
+                "created [{}] in [{}] with bit value {}.",
+                ident.bold(),
+                field.ident.bold(),
+                bits.to_string().bold()
+            )
+        );
 
         Ok(())
     }
