@@ -5,10 +5,8 @@ use ir::structures::field::Numericity;
 
 use crate::utils::feedback::error;
 
-pub trait Structure {
+pub trait Structure: DynStructure {
     type Child;
-
-    fn ident(&self) -> &str;
 
     fn children(&self) -> Result<&HashMap<String, Self::Child>, String>;
     fn children_mut(&mut self) -> Result<&mut HashMap<String, Self::Child>, String>;
@@ -53,6 +51,10 @@ pub trait Structure {
 }
 
 pub trait DynStructure {
+    fn ident(&self) -> &str;
+
+    fn info(&self) -> String;
+
     fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String>;
     fn get_child_boxed_mut<'a>(
         &'a mut self,
@@ -65,10 +67,6 @@ pub trait DynStructure {
 impl Structure for ir::structures::hal::Hal {
     type Child = ir::structures::peripheral::Peripheral;
 
-    fn ident(&self) -> &str {
-        "HAL"
-    }
-
     fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.peripherals)
     }
@@ -78,6 +76,41 @@ impl Structure for ir::structures::hal::Hal {
 }
 
 impl DynStructure for ir::structures::hal::Hal {
+    fn ident(&self) -> &str {
+        "HAL"
+    }
+
+    fn info(&self) -> String {
+        let min_addr = self
+            .peripherals
+            .values()
+            .map(|peripheral| peripheral.base_addr)
+            .min();
+
+        let max_addr = self
+            .peripherals
+            .values()
+            .max()
+            .map(|peripheral| peripheral.base_addr + peripheral.width());
+
+        let addr_space = {
+            if let (Some(min_addr), Some(max_addr)) = (min_addr, max_addr) {
+                let min_addr_str = format!("0x{:08x}", min_addr).bold();
+                let max_addr_str = format!("0x{:08x}", max_addr).bold();
+
+                format!("{}..{}", min_addr_str, max_addr_str,).into()
+            } else {
+                "-".bold()
+            }
+        };
+
+        format!(
+            "peripherals: {}\naddress space: {}",
+            self.peripherals.len().to_string().bold(),
+            addr_space,
+        )
+    }
+
     fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
         <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
@@ -97,10 +130,6 @@ impl DynStructure for ir::structures::hal::Hal {
 impl Structure for ir::structures::peripheral::Peripheral {
     type Child = ir::structures::register::Register;
 
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-
     fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.registers)
     }
@@ -111,6 +140,37 @@ impl Structure for ir::structures::peripheral::Peripheral {
 }
 
 impl DynStructure for ir::structures::peripheral::Peripheral {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    fn info(&self) -> String {
+        let max_addr = self.base_addr
+            + self
+                .registers
+                .values()
+                .max()
+                .map(|register| register.offset + 4)
+                .unwrap_or(0);
+
+        let addr_space = format!(
+            "address space: {}..{}",
+            format!("0x{:08x}", self.base_addr).bold(),
+            format!("0x{:08x}", max_addr).bold()
+        );
+        let entitlements = format!(
+            "entitlements: [{}]",
+            self.entitlements
+                .iter()
+                .map(|entitlement| entitlement.to_string().bold().to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let regsiters = format!("registers: {}", self.registers.len().to_string().bold());
+
+        vec![addr_space, entitlements, regsiters].join("\n")
+    }
+
     fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
         <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
@@ -130,10 +190,6 @@ impl DynStructure for ir::structures::peripheral::Peripheral {
 impl Structure for ir::structures::register::Register {
     type Child = ir::structures::field::Field;
 
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-
     fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         Ok(&self.fields)
     }
@@ -144,6 +200,17 @@ impl Structure for ir::structures::register::Register {
 }
 
 impl DynStructure for ir::structures::register::Register {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    fn info(&self) -> String {
+        let offset = format!("offset: {}", format!("0x{:02x}", self.offset).bold());
+        let fields = format!("fields: {}", self.fields.len().to_string().bold());
+
+        vec![offset, fields].join("\n")
+    }
+
     fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
         <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
@@ -162,10 +229,6 @@ impl DynStructure for ir::structures::register::Register {
 
 impl Structure for ir::structures::field::Field {
     type Child = ir::structures::variant::Variant;
-
-    fn ident(&self) -> &str {
-        &self.ident
-    }
 
     fn children(&self) -> Result<&HashMap<String, Self::Child>, String> {
         let Numericity::Enumerated { variants } = &self.numericity else {
@@ -191,6 +254,33 @@ impl Structure for ir::structures::field::Field {
 }
 
 impl DynStructure for ir::structures::field::Field {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    fn info(&self) -> String {
+        let offset = format!(
+            "offset: {}",
+            format!("0x{:02x} ({})", self.offset, self.offset).bold()
+        );
+
+        let (numericity, variants) = match &self.numericity {
+            Numericity::Numeric => ("numeric".bold().to_string(), None),
+            Numericity::Enumerated { variants } => (
+                "enumerated".bold().to_string(),
+                Some(format!("variants: {}", variants.len().to_string().bold())),
+            ),
+        };
+
+        let numericity = format!("numericity: {}", numericity);
+
+        vec![Some(offset), Some(numericity), variants]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn get_child_boxed<'a>(&'a self, ident: &str) -> Result<Box<&'a dyn DynStructure>, String> {
         <Self as Structure>::get_child(self, ident).map(|s| (s as &dyn DynStructure).into())
     }
@@ -208,6 +298,14 @@ impl DynStructure for ir::structures::field::Field {
 }
 
 impl DynStructure for ir::structures::variant::Variant {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    fn info(&self) -> String {
+        format!("bit value: {}", self.bits.to_string().bold())
+    }
+
     fn get_child_boxed<'a>(
         &'a self,
         #[allow(unused)] ident: &str,

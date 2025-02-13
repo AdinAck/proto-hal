@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::repl::Repl;
+use crate::{repl::Repl, structures::DynStructure};
 use clap::Args;
 
 use super::Command;
@@ -13,10 +13,23 @@ pub struct Info {
 impl Command for Info {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
         let Some(path) = &self.path else {
-            println!("nothing to display.");
+            println!("{}", model.hal.info());
 
             return Ok(());
         };
+
+        let segments = path
+            .iter()
+            .map(|s| s.to_str().unwrap().to_uppercase())
+            .peekable();
+
+        let mut structure: Box<&mut dyn DynStructure> = Box::new(model.hal);
+
+        for segment in segments {
+            structure = structure.get_child_boxed_mut(&segment)?;
+        }
+
+        println!("{}", structure.info());
 
         Ok(())
     }

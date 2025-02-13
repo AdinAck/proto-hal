@@ -36,7 +36,10 @@ pub enum Commands {
     Commit,
     #[command(about = "Discard pending changes")]
     Discard,
-    #[command(about = "List currently scoped structures or specified nested structures")]
+    #[command(alias = "l")]
+    #[command(
+        about = "List currently scoped structures or specified nested structures [alias: l]"
+    )]
     List,
     #[command(
         about = "Display info about currently scoped structure or specified nested structure"

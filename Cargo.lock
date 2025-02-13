@@ -374,6 +374,7 @@ name = "ir"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "tiva",
  "toml",
 ]
 
@@ -722,6 +723,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "tiva"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d86292e3f57bdfd4fe21a7b41390537d8657db2e4c9b78d803de18686ad433f3"
 
 [[package]]
 name = "toml"
