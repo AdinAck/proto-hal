@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use super::variant::Variant;
@@ -38,5 +39,20 @@ impl PartialOrd for Field {
 impl Ord for Field {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.offset.cmp(&other.offset)
+    }
+}
+
+impl ToTokens for Field {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = format_ident!("{}", self.ident);
+        let offset = &(self.offset as u32);
+        let width = &(self.width as u32);
+
+        tokens.extend(quote! {
+            pub mod #ident {
+                pub const OFFSET: u32 = #offset;
+                pub const WIDTH: u32 = #width;
+            }
+        });
     }
 }

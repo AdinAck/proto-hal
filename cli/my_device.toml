@@ -1,45 +1,17 @@
-[peripherals.CORDIC]
-ident = "CORDIC"
+[peripherals.cordic]
+ident = "cordic"
 base_addr = 1073875968
 entitlements = []
 
-[peripherals.CORDIC.registers.CSR]
-ident = "CSR"
+[peripherals.cordic.registers.csr]
+ident = "csr"
 offset = 0
 
-[peripherals.CORDIC.registers.CSR.fields.FUNC]
-ident = "FUNC"
+[peripherals.cordic.registers.csr.fields.func]
+ident = "func"
 offset = 0
 width = 4
 
-[peripherals.CORDIC.registers.CSR.fields.FUNC.numericity.Enumerated.variants.COS]
-ident = "COS"
+[peripherals.cordic.registers.csr.fields.func.numericity.Enumerated.variants.cos]
+ident = "cos"
 bits = 0
-
-[peripherals.RCC]
-ident = "RCC"
-base_addr = 1073876992
-entitlements = []
-
-[peripherals.RCC.registers]
-
-[peripherals.SYSCFG]
-ident = "SYSCFG"
-base_addr = 1073807360
-entitlements = []
-
-[peripherals.SYSCFG.registers]
-
-[peripherals.USART1]
-ident = "USART1"
-base_addr = 1073821696
-entitlements = []
-
-[peripherals.USART1.registers]
-
-[peripherals.GPIO]
-ident = "GPIO"
-base_addr = 1207959552
-entitlements = []
-
-[peripherals.GPIO.registers]

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use quote::ToTokens;
 use repl::Repl;
 use std::{fs, path::PathBuf};
 
@@ -10,9 +11,19 @@ mod utils;
 
 #[derive(Subcommand)]
 enum Commands {
-    Init { path: PathBuf },
-    Open { file_path: PathBuf },
-    Check { file_path: PathBuf },
+    Init {
+        path: PathBuf,
+    },
+    Open {
+        file_path: PathBuf,
+    },
+    Check {
+        file_path: PathBuf,
+    },
+    Generate {
+        input_file_path: PathBuf,
+        output_file_path: PathBuf,
+    },
 }
 
 #[derive(Parser)]
@@ -37,6 +48,14 @@ fn main() {
             let mut repl = Repl::new(&mut hal, &file_path);
 
             repl.run().unwrap();
+        }
+        Commands::Generate {
+            input_file_path,
+            output_file_path,
+        } => {
+            let hal: Hal = toml::from_str(&fs::read_to_string(&input_file_path).unwrap()).unwrap();
+
+            fs::write(output_file_path, hal.to_token_stream().to_string()).unwrap();
         }
         _ => todo!(),
     }

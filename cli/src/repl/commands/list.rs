@@ -16,7 +16,7 @@ impl Command for List {
         let mut structure: Box<&dyn DynStructure> = Box::new(model.hal);
 
         if let Some(path) = &self.path {
-            let mut segments = path.iter().map(|s| s.to_str().unwrap().to_uppercase());
+            let mut segments = path.iter().map(|s| s.to_str().unwrap().to_lowercase());
 
             loop {
                 let ident = segments.next().unwrap();

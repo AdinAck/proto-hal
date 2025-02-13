@@ -1,1 +1,1 @@
-
+pub mod diagnostic;

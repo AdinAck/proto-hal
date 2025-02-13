@@ -17,7 +17,7 @@ impl Remove {
         let mut segments = self
             .path
             .iter()
-            .map(|s| s.to_str().unwrap().to_uppercase())
+            .map(|s| s.to_str().unwrap().to_lowercase())
             .peekable();
 
         let mut structure: Box<&mut dyn DynStructure> = Box::new(hal);

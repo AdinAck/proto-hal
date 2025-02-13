@@ -31,7 +31,7 @@ pub struct Register {
 impl CreateStructure for Register {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
         let mut segments =
-            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
+            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_lowercase()));
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
 

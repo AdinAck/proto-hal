@@ -46,7 +46,7 @@ pub struct Field {
 impl CreateStructure for Field {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
         let mut segments =
-            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_uppercase()));
+            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_lowercase()));
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use super::field::Field;
@@ -31,5 +32,32 @@ impl PartialOrd for Register {
 impl Ord for Register {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.offset.cmp(&other.offset)
+    }
+}
+
+impl ToTokens for Register {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = format_ident!("{}", self.ident);
+
+        let field_idents = self
+            .fields
+            .values()
+            .map(|field| format_ident!("{}", field.ident));
+
+        let field_bodies = self.fields.values().map(|field| field.to_token_stream());
+
+        tokens.extend(quote! {
+            pub mod #ident {
+                #(
+                    #field_bodies
+                )*
+
+                pub struct Reset {
+                    #(
+                        #field_idents: #field_idents::Reset,
+                    )*
+                }
+            }
+        });
     }
 }

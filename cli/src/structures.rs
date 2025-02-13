@@ -77,7 +77,7 @@ impl Structure for ir::structures::hal::Hal {
 
 impl DynStructure for ir::structures::hal::Hal {
     fn ident(&self) -> &str {
-        "HAL"
+        "hal"
     }
 
     fn info(&self) -> String {

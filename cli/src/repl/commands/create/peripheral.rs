@@ -20,7 +20,7 @@ pub struct Peripheral {
 
 impl CreateStructure for Peripheral {
     fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let ident = self.ident.to_uppercase();
+        let ident = self.ident.to_lowercase();
 
         model
             .hal
