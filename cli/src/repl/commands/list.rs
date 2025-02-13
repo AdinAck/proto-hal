@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use crate::repl::Repl;
+use crate::{repl::Repl, structures::DynStructure};
 use clap::Args;
 use prettytable::{row, Table};
 
-use super::{create::DynStructure, Command};
+use super::Command;
 
 #[derive(Debug, Clone, Args)]
 pub struct List {
@@ -36,7 +36,7 @@ impl Command for List {
         for peripheral in peripherals {
             let addr = peripheral.base_addr;
 
-            table.add_row(row![b -> format!("0x{addr:x}"), FBb -> peripheral.ident]);
+            table.add_row(row![b -> format!("0x{addr:08x}"), FBb -> peripheral.ident]);
         }
 
         table.printstd();

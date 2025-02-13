@@ -5,6 +5,7 @@ use std::{fs, path::PathBuf};
 use ir::structures::hal::Hal;
 
 mod repl;
+mod structures;
 mod utils;
 
 #[derive(Subcommand)]

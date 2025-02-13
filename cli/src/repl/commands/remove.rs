@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{
-    repl::{commands::create::DynStructure, Repl},
-    utils::feedback::success,
-};
+use crate::{repl::Repl, structures::DynStructure, utils::feedback::success};
 use clap::Args;
 use colored::Colorize;
 use ir::structures::hal::Hal;

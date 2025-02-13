@@ -4,7 +4,8 @@ use clap::Args;
 use colored::Colorize;
 
 use crate::{
-    repl::{commands::create::Structure, Repl},
+    repl::Repl,
+    structures::Structure,
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
