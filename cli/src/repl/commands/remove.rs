@@ -1,6 +1,8 @@
-use std::path::PathBuf;
-
-use crate::{repl::Repl, structures::DynStructure, utils::feedback::success};
+use crate::{
+    repl::Repl,
+    structures::DynStructure,
+    utils::{feedback::success, path::Path},
+};
 use clap::Args;
 use colored::Colorize;
 use ir::structures::hal::Hal;
@@ -9,7 +11,7 @@ use super::Command;
 
 #[derive(Debug, Clone, Args)]
 pub struct Remove {
-    path: PathBuf,
+    path: Path,
 }
 
 impl Remove {
@@ -17,10 +19,10 @@ impl Remove {
         let mut segments = self
             .path
             .iter()
-            .map(|s| s.to_str().unwrap().to_lowercase())
+            .map(|segment| segment.to_lowercase())
             .peekable();
 
-        let mut structure: Box<&mut dyn DynStructure> = Box::new(hal);
+        let mut structure: &mut dyn DynStructure = hal;
 
         loop {
             let ident = segments.next().unwrap();
@@ -30,7 +32,7 @@ impl Remove {
                     .remove_child_boxed(&ident)
                     .map(|_| success!("removed [{}].", ident.bold()));
             }
-            structure = structure.get_child_boxed_mut(&ident)?;
+            structure = structure.get_child_dyn_mut(&ident)?;
         }
     }
 }

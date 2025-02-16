@@ -1,24 +1,20 @@
-use std::path::PathBuf;
-
 use clap::Args;
 use colored::Colorize;
 
 use crate::{
-    repl::Repl,
+    repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
-        path::PathIter,
+        path::{Path, PathIter},
     },
 };
 
-use super::CreateStructure;
-
 #[derive(Debug, Clone, Args)]
-pub struct Register {
+pub struct CreateRegister {
     #[arg(help = "Path to the register")]
-    path: PathBuf,
+    path: Path,
     #[arg(help = "Register offset (bytes) within the peripheral")]
     #[arg(value_parser = clap::value_parser!(NumericValue))]
     offset: Option<NumericValue>,
@@ -28,10 +24,9 @@ pub struct Register {
     next: bool,
 }
 
-impl CreateStructure for Register {
-    fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments =
-            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_lowercase()));
+impl Command for CreateRegister {
+    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
 

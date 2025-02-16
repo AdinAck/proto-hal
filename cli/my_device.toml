@@ -1,3 +1,14 @@
+[peripherals.rcc]
+ident = "rcc"
+base_addr = 1073876992
+entitlements = []
+
+[peripherals.rcc.registers.ahb1enr]
+ident = "ahb1enr"
+offset = 0
+
+[peripherals.rcc.registers.ahb1enr.fields]
+
 [peripherals.cordic]
 ident = "cordic"
 base_addr = 1073875968

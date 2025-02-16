@@ -1,24 +1,20 @@
-use std::path::PathBuf;
-
 use clap::Args;
 use colored::Colorize;
 
 use crate::{
-    repl::Repl,
+    repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
-        path::PathIter,
+        path::{Path, PathIter},
     },
 };
 
-use super::CreateStructure;
-
 #[derive(Debug, Clone, Args)]
-pub struct Variant {
+pub struct CreateVariant {
     #[arg(help = "Path to the variant")]
-    path: PathBuf,
+    path: Path,
     #[arg(help = "The bit value this variant corresponds to")]
     #[arg(value_parser = clap::value_parser!(NumericValue))]
     bits: Option<NumericValue>,
@@ -30,10 +26,9 @@ pub struct Variant {
     next: bool,
 }
 
-impl CreateStructure for Variant {
-    fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments =
-            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_lowercase()));
+impl Command for CreateVariant {
+    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;

@@ -1,32 +1,25 @@
-use std::path::PathBuf;
-
-use crate::{repl::Repl, structures::DynStructure};
+use crate::{repl::Repl, structures::DynStructure, utils::path::Path};
 use clap::Args;
 
 use super::Command;
 
 #[derive(Debug, Clone, Args)]
 pub struct Info {
-    path: Option<PathBuf>,
+    path: Option<Path>,
 }
 
 impl Command for Info {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let Some(path) = &self.path else {
-            println!("{}", model.hal.info());
+        let path = model
+            .select_path
+            .join(self.path.as_ref().unwrap_or(&Path::empty()));
 
-            return Ok(());
-        };
+        let segments = path.iter().map(|segment| segment.to_lowercase()).peekable();
 
-        let segments = path
-            .iter()
-            .map(|s| s.to_str().unwrap().to_lowercase())
-            .peekable();
-
-        let mut structure: Box<&mut dyn DynStructure> = Box::new(model.hal);
+        let mut structure: &mut dyn DynStructure = model.hal;
 
         for segment in segments {
-            structure = structure.get_child_boxed_mut(&segment)?;
+            structure = structure.get_child_dyn_mut(&segment)?;
         }
 
         println!("{}", structure.info());

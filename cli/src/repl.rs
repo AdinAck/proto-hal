@@ -1,9 +1,17 @@
 use clap::Parser;
 use colored::Colorize;
-use commands::{Command, Commands};
+use commands::{
+    Command as _, CommandsAtField, CommandsAtHal, CommandsAtPeripheral, CommandsAtRegister,
+    CommandsAtVariant,
+};
 use ir::structures::hal::Hal;
 use rustyline::{config::Configurer, error::ReadlineError, DefaultEditor};
 use std::{fs, path::PathBuf};
+
+use crate::{
+    structures::{DynStructure, StructureKind},
+    utils::{feedback::error, path::Path},
+};
 
 pub mod commands;
 
@@ -16,6 +24,9 @@ pub struct Repl<'a> {
     old_hal: Hal,
     file: &'a PathBuf,
 
+    select_path: Path,
+    structure: StructureKind,
+
     quit: bool,
 }
 
@@ -26,14 +37,38 @@ impl<'a> Repl<'a> {
             hal,
             old_hal,
             file,
+            select_path: Path::empty(),
+            structure: StructureKind::Hal,
             quit: false,
         }
     }
 
     fn respond(&mut self, cmd: &str) -> Result<(), String> {
         let args = shlex::split(cmd).ok_or("error: Invalid quoting")?;
-        let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
-        cli.command.execute(self)?;
+
+        match &self.structure {
+            StructureKind::Hal => {
+                let cli = CliAtHal::try_parse_from(args).map_err(|e| e.to_string())?;
+                cli.command.execute(self)?;
+            }
+            StructureKind::Peripheral => {
+                let cli = CliAtPeripheral::try_parse_from(args).map_err(|e| e.to_string())?;
+                cli.command.execute(self)?;
+            }
+            StructureKind::Register => {
+                let cli = CliAtRegister::try_parse_from(args).map_err(|e| e.to_string())?;
+                cli.command.execute(self)?;
+            }
+            StructureKind::Field => {
+                let cli = CliAtField::try_parse_from(args).map_err(|e| e.to_string())?;
+                cli.command.execute(self)?;
+            }
+            StructureKind::Variant => {
+                let cli = CliAtVariant::try_parse_from(args).map_err(|e| e.to_string())?;
+                cli.command.execute(self)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -60,23 +95,98 @@ impl<'a> Repl<'a> {
     }
 
     fn prompt(&self) -> String {
-        if !self.changes_pending() {
-            format!("{}> ", "proto-hal".green().bold())
-        } else {
-            format!("{} ({})> ", "proto-hal".green().bold(), "?".yellow().bold())
+        let mut components = vec!["proto-hal".green().bold().to_string()];
+
+        if self.select_path.to_string() != "" {
+            components.push(self.select_path.to_string());
         }
+
+        if self.changes_pending() {
+            components.push(format!("({})", "?".yellow().bold()));
+        }
+
+        let mut prompt = components.join(" ");
+        prompt.push_str("> ");
+
+        prompt
     }
 
     pub fn exit(&mut self) -> Result<(), String> {
         self.quit = if self.changes_pending() {
-            
-
             Self::confirmation_dialog()?
         } else {
             true
         };
 
         Ok(())
+    }
+
+    pub fn select(&mut self, path: &Path) -> Result<(), String> {
+        for segment in path.iter() {
+            let (new_structure, new_path) = match segment {
+                ".." => {
+                    let ident = self.select_path.iter().last().unwrap_or("hal");
+                    (
+                        self.structure
+                            .parent()
+                            .ok_or(error!("{ident} has no parent."))?,
+                        {
+                            let mut path = self.select_path.clone();
+                            path.pop();
+                            path
+                        },
+                    )
+                }
+                "/" => (StructureKind::Hal, Path::empty()),
+                _ => (
+                    self.structure
+                        .child()
+                        .ok_or(error!("{segment} has no children."))?,
+                    { self.select_path.join(&segment.into()) },
+                ),
+            };
+
+            let mut structure: &dyn DynStructure = self.hal;
+
+            for segment in new_path.iter() {
+                structure = structure.get_child_dyn(segment)?;
+            }
+
+            self.select_path = new_path;
+            self.structure = new_structure;
+        }
+
+        Ok(())
+    }
+
+    pub fn get_structure_from_path(
+        &self,
+        path: Option<&Path>,
+    ) -> Result<&dyn DynStructure, String> {
+        let mut structure: &dyn DynStructure = self.hal;
+
+        let path = self.select_path.join(path.unwrap_or(&Path::empty()));
+
+        for segment in path.iter() {
+            structure = structure.get_child_dyn(segment)?;
+        }
+
+        Ok(structure)
+    }
+
+    pub fn get_structure_from_path_mut(
+        &mut self,
+        path: Option<&Path>,
+    ) -> Result<&mut dyn DynStructure, String> {
+        let mut structure: &mut dyn DynStructure = self.hal;
+
+        let path = self.select_path.join(path.unwrap_or(&Path::empty()));
+
+        for segment in path.iter() {
+            structure = structure.get_child_dyn_mut(segment)?;
+        }
+
+        Ok(structure)
     }
 
     pub fn run(&mut self) -> Result<(), String> {
@@ -144,7 +254,35 @@ impl<'a> Repl<'a> {
 
 #[derive(Debug, Parser)]
 #[command(multicall = true)]
-struct Cli {
+struct CliAtHal {
     #[command(subcommand)]
-    command: Commands,
+    command: CommandsAtHal,
+}
+
+#[derive(Debug, Parser)]
+#[command(multicall = true)]
+struct CliAtPeripheral {
+    #[command(subcommand)]
+    command: CommandsAtPeripheral,
+}
+
+#[derive(Debug, Parser)]
+#[command(multicall = true)]
+struct CliAtRegister {
+    #[command(subcommand)]
+    command: CommandsAtRegister,
+}
+
+#[derive(Debug, Parser)]
+#[command(multicall = true)]
+struct CliAtField {
+    #[command(subcommand)]
+    command: CommandsAtField,
+}
+
+#[derive(Debug, Parser)]
+#[command(multicall = true)]
+struct CliAtVariant {
+    #[command(subcommand)]
+    command: CommandsAtVariant,
 }

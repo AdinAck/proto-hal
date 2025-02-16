@@ -1,19 +1,17 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use clap::{Args, ValueEnum};
 use colored::Colorize;
 
 use crate::{
-    repl::Repl,
+    repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
         feedback::{error, success, warning},
         numeric_value::NumericValue,
-        path::PathIter,
+        path::{Path, PathIter},
     },
 };
-
-use super::CreateStructure;
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Numericity {
@@ -23,18 +21,19 @@ enum Numericity {
 }
 
 #[derive(Debug, Clone, Args)]
-pub struct Field {
+pub struct CreateField {
     #[arg(help = "Path to the field")]
-    path: PathBuf,
+    path: Path,
     #[arg(help = "The width (bits) of the field")]
     #[arg(value_parser = clap::value_parser!(NumericValue))]
     width: NumericValue,
     #[arg(
-        help = "The numericity of the field. A field's state either represents a purely numeric value, or enumerated variants."
+        long,
+        help = "The numericity of the field. A field's state either represents a purely numeric value, or enumerated variants"
     )]
     #[arg(default_value = "enumerated")]
     numericity: Numericity,
-    #[arg(help = "Field offset (bits) within the register")]
+    #[arg(short, long, help = "Field offset (bits) within the register")]
     #[arg(value_parser = clap::value_parser!(NumericValue))]
     offset: Option<NumericValue>,
 
@@ -43,10 +42,9 @@ pub struct Field {
     next: bool,
 }
 
-impl CreateStructure for Field {
-    fn create(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments =
-            PathIter::new(self.path.iter().map(|s| s.to_str().unwrap().to_lowercase()));
+impl Command for CreateField {
+    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;

@@ -14,3 +14,12 @@ rustyline = "15.0.0"
 enum_dispatch = "0.3.13"
 prettytable = "0.10.0"
 quote = "1.0.38"
+termtree = "0.5.1"
+
+# crates of interest
+# https://crates.io/crates/termtree
+# https://crates.io/crates/indicatif
+# https://crates.io/crates/clap_complete
+# https://crates.io/crates/rustyline-derive
+# https://crates.io/crates/dialoguer
+# https://crates.io/crates/cli-table

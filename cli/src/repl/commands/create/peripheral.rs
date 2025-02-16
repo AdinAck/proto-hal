@@ -2,15 +2,13 @@ use clap::Args;
 use colored::Colorize;
 
 use crate::{
-    repl::Repl,
+    repl::{commands::Command, Repl},
     structures::Structure,
     utils::{feedback::success, numeric_value::NumericValue},
 };
 
-use super::CreateStructure;
-
 #[derive(Debug, Clone, Args)]
-pub struct Peripheral {
+pub struct CreatePeripheral {
     #[arg(help = "The peripheral identifier")]
     ident: String,
     #[arg(help = "The base address of the peripheral (base 10 or base 16)")]
@@ -18,8 +16,8 @@ pub struct Peripheral {
     base_addr: NumericValue,
 }
 
-impl CreateStructure for Peripheral {
-    fn create(&self, model: &mut Repl) -> Result<(), String> {
+impl Command for CreatePeripheral {
+    fn execute(&self, model: &mut Repl) -> Result<(), String> {
         let ident = self.ident.to_lowercase();
 
         model

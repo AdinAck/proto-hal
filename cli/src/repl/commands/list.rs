@@ -1,6 +1,4 @@
-use std::path::PathBuf;
-
-use crate::{repl::Repl, structures::DynStructure};
+use crate::{repl::Repl, structures::DynStructure, utils::path::Path};
 use clap::Args;
 use prettytable::{row, Table};
 
@@ -8,20 +6,20 @@ use super::Command;
 
 #[derive(Debug, Clone, Args)]
 pub struct List {
-    path: Option<PathBuf>,
+    path: Option<Path>,
 }
 
 impl Command for List {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut structure: Box<&dyn DynStructure> = Box::new(model.hal);
+        let mut structure: &dyn DynStructure = model.hal;
 
         if let Some(path) = &self.path {
-            let mut segments = path.iter().map(|s| s.to_str().unwrap().to_lowercase());
+            let mut segments = path.iter().map(|segment| segment.to_lowercase());
 
             loop {
                 let ident = segments.next().unwrap();
 
-                structure = structure.get_child_boxed(&ident)?;
+                structure = structure.get_child_dyn(&ident)?;
             }
         }
 
