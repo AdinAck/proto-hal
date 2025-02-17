@@ -10,6 +10,12 @@ pub struct Tree {
     depth: Option<usize>,
 }
 
+impl Tree {
+    pub const fn new(path: Option<Path>, depth: Option<usize>) -> Self {
+        Self { path, depth }
+    }
+}
+
 impl Command for Tree {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
         let structure = model.get_structure_from_path(&model.absolute_path(self.path.as_ref())?)?;

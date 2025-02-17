@@ -88,16 +88,14 @@ pub enum GlobalCommands {
     Commit,
     #[command(about = "Discard pending changes")]
     Discard,
-    #[command(alias = "l")]
+    #[command(visible_alias = "t")]
     #[command(
-        about = "List currently scoped structures or specified nested structures [alias: l]"
-    )]
-    List,
-    #[command(alias = "t")]
-    #[command(
-        about = "Display a tree view of currently scoped structures or specified nested structures [alias: t]"
+        about = "Display a tree view of currently scoped structures or specified nested structures"
     )]
     Tree,
+    #[command(visible_alias = "l")]
+    #[command(about = "List currently scoped structures or specified nested structures")]
+    List,
     #[command(
         about = "Display info about currently scoped structure or specified nested structure"
     )]
