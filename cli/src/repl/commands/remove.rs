@@ -17,7 +17,7 @@ pub struct Remove {
 
 impl Command for Remove {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut path = model.absolute_path(Some(&self.path))?;
+        let mut path = model.absolute_path(Some(&self.path));
 
         let target_ident = path.pop().ok_or(error!("nothing to remove."))?;
 
@@ -28,12 +28,12 @@ impl Command for Remove {
         // select_path may have been withing removed structure
         let mut new_path = self.path.clone();
 
-        while let Err(_) = model.absolute_path(Some(&new_path)) {
+        while let Err(_) = model.validate_path(&model.absolute_path(Some(&new_path))) {
             new_path = new_path.join(&"..".into());
         }
 
         // select closest path that was not removed
-        model.select(&model.absolute_path(Some(&new_path))?)?;
+        model.select(&model.absolute_path(Some(&new_path)))?;
 
         println!("{}", success!("removed [{}].", target_ident.bold()));
 

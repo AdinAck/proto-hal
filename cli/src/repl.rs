@@ -127,9 +127,9 @@ impl<'a> Repl<'a> {
         Ok(())
     }
 
-    pub fn absolute_path(&self, path: Option<&Path>) -> Result<Path, String> {
+    pub fn absolute_path(&self, path: Option<&Path>) -> Path {
         let Some(path) = path else {
-            return Ok(self.select_path.clone());
+            return self.select_path.clone();
         };
 
         let mut new_path = self.select_path.clone();
@@ -144,9 +144,7 @@ impl<'a> Repl<'a> {
             };
         }
 
-        self.validate_path(&new_path)?;
-
-        Ok(new_path)
+        new_path
     }
 
     pub fn validate_path(&self, path: &Path) -> Result<(), String> {

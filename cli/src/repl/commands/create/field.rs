@@ -44,7 +44,8 @@ pub struct CreateField {
 
 impl Command for CreateField {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = PathIter::new(self.path.iter());
+        let path = model.absolute_path(Some(&self.path));
+        let mut segments = PathIter::new(path.iter());
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;

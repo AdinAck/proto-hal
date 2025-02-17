@@ -18,7 +18,7 @@ impl Tree {
 
 impl Command for Tree {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let structure = model.get_structure_from_path(&model.absolute_path(self.path.as_ref())?)?;
+        let structure = model.get_structure_from_path(&model.absolute_path(self.path.as_ref()))?;
 
         println!("{}", structure.tree(self.depth));
 
