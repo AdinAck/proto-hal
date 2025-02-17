@@ -11,6 +11,7 @@ use exit::Exit;
 use info::Info;
 use list::List;
 use remove::Remove;
+use script::Script;
 use select::Select;
 use tree::Tree;
 
@@ -24,6 +25,7 @@ pub mod exit;
 pub mod info;
 pub mod list;
 pub mod remove;
+pub mod script;
 pub mod select;
 pub mod tree;
 
@@ -102,8 +104,11 @@ pub enum GlobalCommands {
     Info,
     #[command(about = "View a diff view of pending changes")]
     Diff,
+    #[command(visible_alias = "cd")]
     #[command(about = "Select a structure")]
     Select,
+    #[command(about = "Load and run a script")]
+    Script,
     #[command(about = "Exit the interactive REPL")]
     Exit,
 }

@@ -43,7 +43,7 @@ impl<'a> Repl<'a> {
         }
     }
 
-    fn respond(&mut self, cmd: &str) -> Result<(), String> {
+    fn execute(&mut self, cmd: &str) -> Result<(), String> {
         let args = shlex::split(cmd).ok_or("error: Invalid quoting")?;
 
         match &self.structure {
@@ -98,7 +98,13 @@ impl<'a> Repl<'a> {
         let mut components = vec!["proto-hal".green().bold().to_string()];
 
         if self.select_path.to_string() != "" {
-            components.push(self.select_path.to_string());
+            components.push(
+                self.select_path
+                    .iter()
+                    .map(|segment| segment.bold().to_string())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            );
         }
 
         if self.changes_pending() {
@@ -222,7 +228,7 @@ impl<'a> Repl<'a> {
                 }
 
                 // attemp the execute the command
-                if let Err(e) = self.respond(&cmd) {
+                if let Err(e) = self.execute(&cmd) {
                     // if the command errors, report the error
                     eprintln!("{e}");
                 }

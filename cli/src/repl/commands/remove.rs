@@ -25,12 +25,14 @@ impl Command for Remove {
 
         parent.remove_child_boxed(&target_ident)?;
 
+        // select_path may have been withing removed structure
         let mut new_path = self.path.clone();
 
         while let Err(_) = model.absolute_path(Some(&new_path)) {
             new_path = new_path.join(&"..".into());
         }
 
+        // select closest path that was not removed
         model.select(&model.absolute_path(Some(&new_path))?)?;
 
         println!("{}", success!("removed [{}].", target_ident.bold()));
