@@ -10,12 +10,6 @@ pub struct Select {
 
 impl Command for Select {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        if let Some(path) = &self.path {
-            model.select(path)?;
-        } else {
-            model.select_path = Path::empty();
-        }
-
-        Ok(())
+        model.select(&model.absolute_path(self.path.as_ref())?)
     }
 }

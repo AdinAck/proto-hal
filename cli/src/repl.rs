@@ -121,51 +121,50 @@ impl<'a> Repl<'a> {
         Ok(())
     }
 
-    pub fn select(&mut self, path: &Path) -> Result<(), String> {
+    pub fn absolute_path(&self, path: Option<&Path>) -> Result<Path, String> {
+        let Some(path) = path else {
+            return Ok(self.select_path.clone());
+        };
+
+        let mut new_path = self.select_path.clone();
         for segment in path.iter() {
-            let (new_structure, new_path) = match segment {
+            new_path = match segment {
                 ".." => {
-                    let ident = self.select_path.iter().last().unwrap_or("hal");
-                    (
-                        self.structure
-                            .parent()
-                            .ok_or(error!("{ident} has no parent."))?,
-                        {
-                            let mut path = self.select_path.clone();
-                            path.pop();
-                            path
-                        },
-                    )
+                    new_path.pop();
+                    new_path
                 }
-                "/" => (StructureKind::Hal, Path::empty()),
-                _ => (
-                    self.structure
-                        .child()
-                        .ok_or(error!("{segment} has no children."))?,
-                    { self.select_path.join(&segment.into()) },
-                ),
+                "/" => Path::empty(),
+                _ => new_path.join(&segment.into()),
             };
-
-            let mut structure: &dyn DynStructure = self.hal;
-
-            for segment in new_path.iter() {
-                structure = structure.get_child_dyn(segment)?;
-            }
-
-            self.select_path = new_path;
-            self.structure = new_structure;
         }
+
+        self.validate_path(&new_path)?;
+
+        Ok(new_path)
+    }
+
+    pub fn validate_path(&self, path: &Path) -> Result<(), String> {
+        self.get_structure_from_path(path)?;
 
         Ok(())
     }
 
-    pub fn get_structure_from_path(
-        &self,
-        path: Option<&Path>,
-    ) -> Result<&dyn DynStructure, String> {
-        let mut structure: &dyn DynStructure = self.hal;
+    pub fn select(&mut self, path: &Path) -> Result<(), String> {
+        let mut kind = StructureKind::Hal;
+        for segment in path.iter() {
+            kind = kind
+                .child()
+                .ok_or(error!("[{}] has no children.", segment.bold()))?;
+        }
 
-        let path = self.select_path.join(path.unwrap_or(&Path::empty()));
+        self.structure = kind;
+        self.select_path = path.clone();
+
+        Ok(())
+    }
+
+    pub fn get_structure_from_path(&self, path: &Path) -> Result<&dyn DynStructure, String> {
+        let mut structure: &dyn DynStructure = self.hal;
 
         for segment in path.iter() {
             structure = structure.get_child_dyn(segment)?;
@@ -176,11 +175,9 @@ impl<'a> Repl<'a> {
 
     pub fn get_structure_from_path_mut(
         &mut self,
-        path: Option<&Path>,
+        path: &Path,
     ) -> Result<&mut dyn DynStructure, String> {
         let mut structure: &mut dyn DynStructure = self.hal;
-
-        let path = self.select_path.join(path.unwrap_or(&Path::empty()));
 
         for segment in path.iter() {
             structure = structure.get_child_dyn_mut(segment)?;

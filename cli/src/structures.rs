@@ -84,7 +84,8 @@ pub trait Structure: DynStructure {
 pub trait DynStructure {
     fn ident(&self) -> &str;
     fn info(&self) -> String;
-    fn tree(&self) -> termtree::Tree<String>;
+    fn tree(&self, depth: Option<usize>) -> termtree::Tree<String>;
+    fn kind(&self) -> StructureKind;
 
     fn get_child_dyn<'a>(&'a self, ident: &str) -> Result<&'a dyn DynStructure, String>;
     fn get_child_dyn_mut<'a>(&'a mut self, ident: &str)
@@ -140,14 +141,24 @@ impl DynStructure for ir::structures::hal::Hal {
         )
     }
 
-    fn tree(&self) -> termtree::Tree<String> {
+    fn tree(&self, depth: Option<usize>) -> termtree::Tree<String> {
         let mut tree = termtree::Tree::new(self.ident().to_owned());
 
-        if let Ok(children) = <Self as Structure>::children(&self) {
-            tree = tree.with_leaves(children.values().map(|child| child.tree()));
+        if depth.is_none_or(|depth| depth > 0) {
+            if let Ok(children) = <Self as Structure>::children(&self) {
+                tree = tree.with_leaves(
+                    children
+                        .values()
+                        .map(|child| child.tree(depth.map(|depth| depth - 1))),
+                );
+            }
         }
 
         tree
+    }
+
+    fn kind(&self) -> StructureKind {
+        StructureKind::Hal
     }
 
     fn get_child_dyn<'a>(&'a self, ident: &str) -> Result<&'a dyn DynStructure, String> {
@@ -210,18 +221,28 @@ impl DynStructure for ir::structures::peripheral::Peripheral {
         vec![addr_space, entitlements, regsiters].join("\n")
     }
 
-    fn tree(&self) -> termtree::Tree<String> {
+    fn tree(&self, depth: Option<usize>) -> termtree::Tree<String> {
         let mut tree = termtree::Tree::new(format!(
             "{}: {}",
             format!("0x{:08x}", self.base_addr).bold(),
             self.ident().bold()
         ));
 
-        if let Ok(children) = <Self as Structure>::children(&self) {
-            tree = tree.with_leaves(children.values().map(|child| child.tree()));
+        if depth.is_none_or(|depth| depth > 0) {
+            if let Ok(children) = <Self as Structure>::children(&self) {
+                tree = tree.with_leaves(
+                    children
+                        .values()
+                        .map(|child| child.tree(depth.map(|depth| depth - 1))),
+                );
+            }
         }
 
         tree
+    }
+
+    fn kind(&self) -> StructureKind {
+        StructureKind::Peripheral
     }
 
     fn get_child_dyn<'a>(&'a self, ident: &str) -> Result<&'a dyn DynStructure, String> {
@@ -264,18 +285,28 @@ impl DynStructure for ir::structures::register::Register {
         vec![offset, fields].join("\n")
     }
 
-    fn tree(&self) -> termtree::Tree<String> {
+    fn tree(&self, depth: Option<usize>) -> termtree::Tree<String> {
         let mut tree = termtree::Tree::new(format!(
             "{}: {}",
             format!("0x{:02x}", self.offset).bold(),
             self.ident().bold()
         ));
 
-        if let Ok(children) = <Self as Structure>::children(&self) {
-            tree = tree.with_leaves(children.values().map(|child| child.tree()));
+        if depth.is_none_or(|depth| depth > 0) {
+            if let Ok(children) = <Self as Structure>::children(&self) {
+                tree = tree.with_leaves(
+                    children
+                        .values()
+                        .map(|child| child.tree(depth.map(|depth| depth - 1))),
+                );
+            }
         }
 
         tree
+    }
+
+    fn kind(&self) -> StructureKind {
+        StructureKind::Register
     }
 
     fn get_child_dyn<'a>(&'a self, ident: &str) -> Result<&'a dyn DynStructure, String> {
@@ -348,18 +379,28 @@ impl DynStructure for ir::structures::field::Field {
             .join("\n")
     }
 
-    fn tree(&self) -> termtree::Tree<String> {
+    fn tree(&self, depth: Option<usize>) -> termtree::Tree<String> {
         let mut tree = termtree::Tree::new(format!(
             "{}: {}",
             self.offset.to_string().bold(),
             self.ident().bold()
         ));
 
-        if let Ok(children) = <Self as Structure>::children(&self) {
-            tree = tree.with_leaves(children.values().map(|child| child.tree()));
+        if depth.is_none_or(|depth| depth > 0) {
+            if let Ok(children) = <Self as Structure>::children(&self) {
+                tree = tree.with_leaves(
+                    children
+                        .values()
+                        .map(|child| child.tree(depth.map(|depth| depth - 1))),
+                );
+            }
         }
 
         tree
+    }
+
+    fn kind(&self) -> StructureKind {
+        StructureKind::Field
     }
 
     fn get_child_dyn<'a>(&'a self, ident: &str) -> Result<&'a dyn DynStructure, String> {
@@ -387,12 +428,16 @@ impl DynStructure for ir::structures::variant::Variant {
         format!("bit value: {}", self.bits.to_string().bold())
     }
 
-    fn tree(&self) -> termtree::Tree<String> {
+    fn tree(&self, _depth: Option<usize>) -> termtree::Tree<String> {
         termtree::Tree::new(format!(
             "{}: {}",
             self.bits.to_string().bold(),
             self.ident().bold()
         ))
+    }
+
+    fn kind(&self) -> StructureKind {
+        StructureKind::Variant
     }
 
     fn get_child_dyn<'a>(
