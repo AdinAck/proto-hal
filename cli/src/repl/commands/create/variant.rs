@@ -28,7 +28,7 @@ pub struct CreateVariant {
 
 impl Command for CreateVariant {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
+        let mut segments = PathIter::new(self.path.iter());
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;
@@ -55,8 +55,8 @@ impl Command for CreateVariant {
         };
 
         variants.insert(
-            ident.clone(),
-            ir::structures::variant::Variant::empty(ident.clone(), bits),
+            ident.to_owned(),
+            ir::structures::variant::Variant::empty(ident.to_owned(), bits),
         );
 
         println!(

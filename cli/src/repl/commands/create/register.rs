@@ -26,7 +26,7 @@ pub struct CreateRegister {
 
 impl Command for CreateRegister {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
+        let mut segments = PathIter::new(self.path.iter());
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
 
@@ -51,7 +51,7 @@ impl Command for CreateRegister {
         };
 
         peripheral.push_child(ir::structures::register::Register::empty(
-            ident.clone(),
+            ident.to_owned(),
             offset,
         ))?;
 

@@ -44,7 +44,7 @@ pub struct CreateField {
 
 impl Command for CreateField {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let mut segments = PathIter::new(self.path.iter().map(|segment| segment.to_lowercase()));
+        let mut segments = PathIter::new(self.path.iter());
 
         let peripheral = model.hal.get_child_mut(&segments.next_segment()?)?;
         let register = peripheral.get_child_mut(&segments.next_segment()?)?;
@@ -69,7 +69,7 @@ impl Command for CreateField {
         };
 
         register.push_child(ir::structures::field::Field::empty(
-            ident.clone(),
+            ident.to_owned(),
             offset.try_into().map_err(|e| error!("{e}"))?,
             (*self.width).try_into().map_err(|e| error!("{e}"))?,
             match self.numericity {

@@ -58,16 +58,16 @@ impl From<&str> for Path {
     }
 }
 
-pub struct PathIter<I>
+pub struct PathIter<'a, I>
 where
-    I: Iterator<Item = String>,
+    I: Iterator<Item = &'a str>,
 {
     iter: I,
 }
 
-impl<I> Iterator for PathIter<I>
+impl<'a, I> Iterator for PathIter<'a, I>
 where
-    I: Iterator<Item = String>,
+    I: Iterator<Item = &'a str>,
 {
     type Item = I::Item;
 
@@ -76,15 +76,15 @@ where
     }
 }
 
-impl<I> PathIter<I>
+impl<'a, I> PathIter<'a, I>
 where
-    I: Iterator<Item = String>,
+    I: Iterator<Item = &'a str>,
 {
     pub fn new(iter: I) -> Self {
         Self { iter }
     }
 
-    pub fn next_segment(&mut self) -> Result<String, String> {
+    pub fn next_segment(&mut self) -> Result<&'a str, String> {
         self.next().ok_or(error!("path terminates early."))
     }
 }
