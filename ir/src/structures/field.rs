@@ -4,7 +4,7 @@ use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{self, Context, Diagnostic};
+use crate::utils::diagnostic::{self, Context, Diagnostics};
 
 use super::variant::Variant;
 
@@ -32,7 +32,7 @@ impl Field {
         }
     }
 
-    pub fn validate(&self, context: &Context) -> Vec<Diagnostic> {
+    pub fn validate(&self, context: &Context) -> Diagnostics {
         match &self.numericity {
             Numericity::Numeric => todo!(),
             Numericity::Enumerated { variants } => {

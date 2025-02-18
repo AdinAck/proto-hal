@@ -95,3 +95,5 @@ impl Diagnostic {
             .join("\n\n")
     }
 }
+
+pub type Diagnostics = Vec<Diagnostic>;

@@ -4,7 +4,10 @@ use commands::{
     Command as _, CommandsAtField, CommandsAtHal, CommandsAtPeripheral, CommandsAtRegister,
     CommandsAtVariant,
 };
-use ir::{structures::hal::Hal, utils::diagnostic::Diagnostic};
+use ir::{
+    structures::hal::Hal,
+    utils::diagnostic::{Diagnostic, Diagnostics},
+};
 use rustyline::{config::Configurer, error::ReadlineError, DefaultEditor};
 use std::{fs, path::PathBuf};
 
@@ -26,7 +29,7 @@ pub struct Repl<'a> {
 
     select_path: Path,
     structure: StructureKind,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Diagnostics,
 
     quit: bool,
 }

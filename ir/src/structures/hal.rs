@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{Context, Diagnostic};
+use crate::utils::diagnostic::{Context, Diagnostics};
 
 use super::peripheral::Peripheral;
 
@@ -33,8 +33,8 @@ impl Ord for Hal {
 }
 
 impl Hal {
-    pub fn validate(&self) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
+    pub fn validate(&self) -> Diagnostics {
+        let mut diagnostics = Diagnostics::new();
 
         for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{self, Context, Diagnostic};
+use crate::utils::diagnostic::{self, Context, Diagnostics};
 
 use super::{entitlement::Entitlement, register::Register};
 
@@ -33,8 +33,8 @@ impl Peripheral {
             .unwrap_or(0)
     }
 
-    pub fn validate(&self, context: &Context) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
+    pub fn validate(&self, context: &Context) -> Diagnostics {
+        let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone());
 
         if self.base_addr % 4 != 0 {
