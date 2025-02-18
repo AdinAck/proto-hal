@@ -1,11 +1,12 @@
 use clap::Args;
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use crate::{
     repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
-        feedback::{error, success, warning},
+        feedback::success,
         numeric_value::NumericValue,
         path::{Path, PathIter},
     },
@@ -25,7 +26,7 @@ pub struct CreateRegister {
 }
 
 impl Command for CreateRegister {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let path = model.absolute_path(Some(&self.path));
         let mut segments = PathIter::new(path.iter());
 
@@ -37,7 +38,9 @@ impl Command for CreateRegister {
             (Some(offset), true) => {
                 eprintln!(
                     "{}",
-                    warning!("next flag and offset present, using specified offset.",)
+                    Diagnostic::warning(
+                        "next flag and offset present, using specified offset.".to_owned()
+                    )
                 );
                 **offset
             }
@@ -48,7 +51,9 @@ impl Command for CreateRegister {
                 .map(|register| register.offset)
                 .max()
                 .map_or(0, |last| last + 4), // registers are 32 bits wide which is 4 bytes
-            (None, false) => Err(error!("offset or next flag must be specified.",))?,
+            (None, false) => Err(Diagnostic::error(
+                "offset or next flag must be specified.".to_owned(),
+            ))?,
         };
 
         peripheral.push_child(ir::structures::register::Register::empty(

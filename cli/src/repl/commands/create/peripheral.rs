@@ -1,5 +1,6 @@
 use clap::Args;
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use crate::{
     repl::{commands::Command, Repl},
@@ -17,7 +18,7 @@ pub struct CreatePeripheral {
 }
 
 impl Command for CreatePeripheral {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let ident = self.ident.to_lowercase();
 
         model

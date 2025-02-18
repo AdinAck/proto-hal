@@ -1,5 +1,6 @@
 use crate::repl::Repl;
 use clap::Args;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -7,7 +8,7 @@ use super::Command;
 pub struct Diff;
 
 impl Command for Diff {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         todo!()
     }
 }

@@ -1,5 +1,6 @@
 use crate::{repl::Repl, utils::path::Path};
 use clap::Args;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -17,7 +18,7 @@ impl Tree {
 }
 
 impl Command for Tree {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let structure = model.get_structure_from_path(&model.absolute_path(self.path.as_ref()))?;
 
         println!("{}", structure.tree(self.depth));

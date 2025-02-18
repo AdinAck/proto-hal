@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use super::feedback::error;
+use ir::utils::diagnostic::Diagnostic;
 
 #[derive(Debug, Clone)]
 pub struct Path {
@@ -34,7 +34,7 @@ impl Path {
 }
 
 impl FromStr for Path {
-    type Err = String;
+    type Err = Diagnostic;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(
@@ -84,7 +84,8 @@ where
         Self { iter }
     }
 
-    pub fn next_segment(&mut self) -> Result<&'a str, String> {
-        self.next().ok_or(error!("path terminates early."))
+    pub fn next_segment(&mut self) -> Result<&'a str, Diagnostic> {
+        self.next()
+            .ok_or(Diagnostic::error("path terminates early.".to_owned()))
     }
 }

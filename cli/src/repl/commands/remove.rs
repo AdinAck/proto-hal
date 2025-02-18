@@ -1,12 +1,10 @@
 use crate::{
     repl::Repl,
-    utils::{
-        feedback::{error, success},
-        path::Path,
-    },
+    utils::{feedback::success, path::Path},
 };
 use clap::Args;
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -16,10 +14,12 @@ pub struct Remove {
 }
 
 impl Command for Remove {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let mut path = model.absolute_path(Some(&self.path));
 
-        let target_ident = path.pop().ok_or(error!("nothing to remove."))?;
+        let target_ident = path
+            .pop()
+            .ok_or(Diagnostic::error("nothing to remove.".to_owned()))?;
 
         let parent = model.get_structure_from_path_mut(&path)?;
 

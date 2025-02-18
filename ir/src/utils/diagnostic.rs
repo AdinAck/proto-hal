@@ -2,30 +2,10 @@ use std::{collections::HashMap, fmt::Display};
 
 use colored::Colorize;
 
-pub struct Warning(pub String);
-pub struct Error(pub String);
-
-impl Warning {
-    pub fn with_context(self, context: Context) -> Diagnostic {
-        Diagnostic {
-            kind: Kind::Warning(self),
-            context,
-        }
-    }
-}
-
-impl Error {
-    pub fn with_context(self, context: Context) -> Diagnostic {
-        Diagnostic {
-            kind: Kind::Error(self),
-            context,
-        }
-    }
-}
-
+#[derive(Debug, Clone)]
 pub enum Kind {
-    Warning(Warning),
-    Error(Error),
+    Warning,
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -36,6 +16,10 @@ pub struct Context {
 impl Context {
     pub fn new() -> Self {
         Context { path: Vec::new() }
+    }
+
+    pub fn with_path(path: Vec<String>) -> Self {
+        Self { path }
     }
 
     pub fn and(mut self, ident: String) -> Self {
@@ -58,12 +42,35 @@ impl Display for Context {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Diagnostic {
+    message: String,
     kind: Kind,
-    context: Context,
+    context: Option<Context>,
 }
 
 impl Diagnostic {
+    pub fn warning(message: String) -> Self {
+        Self {
+            message,
+            kind: Kind::Warning,
+            context: None,
+        }
+    }
+
+    pub fn error(message: String) -> Self {
+        Self {
+            message,
+            kind: Kind::Error,
+            context: None,
+        }
+    }
+
+    pub fn with_context(mut self, context: Context) -> Self {
+        self.context = Some(context);
+        self
+    }
+
     pub fn report(diagnostics: &Vec<Self>) -> String {
         let mut diagnostic_groups = HashMap::new();
 
@@ -79,20 +86,27 @@ impl Diagnostic {
             .map(|(context, diagnostics)| {
                 format!(
                     "in {}:\n{}",
-                    context,
+                    context
+                        .as_ref()
+                        .unwrap_or(&Context::with_path(vec!["unknown".to_owned()])),
                     diagnostics
                         .iter()
-                        .map(|diagnostic| match &diagnostic.kind {
-                            Kind::Warning(warning) =>
-                                format!("{}: {}", "warning".yellow().bold(), warning.0),
-                            Kind::Error(error) => format!("{}: {}", "error".red().bold(), error.0),
-                        })
+                        .map(|diagnostic| diagnostic.to_string())
                         .collect::<Vec<_>>()
                         .join("\n")
                 )
             })
             .collect::<Vec<_>>()
             .join("\n\n")
+    }
+}
+
+impl Display for Diagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            Kind::Warning => write!(f, "{}: {}", "warning".yellow().bold(), self.message),
+            Kind::Error => write!(f, "{}: {}", "error".red().bold(), self.message),
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{repl::Repl, structures::DynStructure, utils::path::Path};
 use clap::Args;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -9,7 +10,7 @@ pub struct Info {
 }
 
 impl Command for Info {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let path = model
             .select_path
             .join(self.path.as_ref().unwrap_or(&Path::empty()));

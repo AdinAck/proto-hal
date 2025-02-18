@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use clap::{Args, ValueEnum};
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use crate::{
     repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
-        feedback::{error, success, warning},
+        feedback::success,
         numeric_value::NumericValue,
         path::{Path, PathIter},
     },
@@ -43,7 +44,7 @@ pub struct CreateField {
 }
 
 impl Command for CreateField {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let path = model.absolute_path(Some(&self.path));
         let mut segments = PathIter::new(path.iter());
 
@@ -56,7 +57,9 @@ impl Command for CreateField {
             (Some(offset), true) => {
                 eprintln!(
                     "{}",
-                    warning!("next flag and offset present, using specified offset.",)
+                    Diagnostic::warning(
+                        "next flag and offset present, using specified offset.".to_owned()
+                    )
                 );
                 **offset
             }
@@ -66,13 +69,19 @@ impl Command for CreateField {
                 .values()
                 .max_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset))
                 .map_or(0, |last| last.offset as u32 + last.width as u32 + 1), // next bit
-            (None, false) => Err(error!("offset or next flag must be specified.",))?,
+            (None, false) => Err(Diagnostic::error(
+                "offset or next flag must be specified.".to_owned(),
+            ))?,
         };
 
         register.push_child(ir::structures::field::Field::empty(
             ident.to_owned(),
-            offset.try_into().map_err(|e| error!("{e}"))?,
-            (*self.width).try_into().map_err(|e| error!("{e}"))?,
+            offset
+                .try_into()
+                .map_err(|e| Diagnostic::error(format!("{e}")))?,
+            (*self.width)
+                .try_into()
+                .map_err(|e| Diagnostic::error(format!("{e}")))?,
             match self.numericity {
                 Numericity::Numeric => ir::structures::field::Numericity::Numeric,
                 Numericity::Enumerated => ir::structures::field::Numericity::Enumerated {

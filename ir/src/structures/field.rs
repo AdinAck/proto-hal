@@ -4,7 +4,7 @@ use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{self, Context, Diagnostics};
+use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::variant::Variant;
 
@@ -47,7 +47,7 @@ impl Field {
 
                     if lhs.bits == rhs.bits {
                         diagnostics.push(
-                            diagnostic::Error(format!(
+                            Diagnostic::error(format!(
                                 "variants [{}] and [{}] have overlapping bit values.",
                                 lhs.ident.bold(),
                                 rhs.ident.bold()

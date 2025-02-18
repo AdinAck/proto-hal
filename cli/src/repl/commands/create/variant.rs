@@ -1,11 +1,12 @@
 use clap::Args;
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use crate::{
     repl::{commands::Command, Repl},
     structures::Structure,
     utils::{
-        feedback::{error, success, warning},
+        feedback::success,
         numeric_value::NumericValue,
         path::{Path, PathIter},
     },
@@ -27,7 +28,7 @@ pub struct CreateVariant {
 }
 
 impl Command for CreateVariant {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         let path = model.absolute_path(Some(&self.path));
         let mut segments = PathIter::new(path.iter());
 
@@ -43,7 +44,9 @@ impl Command for CreateVariant {
             (Some(offset), true) => {
                 eprintln!(
                     "{}",
-                    warning!("next flag and bit value present, using specified bit value."),
+                    Diagnostic::warning(
+                        "next flag and bit value present, using specified bit value.".to_owned()
+                    ),
                 );
                 **offset
             }
@@ -52,7 +55,9 @@ impl Command for CreateVariant {
                 .values()
                 .max_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits))
                 .map_or(0, |last| last.bits + last.bits + 1), // next bit
-            (None, false) => Err(error!("offset or next flag must be specified."))?,
+            (None, false) => Err(Diagnostic::error(
+                "offset or next flag must be specified.".to_owned(),
+            ))?,
         };
 
         variants.insert(

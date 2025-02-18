@@ -3,6 +3,7 @@ use std::fs;
 use crate::repl::Repl;
 use clap::Args;
 use colored::Colorize;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -10,12 +11,12 @@ use super::Command;
 pub struct Commit;
 
 impl Command for Commit {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         fs::write(
             model.file,
-            toml::to_string_pretty(model.hal).map_err(|e| e.to_string())?,
+            toml::to_string_pretty(model.hal).map_err(|e| Diagnostic::error(e.to_string()))?,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Diagnostic::error(e.to_string()))?;
         model.old_hal = model.hal.clone();
 
         println!(

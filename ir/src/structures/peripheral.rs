@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{self, Context, Diagnostics};
+use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::{entitlement::Entitlement, register::Register};
 
@@ -39,7 +39,7 @@ impl Peripheral {
 
         if self.base_addr % 4 != 0 {
             diagnostics.push(
-                diagnostic::Error("peripheral address must be word aligned.".to_owned())
+                Diagnostic::error("peripheral address must be word aligned.".to_owned())
                     .with_context(new_context.clone()),
             );
         }

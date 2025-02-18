@@ -9,6 +9,7 @@ use discard::Discard;
 use enum_dispatch::enum_dispatch;
 use exit::Exit;
 use info::Info;
+use ir::utils::diagnostic::Diagnostic;
 use list::List;
 use remove::Remove;
 use script::Script;
@@ -31,7 +32,7 @@ pub mod tree;
 
 #[enum_dispatch]
 pub trait Command {
-    fn execute(&self, repl: &mut Repl) -> Result<(), String>;
+    fn execute(&self, repl: &mut Repl) -> Result<(), Diagnostic>;
 }
 
 #[enum_dispatch(Command)]

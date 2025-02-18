@@ -6,14 +6,14 @@ use commands::{
 };
 use ir::{
     structures::hal::Hal,
-    utils::diagnostic::{Diagnostic, Diagnostics},
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 use rustyline::{config::Configurer, error::ReadlineError, DefaultEditor};
 use std::{fs, path::PathBuf};
 
 use crate::{
     structures::{DynStructure, StructureKind},
-    utils::{feedback::error, path::Path},
+    utils::path::Path,
 };
 
 pub mod commands;
@@ -29,7 +29,6 @@ pub struct Repl<'a> {
 
     select_path: Path,
     structure: StructureKind,
-    diagnostics: Diagnostics,
 
     quit: bool,
 }
@@ -43,33 +42,38 @@ impl<'a> Repl<'a> {
             file,
             select_path: Path::empty(),
             structure: StructureKind::Hal,
-            diagnostics: Vec::new(),
             quit: false,
         }
     }
 
-    fn execute(&mut self, cmd: &str) -> Result<(), String> {
-        let args = shlex::split(cmd).ok_or("error: Invalid quoting")?;
+    fn execute(&mut self, cmd: &str) -> Result<(), Diagnostic> {
+        let args =
+            shlex::split(cmd).ok_or(Diagnostic::error("error: Invalid quoting".to_owned()))?;
 
         match &self.structure {
             StructureKind::Hal => {
-                let cli = CliAtHal::try_parse_from(args).map_err(|e| e.to_string())?;
+                let cli =
+                    CliAtHal::try_parse_from(args).map_err(|e| Diagnostic::error(e.to_string()))?;
                 cli.command.execute(self)?;
             }
             StructureKind::Peripheral => {
-                let cli = CliAtPeripheral::try_parse_from(args).map_err(|e| e.to_string())?;
+                let cli = CliAtPeripheral::try_parse_from(args)
+                    .map_err(|e| Diagnostic::error(e.to_string()))?;
                 cli.command.execute(self)?;
             }
             StructureKind::Register => {
-                let cli = CliAtRegister::try_parse_from(args).map_err(|e| e.to_string())?;
+                let cli = CliAtRegister::try_parse_from(args)
+                    .map_err(|e| Diagnostic::error(e.to_string()))?;
                 cli.command.execute(self)?;
             }
             StructureKind::Field => {
-                let cli = CliAtField::try_parse_from(args).map_err(|e| e.to_string())?;
+                let cli = CliAtField::try_parse_from(args)
+                    .map_err(|e| Diagnostic::error(e.to_string()))?;
                 cli.command.execute(self)?;
             }
             StructureKind::Variant => {
-                let cli = CliAtVariant::try_parse_from(args).map_err(|e| e.to_string())?;
+                let cli = CliAtVariant::try_parse_from(args)
+                    .map_err(|e| Diagnostic::error(e.to_string()))?;
                 cli.command.execute(self)?;
             }
         }
@@ -81,14 +85,14 @@ impl<'a> Repl<'a> {
         !self.old_hal.eq(self.hal)
     }
 
-    fn confirmation_dialog() -> Result<bool, String> {
+    fn confirmation_dialog() -> Result<bool, Diagnostic> {
         let mut rl = DefaultEditor::new().unwrap();
 
         Ok(loop {
             let decision = match rl.readline("there are pending changes, are you sure? [y/n] ") {
                 Ok(decision) => decision,
                 Err(ReadlineError::Interrupted) => continue,
-                Err(e) => Err(e.to_string())?,
+                Err(e) => Err(Diagnostic::error(e.to_string()))?,
             };
 
             match decision.to_lowercase().as_str() {
@@ -122,7 +126,7 @@ impl<'a> Repl<'a> {
         prompt
     }
 
-    pub fn exit(&mut self) -> Result<(), String> {
+    pub fn exit(&mut self) -> Result<(), Diagnostic> {
         self.quit = if self.changes_pending() {
             Self::confirmation_dialog()?
         } else {
@@ -152,18 +156,22 @@ impl<'a> Repl<'a> {
         new_path
     }
 
-    pub fn validate_path(&self, path: &Path) -> Result<(), String> {
+    pub fn validate_path(&self, path: &Path) -> Result<(), Diagnostic> {
         self.get_structure_from_path(path)?;
 
         Ok(())
     }
 
-    pub fn select(&mut self, path: &Path) -> Result<(), String> {
+    pub fn select(&mut self, path: &Path) -> Result<(), Diagnostic> {
         let mut kind = StructureKind::Hal;
+        let mut context = Context::new();
+
         for segment in path.iter() {
-            kind = kind
-                .child()
-                .ok_or(error!("[{}] has no children.", segment.bold()))?;
+            context = context.and(segment.to_owned());
+            kind = kind.child().ok_or(
+                Diagnostic::error(format!("[{}] has no children.", segment.bold()))
+                    .with_context(context.clone()),
+            )?;
         }
 
         self.validate_path(path)?;
@@ -174,7 +182,7 @@ impl<'a> Repl<'a> {
         Ok(())
     }
 
-    pub fn get_structure_from_path(&self, path: &Path) -> Result<&dyn DynStructure, String> {
+    pub fn get_structure_from_path(&self, path: &Path) -> Result<&dyn DynStructure, Diagnostic> {
         let mut structure: &dyn DynStructure = self.hal;
 
         for segment in path.iter() {
@@ -187,7 +195,7 @@ impl<'a> Repl<'a> {
     pub fn get_structure_from_path_mut(
         &mut self,
         path: &Path,
-    ) -> Result<&mut dyn DynStructure, String> {
+    ) -> Result<&mut dyn DynStructure, Diagnostic> {
         let mut structure: &mut dyn DynStructure = self.hal;
 
         for segment in path.iter() {
@@ -197,7 +205,7 @@ impl<'a> Repl<'a> {
         Ok(structure)
     }
 
-    pub fn run(&mut self) -> Result<(), String> {
+    pub fn run(&mut self) -> Result<(), Diagnostic> {
         let mut rl = DefaultEditor::new().unwrap();
         rl.set_auto_add_history(true);
         rl.load_history(
@@ -234,17 +242,18 @@ impl<'a> Repl<'a> {
 
                 let stored_hal = self.hal.clone();
 
+                let mut diagnostics = Diagnostics::new();
+
                 // attemp the execute the command
                 if let Err(e) = self.execute(&cmd) {
-                    // if the command errors, report the error
-                    eprintln!("{e}");
+                    diagnostics.push(e);
                 }
 
-                self.diagnostics = self.hal.validate();
+                diagnostics.extend(self.hal.validate());
 
-                if !self.diagnostics.is_empty() {
+                if !diagnostics.is_empty() {
                     *self.hal = stored_hal;
-                    eprintln!("{}", Diagnostic::report(&self.diagnostics));
+                    eprintln!("{}", Diagnostic::report(&diagnostics));
                 }
             }
 

@@ -1,10 +1,8 @@
 use std::{fs, path::PathBuf};
 
-use crate::{
-    repl::Repl,
-    utils::feedback::{error, success},
-};
+use crate::{repl::Repl, utils::feedback::success};
 use clap::Args;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -20,8 +18,9 @@ impl Script {
 }
 
 impl Command for Script {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        let script = fs::read_to_string(&self.file_path).map_err(|e| error!("fs error: {e}."))?;
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
+        let script = fs::read_to_string(&self.file_path)
+            .map_err(|e| Diagnostic::error(format!("fs error: {e}.")))?;
 
         for cmd in script.lines() {
             model.execute(cmd)?;

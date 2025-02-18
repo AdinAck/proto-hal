@@ -1,5 +1,6 @@
 use crate::{repl::Repl, utils::path::Path};
 use clap::Args;
+use ir::utils::diagnostic::Diagnostic;
 
 use super::Command;
 
@@ -9,7 +10,7 @@ pub struct Select {
 }
 
 impl Command for Select {
-    fn execute(&self, model: &mut Repl) -> Result<(), String> {
+    fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         model.select(&model.absolute_path(Some(self.path.as_ref().unwrap_or(&"/".into()))))
     }
 }

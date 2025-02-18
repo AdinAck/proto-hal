@@ -4,7 +4,7 @@ use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{self, Context, Diagnostics};
+use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::field::Field;
 
@@ -31,7 +31,7 @@ impl Register {
 
         if self.offset % 4 != 0 {
             diagnostics.push(
-                diagnostic::Error(format!("register offset must be word aligned."))
+                Diagnostic::error(format!("register offset must be word aligned."))
                     .with_context(new_context.clone()),
             );
         }
@@ -45,7 +45,7 @@ impl Register {
 
             if lhs.offset + lhs.width > rhs.offset {
                 diagnostics.push(
-                    diagnostic::Error(format!(
+                    Diagnostic::error(format!(
                         "fields [{}] and [{}] overlap.",
                         lhs.ident.bold(),
                         rhs.ident.bold()
@@ -58,7 +58,7 @@ impl Register {
         if let Some(field) = fields.last() {
             if field.offset + field.width > 32 {
                 diagnostics.push(
-                    diagnostic::Error(format!(
+                    Diagnostic::error(format!(
                         "field [{}] exceeds register width.",
                         field.ident.bold()
                     ))
