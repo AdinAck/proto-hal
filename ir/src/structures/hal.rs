@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
+use crate::utils::diagnostic::{Context, Diagnostic};
+
 use super::peripheral::Peripheral;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +29,18 @@ impl PartialOrd for Hal {
 impl Ord for Hal {
     fn cmp(&self, #[allow(unused)] other: &Self) -> std::cmp::Ordering {
         std::cmp::Ordering::Equal
+    }
+}
+
+impl Hal {
+    pub fn validate(&self) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+
+        for peripheral in self.peripherals.values() {
+            diagnostics.extend(peripheral.validate(&Context::new()));
+        }
+
+        diagnostics
     }
 }
 

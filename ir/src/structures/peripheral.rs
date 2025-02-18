@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
+use crate::utils::diagnostic::{self, Context, Diagnostic};
+
 use super::{entitlement::Entitlement, register::Register};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +31,24 @@ impl Peripheral {
             .max()
             .map(|register| register.offset + 4)
             .unwrap_or(0)
+    }
+
+    pub fn validate(&self, context: &Context) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        let new_context = context.clone().and(self.ident.clone());
+
+        if self.base_addr % 4 != 0 {
+            diagnostics.push(
+                diagnostic::Error("peripheral address must be word aligned.".to_owned())
+                    .with_context(new_context.clone()),
+            );
+        }
+
+        for register in self.registers.values() {
+            diagnostics.extend(register.validate(&new_context));
+        }
+
+        diagnostics
     }
 }
 

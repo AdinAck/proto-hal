@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
+
+use crate::utils::diagnostic::{self, Context, Diagnostic};
 
 use super::variant::Variant;
 
@@ -26,6 +29,36 @@ impl Field {
             offset,
             width,
             numericity,
+        }
+    }
+
+    pub fn validate(&self, context: &Context) -> Vec<Diagnostic> {
+        match &self.numericity {
+            Numericity::Numeric => todo!(),
+            Numericity::Enumerated { variants } => {
+                let mut diagnostics = Vec::new();
+
+                let mut variants = variants.values().collect::<Vec<_>>();
+                variants.sort();
+
+                for window in variants.windows(2) {
+                    let lhs = window[0];
+                    let rhs = window[1];
+
+                    if lhs.bits == rhs.bits {
+                        diagnostics.push(
+                            diagnostic::Error(format!(
+                                "variants [{}] and [{}] have overlapping bit values.",
+                                lhs.ident.bold(),
+                                rhs.ident.bold()
+                            ))
+                            .with_context(context.clone().and(self.ident.clone())),
+                        );
+                    }
+                }
+
+                diagnostics
+            }
         }
     }
 }

@@ -1,3 +1,3 @@
 mod access;
 pub mod structures;
-mod utils;
+pub mod utils;

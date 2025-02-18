@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
+
+use crate::utils::diagnostic::{self, Context, Diagnostic};
 
 use super::field::Field;
 
@@ -20,6 +23,55 @@ impl Register {
             offset,
             fields: HashMap::new(),
         }
+    }
+
+    pub fn validate(&self, context: &Context) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        let new_context = context.clone().and(self.ident.clone());
+
+        if self.offset % 4 != 0 {
+            diagnostics.push(
+                diagnostic::Error(format!("register offset must be word aligned."))
+                    .with_context(new_context.clone()),
+            );
+        }
+
+        let mut fields = self.fields.values().collect::<Vec<_>>();
+        fields.sort();
+
+        for window in fields.windows(2) {
+            let lhs = window[0];
+            let rhs = window[1];
+
+            if lhs.offset + lhs.width > rhs.offset {
+                diagnostics.push(
+                    diagnostic::Error(format!(
+                        "fields [{}] and [{}] overlap.",
+                        lhs.ident.bold(),
+                        rhs.ident.bold()
+                    ))
+                    .with_context(new_context.clone()),
+                );
+            }
+        }
+
+        if let Some(field) = fields.last() {
+            if field.offset + field.width > 32 {
+                diagnostics.push(
+                    diagnostic::Error(format!(
+                        "field [{}] exceeds register width.",
+                        field.ident.bold()
+                    ))
+                    .with_context(new_context.clone()),
+                );
+            }
+        }
+
+        for field in fields {
+            diagnostics.extend(field.validate(&new_context));
+        }
+
+        diagnostics
     }
 }
 

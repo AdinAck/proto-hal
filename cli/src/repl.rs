@@ -4,7 +4,7 @@ use commands::{
     Command as _, CommandsAtField, CommandsAtHal, CommandsAtPeripheral, CommandsAtRegister,
     CommandsAtVariant,
 };
-use ir::structures::hal::Hal;
+use ir::{structures::hal::Hal, utils::diagnostic::Diagnostic};
 use rustyline::{config::Configurer, error::ReadlineError, DefaultEditor};
 use std::{fs, path::PathBuf};
 
@@ -26,6 +26,7 @@ pub struct Repl<'a> {
 
     select_path: Path,
     structure: StructureKind,
+    diagnostics: Vec<Diagnostic>,
 
     quit: bool,
 }
@@ -39,6 +40,7 @@ impl<'a> Repl<'a> {
             file,
             select_path: Path::empty(),
             structure: StructureKind::Hal,
+            diagnostics: Vec::new(),
             quit: false,
         }
     }
@@ -161,6 +163,8 @@ impl<'a> Repl<'a> {
                 .ok_or(error!("[{}] has no children.", segment.bold()))?;
         }
 
+        self.validate_path(path)?;
+
         self.structure = kind;
         self.select_path = path.clone();
 
@@ -225,10 +229,19 @@ impl<'a> Repl<'a> {
                     continue;
                 }
 
+                let stored_hal = self.hal.clone();
+
                 // attemp the execute the command
                 if let Err(e) = self.execute(&cmd) {
                     // if the command errors, report the error
                     eprintln!("{e}");
+                }
+
+                self.diagnostics = self.hal.validate();
+
+                if !self.diagnostics.is_empty() {
+                    *self.hal = stored_hal;
+                    eprintln!("{}", Diagnostic::report(&self.diagnostics));
                 }
             }
 

@@ -10,6 +10,6 @@ pub struct Select {
 
 impl Command for Select {
     fn execute(&self, model: &mut Repl) -> Result<(), String> {
-        model.select(&model.absolute_path(self.path.as_ref()))
+        model.select(&model.absolute_path(Some(self.path.as_ref().unwrap_or(&"/".into()))))
     }
 }
