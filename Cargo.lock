@@ -398,6 +398,7 @@ dependencies = [
  "quote",
  "serde",
  "syn",
+ "ters",
  "tiva",
  "toml",
 ]
@@ -536,6 +537,12 @@ checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "procmacro2"
+version = "99.9.99"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "302c525e16613efd9c9a684c096503d9dc662f7feb6b6c40e59303b4e2c4c113"
 
 [[package]]
 name = "proto-hal"
@@ -744,6 +751,26 @@ name = "termtree"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
+
+[[package]]
+name = "ters"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f74d85923d1a32dea71d6f3f6c673105e34dab491c9e24096396b9b4317799cb"
+dependencies = [
+ "ters-macros",
+]
+
+[[package]]
+name = "ters-macros"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec8b2894dba16a0f48b6cc1dc96b9b4e0cb36847c132460cfd942c891d75b75c"
+dependencies = [
+ "procmacro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "thiserror"

@@ -6,7 +6,7 @@ use commands::{
 };
 use ir::{
     structures::hal::Hal,
-    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+    utils::diagnostic::{self, Context, Diagnostic, Diagnostics},
 };
 use rustyline::{config::Configurer, error::ReadlineError, DefaultEditor};
 use std::{fs, path::PathBuf};
@@ -252,8 +252,26 @@ impl<'a> Repl<'a> {
                 diagnostics.extend(self.hal.validate());
 
                 if !diagnostics.is_empty() {
-                    *self.hal = stored_hal;
-                    eprintln!("{}", Diagnostic::report(&diagnostics));
+                    let error_count = diagnostics
+                        .iter()
+                        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Error))
+                        .count();
+                    let warning_count = diagnostics
+                        .iter()
+                        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Warning))
+                        .count();
+
+                    eprintln!(
+                        "{}\naction cancelled due to {} errors and {} warnings.",
+                        Diagnostic::report(&diagnostics),
+                        error_count,
+                        warning_count,
+                    );
+
+                    if error_count > 0 {
+                        // restore previous hal state
+                        *self.hal = stored_hal;
+                    }
                 }
             }
 

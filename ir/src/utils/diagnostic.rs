@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use colored::Colorize;
+use ters::ters;
 
 #[derive(Debug, Clone)]
 pub enum Kind {
@@ -42,9 +43,11 @@ impl Display for Context {
     }
 }
 
+#[ters]
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
     message: String,
+    #[get]
     kind: Kind,
     context: Option<Context>,
 }
@@ -84,17 +87,17 @@ impl Diagnostic {
         diagnostic_groups
             .iter()
             .map(|(context, diagnostics)| {
-                format!(
-                    "in {}:\n{}",
-                    context
-                        .as_ref()
-                        .unwrap_or(&Context::with_path(vec!["unknown".to_owned()])),
-                    diagnostics
-                        .iter()
-                        .map(|diagnostic| diagnostic.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
+                let diagnostics = diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                if let Some(context) = context {
+                    format!("in {}:\n{}", context, diagnostics)
+                } else {
+                    format!("{}", diagnostics)
+                }
             })
             .collect::<Vec<_>>()
             .join("\n\n")
