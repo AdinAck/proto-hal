@@ -262,7 +262,7 @@ impl<'a> Repl<'a> {
                         .count();
 
                     eprintln!(
-                        "{}\naction cancelled due to {} errors and {} warnings.",
+                        "{}\nemitted {} errors and {} warnings.",
                         Diagnostic::report(&diagnostics),
                         error_count,
                         warning_count,
@@ -271,6 +271,7 @@ impl<'a> Repl<'a> {
                     if error_count > 0 {
                         // restore previous hal state
                         *self.hal = stored_hal;
+                        eprintln!("action cancelled due to errors.")
                     }
                 }
             }
