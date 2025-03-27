@@ -38,7 +38,7 @@ impl Command for CreateVariant {
 
         let ident = segments.next_segment()?;
 
-        let variants = field.children_mut()?;
+        let variants = field.children()?;
 
         let bits = match (&self.bits, self.next) {
             (Some(offset), true) => {
@@ -54,16 +54,16 @@ impl Command for CreateVariant {
             (None, true) => variants
                 .values()
                 .max_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits))
-                .map_or(0, |last| last.bits + last.bits + 1), // next bit
+                .map_or(0, |last| last.bits + 1), // next bit
             (None, false) => Err(Diagnostic::error(
                 "offset or next flag must be specified.".to_owned(),
             ))?,
         };
 
-        variants.insert(
+        field.push_child(ir::structures::variant::Variant::empty(
             ident.to_owned(),
-            ir::structures::variant::Variant::empty(ident.to_owned(), bits),
-        );
+            bits,
+        ))?;
 
         println!(
             "{}",

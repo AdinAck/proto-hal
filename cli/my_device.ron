@@ -1,0 +1,66 @@
+(
+    peripherals: {
+        "cordic": (
+            ident: "cordic",
+            base_addr: 1073875968,
+            entitlements: [],
+            registers: {
+                "csr": (
+                    ident: "csr",
+                    offset: 0,
+                    fields: {
+                        "func": (
+                            ident: "func",
+                            offset: 4,
+                            width: 4,
+                            numericity: Enumerated(
+                                variants: {
+                                    "cosh": (
+                                        ident: "cosh",
+                                        bits: 5,
+                                    ),
+                                    "atan": (
+                                        ident: "atan",
+                                        bits: 4,
+                                    ),
+                                    "atan2": (
+                                        ident: "atan2",
+                                        bits: 2,
+                                    ),
+                                    "ln": (
+                                        ident: "ln",
+                                        bits: 8,
+                                    ),
+                                    "sqrt": (
+                                        ident: "sqrt",
+                                        bits: 9,
+                                    ),
+                                    "sin": (
+                                        ident: "sin",
+                                        bits: 1,
+                                    ),
+                                    "magnitude": (
+                                        ident: "magnitude",
+                                        bits: 3,
+                                    ),
+                                    "sinh": (
+                                        ident: "sinh",
+                                        bits: 6,
+                                    ),
+                                    "cos": (
+                                        ident: "cos",
+                                        bits: 0,
+                                    ),
+                                    "atanh": (
+                                        ident: "atanh",
+                                        bits: 7,
+                                    ),
+                                },
+                            ),
+                        ),
+                    },
+                ),
+            },
+        ),
+    },
+)

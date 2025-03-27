@@ -34,6 +34,10 @@ impl StructureKind {
     }
 }
 
+pub trait Ident {
+    fn ident(&self) -> &str;
+}
+
 pub trait Structure: DynStructure {
     type Child;
 
@@ -65,7 +69,7 @@ pub trait Structure: DynStructure {
     }
     fn push_child(&mut self, child: Self::Child) -> Result<(), Diagnostic>
     where
-        Self::Child: Structure,
+        Self::Child: Ident,
     {
         self.get_child(child.ident())
             .err()
@@ -80,8 +84,7 @@ pub trait Structure: DynStructure {
     }
 }
 
-pub trait DynStructure {
-    fn ident(&self) -> &str;
+pub trait DynStructure: Ident {
     fn info(&self) -> String;
     fn tree(&self, depth: Option<usize>) -> termtree::Tree<String>;
     fn kind(&self) -> StructureKind;
@@ -93,6 +96,12 @@ pub trait DynStructure {
     ) -> Result<&'a mut dyn DynStructure, Diagnostic>;
 
     fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, Diagnostic>;
+}
+
+impl Ident for ir::structures::hal::Hal {
+    fn ident(&self) -> &str {
+        "hal"
+    }
 }
 
 impl Structure for ir::structures::hal::Hal {
@@ -107,10 +116,6 @@ impl Structure for ir::structures::hal::Hal {
 }
 
 impl DynStructure for ir::structures::hal::Hal {
-    fn ident(&self) -> &str {
-        "hal"
-    }
-
     fn info(&self) -> String {
         let min_addr = self
             .peripherals
@@ -178,6 +183,12 @@ impl DynStructure for ir::structures::hal::Hal {
     }
 }
 
+impl Ident for ir::structures::peripheral::Peripheral {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 impl Structure for ir::structures::peripheral::Peripheral {
     type Child = ir::structures::register::Register;
 
@@ -191,10 +202,6 @@ impl Structure for ir::structures::peripheral::Peripheral {
 }
 
 impl DynStructure for ir::structures::peripheral::Peripheral {
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-
     fn info(&self) -> String {
         let max_addr = self.base_addr
             + self
@@ -262,6 +269,12 @@ impl DynStructure for ir::structures::peripheral::Peripheral {
     }
 }
 
+impl Ident for ir::structures::register::Register {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 impl Structure for ir::structures::register::Register {
     type Child = ir::structures::field::Field;
 
@@ -275,10 +288,6 @@ impl Structure for ir::structures::register::Register {
 }
 
 impl DynStructure for ir::structures::register::Register {
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-
     fn info(&self) -> String {
         let offset = format!("offset: {}", format!("0x{:02x}", self.offset).bold());
         let fields = format!("fields: {}", self.fields.len().to_string().bold());
@@ -326,6 +335,12 @@ impl DynStructure for ir::structures::register::Register {
     }
 }
 
+impl Ident for ir::structures::field::Field {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 impl Structure for ir::structures::field::Field {
     type Child = ir::structures::variant::Variant;
 
@@ -353,10 +368,6 @@ impl Structure for ir::structures::field::Field {
 }
 
 impl DynStructure for ir::structures::field::Field {
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-
     fn info(&self) -> String {
         let offset = format!(
             "offset: {}",
@@ -420,11 +431,13 @@ impl DynStructure for ir::structures::field::Field {
     }
 }
 
-impl DynStructure for ir::structures::variant::Variant {
+impl Ident for ir::structures::variant::Variant {
     fn ident(&self) -> &str {
         &self.ident
     }
+}
 
+impl DynStructure for ir::structures::variant::Variant {
     fn info(&self) -> String {
         format!("bit value: {}", self.bits.to_string().bold())
     }

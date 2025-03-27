@@ -93,9 +93,10 @@ impl Command for CreateField {
         println!(
             "{}",
             success!(
-                "created [{}] in [{}] at offset {}.",
+                "created [{}] in [{}] of width {} and at offset {}.",
                 ident.bold(),
                 register.ident.bold(),
+                self.width.to_string().bold(),
                 offset.to_string().bold(),
             )
         );

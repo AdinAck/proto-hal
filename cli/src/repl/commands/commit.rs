@@ -14,7 +14,8 @@ impl Command for Commit {
     fn execute(&self, model: &mut Repl) -> Result<(), Diagnostic> {
         fs::write(
             model.file,
-            toml::to_string_pretty(model.hal).map_err(|e| Diagnostic::error(e.to_string()))?,
+            ron::ser::to_string_pretty(model.hal, ron::ser::PrettyConfig::default())
+                .map_err(|e| Diagnostic::error(e.to_string()))?,
         )
         .map_err(|e| Diagnostic::error(e.to_string()))?;
         model.old_hal = model.hal.clone();
