@@ -75,7 +75,7 @@ impl<T: Ident + Serialize> Serialize for Collection<T> {
     where
         S: serde::Serializer,
     {
-        let vec = self.map.values().collect::<Vec<_>>();
+        let vec = self.values().collect::<Vec<_>>();
         let mut seq = serializer.serialize_seq(Some(vec.len()))?;
 
         for item in vec {

@@ -34,7 +34,7 @@ impl Hal {
     pub fn validate(&self) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
 
-        for peripheral in self.peripherals.map.values() {
+        for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
         }
 
