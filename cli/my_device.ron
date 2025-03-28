@@ -1,66 +1,176 @@
 (
-    peripherals: {
-        "cordic": (
+    peripherals: [
+        (
             ident: "cordic",
             base_addr: 1073875968,
             entitlements: [],
-            registers: {
-                "csr": (
+            registers: [
+                (
                     ident: "csr",
                     offset: 0,
-                    fields: {
-                        "func": (
-                            ident: "func",
-                            offset: 4,
-                            width: 4,
+                    fields: [
+                        (
+                            ident: "scale",
+                            offset: 10,
+                            width: 3,
                             numericity: Enumerated(
-                                variants: {
-                                    "cosh": (
-                                        ident: "cosh",
+                                variants: [
+                                    (
+                                        ident: "N1",
+                                        bits: 1,
+                                    ),
+                                    (
+                                        ident: "N6",
+                                        bits: 6,
+                                    ),
+                                    (
+                                        ident: "N2",
+                                        bits: 2,
+                                    ),
+                                    (
+                                        ident: "N7",
+                                        bits: 7,
+                                    ),
+                                    (
+                                        ident: "N4",
+                                        bits: 4,
+                                    ),
+                                    (
+                                        ident: "N3",
+                                        bits: 3,
+                                    ),
+                                    (
+                                        ident: "N5",
                                         bits: 5,
                                     ),
-                                    "atan": (
+                                    (
+                                        ident: "N0",
+                                        bits: 0,
+                                    ),
+                                ],
+                            ),
+                        ),
+                        (
+                            ident: "func",
+                            offset: 0,
+                            width: 4,
+                            numericity: Enumerated(
+                                variants: [
+                                    (
                                         ident: "atan",
                                         bits: 4,
                                     ),
-                                    "atan2": (
-                                        ident: "atan2",
-                                        bits: 2,
-                                    ),
-                                    "ln": (
-                                        ident: "ln",
-                                        bits: 8,
-                                    ),
-                                    "sqrt": (
+                                    (
                                         ident: "sqrt",
                                         bits: 9,
                                     ),
-                                    "sin": (
-                                        ident: "sin",
-                                        bits: 1,
-                                    ),
-                                    "magnitude": (
-                                        ident: "magnitude",
-                                        bits: 3,
-                                    ),
-                                    "sinh": (
+                                    (
                                         ident: "sinh",
                                         bits: 6,
                                     ),
-                                    "cos": (
+                                    (
+                                        ident: "ln",
+                                        bits: 8,
+                                    ),
+                                    (
+                                        ident: "sin",
+                                        bits: 1,
+                                    ),
+                                    (
                                         ident: "cos",
                                         bits: 0,
                                     ),
-                                    "atanh": (
+                                    (
+                                        ident: "cosh",
+                                        bits: 5,
+                                    ),
+                                    (
                                         ident: "atanh",
                                         bits: 7,
                                     ),
-                                },
+                                    (
+                                        ident: "magnitude",
+                                        bits: 3,
+                                    ),
+                                    (
+                                        ident: "atan2",
+                                        bits: 2,
+                                    ),
+                                ],
                             ),
                         ),
-                    },
+                        (
+                            ident: "precision",
+                            offset: 5,
+                            width: 4,
+                            numericity: Enumerated(
+                                variants: [
+                                    (
+                                        ident: "P52",
+                                        bits: 13,
+                                    ),
+                                    (
+                                        ident: "P36",
+                                        bits: 9,
+                                    ),
+                                    (
+                                        ident: "P16",
+                                        bits: 4,
+                                    ),
+                                    (
+                                        ident: "P48",
+                                        bits: 12,
+                                    ),
+                                    (
+                                        ident: "P56",
+                                        bits: 14,
+                                    ),
+                                    (
+                                        ident: "P8",
+                                        bits: 2,
+                                    ),
+                                    (
+                                        ident: "P32",
+                                        bits: 8,
+                                    ),
+                                    (
+                                        ident: "P40",
+                                        bits: 10,
+                                    ),
+                                    (
+                                        ident: "P28",
+                                        bits: 7,
+                                    ),
+                                    (
+                                        ident: "P24",
+                                        bits: 6,
+                                    ),
+                                    (
+                                        ident: "P12",
+                                        bits: 3,
+                                    ),
+                                    (
+                                        ident: "P60",
+                                        bits: 15,
+                                    ),
+                                    (
+                                        ident: "P44",
+                                        bits: 11,
+                                    ),
+                                    (
+                                        ident: "P4",
+                                        bits: 1,
+                                    ),
+                                    (
+                                        ident: "P20",
+                                        bits: 5,
+                                    ),
+                                ],
+                            ),
+                        ),
+                    ],
                 ),
-            },
+            ],
         ),
-    },
+    ],
 )

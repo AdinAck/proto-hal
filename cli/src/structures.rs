@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
-use ir::{structures::field::Numericity, utils::diagnostic::Diagnostic};
+use ir::{
+    structures::{field::Numericity, Ident},
+    utils::diagnostic::Diagnostic,
+};
 
 #[derive(Debug, Clone)]
 pub enum StructureKind {
@@ -32,10 +35,6 @@ impl StructureKind {
             StructureKind::Variant => Some(StructureKind::Field),
         }
     }
-}
-
-pub trait Ident {
-    fn ident(&self) -> &str;
 }
 
 pub trait Structure: DynStructure {
@@ -96,12 +95,6 @@ pub trait DynStructure: Ident {
     ) -> Result<&'a mut dyn DynStructure, Diagnostic>;
 
     fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, Diagnostic>;
-}
-
-impl Ident for ir::structures::hal::Hal {
-    fn ident(&self) -> &str {
-        "hal"
-    }
 }
 
 impl Structure for ir::structures::hal::Hal {
@@ -180,12 +173,6 @@ impl DynStructure for ir::structures::hal::Hal {
 
     fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, Diagnostic> {
         <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
-    }
-}
-
-impl Ident for ir::structures::peripheral::Peripheral {
-    fn ident(&self) -> &str {
-        &self.ident
     }
 }
 
@@ -269,12 +256,6 @@ impl DynStructure for ir::structures::peripheral::Peripheral {
     }
 }
 
-impl Ident for ir::structures::register::Register {
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-}
-
 impl Structure for ir::structures::register::Register {
     type Child = ir::structures::field::Field;
 
@@ -332,12 +313,6 @@ impl DynStructure for ir::structures::register::Register {
 
     fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, Diagnostic> {
         <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
-    }
-}
-
-impl Ident for ir::structures::field::Field {
-    fn ident(&self) -> &str {
-        &self.ident
     }
 }
 
@@ -428,12 +403,6 @@ impl DynStructure for ir::structures::field::Field {
 
     fn remove_child_boxed(&mut self, ident: &str) -> Result<Box<dyn DynStructure>, Diagnostic> {
         <Self as Structure>::remove_child(self, ident).map(|s| Box::new(s) as _)
-    }
-}
-
-impl Ident for ir::structures::variant::Variant {
-    fn ident(&self) -> &str {
-        &self.ident
     }
 }
 

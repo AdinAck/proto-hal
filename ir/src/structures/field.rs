@@ -1,17 +1,15 @@
-use std::collections::HashMap;
-
 use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::variant::Variant;
+use super::{variant::Variant, Collection, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Numericity {
     Numeric,
-    Enumerated { variants: HashMap<String, Variant> },
+    Enumerated { variants: Collection<Variant> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +70,12 @@ impl PartialOrd for Field {
 impl Ord for Field {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.offset.cmp(&other.offset)
+    }
+}
+
+impl Ident for Field {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 

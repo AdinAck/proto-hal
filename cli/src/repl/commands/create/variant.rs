@@ -25,6 +25,23 @@ pub struct CreateVariant {
     )]
     #[arg(short, long)]
     next: bool,
+
+    // array
+    #[arg(
+        help = "Generate a sequence of variants, beginning with the specified index. <PATH> must contain exacly one \"X\" for replacement"
+    )]
+    #[arg(long)]
+    start: Option<usize>,
+    #[arg(
+        help = "Generate a sequence of variants, ending with the specified index. <PATH> must contain exacly one \"X\" for replacement"
+    )]
+    #[arg(long)]
+    end: Option<usize>,
+    #[arg(
+        help = "Generate a sequence of variants, incrementing the index by this step. <PATH> must contain exacly one \"X\" for replacement"
+    )]
+    #[arg(long)]
+    step: Option<usize>,
 }
 
 impl Command for CreateVariant {
@@ -60,20 +77,35 @@ impl Command for CreateVariant {
             ))?,
         };
 
-        field.push_child(ir::structures::variant::Variant::empty(
-            ident.to_owned(),
-            bits,
-        ))?;
+        let range = self.start.unwrap_or(0)..=self.end.unwrap_or((1 << field.width) - 1);
+        let step = self.step.unwrap_or(1);
 
-        println!(
-            "{}",
-            success!(
-                "created [{}] in [{}] with bit value {}.",
-                ident.bold(),
-                field.ident.bold(),
-                bits.to_string().bold()
-            )
-        );
+        let replacement = self.start.is_some() || self.end.is_some() || self.step.is_some();
+
+        if replacement && !ident.contains("X") {
+            Err(Diagnostic::error(
+                "variant path must contain exactly one \"X\" for replacement".to_string(),
+            ))?
+        }
+
+        for (i, x) in range.step_by(step).enumerate() {
+            let replaced_ident = ident.replace("X", x.to_string().as_str());
+
+            field.push_child(ir::structures::variant::Variant::empty(
+                replaced_ident.clone(),
+                bits + i as u32,
+            ))?;
+
+            println!(
+                "{}",
+                success!(
+                    "created [{}] in [{}] with bit value {}.",
+                    replaced_ident.bold(),
+                    field.ident.bold(),
+                    (bits + i as u32).to_string().bold()
+                )
+            );
+        }
 
         Ok(())
     }

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::Ident;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Variant {
     pub ident: String,
@@ -21,5 +23,11 @@ impl PartialOrd for Variant {
 impl Ord for Variant {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.bits.cmp(&other.bits)
+    }
+}
+
+impl Ident for Variant {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }

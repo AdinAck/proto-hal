@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use clap::{Args, ValueEnum};
 use colored::Colorize;
-use ir::utils::diagnostic::Diagnostic;
+use ir::{structures::Collection, utils::diagnostic::Diagnostic};
 
 use crate::{
     repl::{commands::Command, Repl},
@@ -85,7 +83,7 @@ impl Command for CreateField {
             match self.numericity {
                 Numericity::Numeric => ir::structures::field::Numericity::Numeric,
                 Numericity::Enumerated => ir::structures::field::Numericity::Enumerated {
-                    variants: HashMap::new(),
+                    variants: Collection::new(),
                 },
             },
         ))?;

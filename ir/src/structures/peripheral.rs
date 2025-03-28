@@ -1,18 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{entitlement::Entitlement, register::Register};
+use super::{entitlement::Entitlement, register::Register, Collection, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Peripheral {
     pub ident: String,
     pub base_addr: u32,
     pub entitlements: HashSet<Entitlement>,
-    pub registers: HashMap<String, Register>,
+    pub registers: Collection<Register>,
 }
 
 impl Peripheral {
@@ -21,7 +21,7 @@ impl Peripheral {
             ident,
             base_addr,
             entitlements: HashSet::new(),
-            registers: HashMap::new(),
+            registers: Collection::new(),
         }
     }
 
@@ -61,6 +61,12 @@ impl PartialOrd for Peripheral {
 impl Ord for Peripheral {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.base_addr.cmp(&other.base_addr)
+    }
+}
+
+impl Ident for Peripheral {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 

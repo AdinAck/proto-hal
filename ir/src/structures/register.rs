@@ -1,19 +1,17 @@
-use std::collections::HashMap;
-
 use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::field::Field;
+use super::{field::Field, Collection, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Register {
     pub ident: String,
     pub offset: u32,
 
-    pub fields: HashMap<String, Field>,
+    pub fields: Collection<Field>,
 }
 
 impl Register {
@@ -21,7 +19,7 @@ impl Register {
         Self {
             ident,
             offset,
-            fields: HashMap::new(),
+            fields: Collection::new(),
         }
     }
 
@@ -84,6 +82,12 @@ impl PartialOrd for Register {
 impl Ord for Register {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.offset.cmp(&other.offset)
+    }
+}
+
+impl Ident for Register {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 

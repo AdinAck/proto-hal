@@ -1,21 +1,19 @@
-use std::collections::HashMap;
-
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostics};
 
-use super::peripheral::Peripheral;
+use super::{peripheral::Peripheral, Collection, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hal {
-    pub peripherals: HashMap<String, Peripheral>,
+    pub peripherals: Collection<Peripheral>,
 }
 
 impl Hal {
     pub fn empty() -> Self {
         Self {
-            peripherals: HashMap::new(),
+            peripherals: Collection::new(),
         }
     }
 }
@@ -36,7 +34,7 @@ impl Hal {
     pub fn validate(&self) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
 
-        for peripheral in self.peripherals.values() {
+        for peripheral in self.peripherals.map.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
         }
 
@@ -44,15 +42,23 @@ impl Hal {
     }
 }
 
+impl Ident for Hal {
+    fn ident(&self) -> &str {
+        "hal"
+    }
+}
+
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let peripheral_idents = self
             .peripherals
+            .map
             .values()
             .map(|peripheral| format_ident!("{}", peripheral.ident));
 
         let peripheral_bodies = self
             .peripherals
+            .map
             .values()
             .map(|peripheral| peripheral.to_token_stream());
 
