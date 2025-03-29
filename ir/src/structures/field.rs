@@ -35,7 +35,7 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn empty(ident: impl Into<String>, offset: u8, width: u8, numericity: Numericity) -> Self {
+    pub fn new(ident: impl Into<String>, offset: u8, width: u8, numericity: Numericity) -> Self {
         Self {
             ident: ident.into(),
             offset,

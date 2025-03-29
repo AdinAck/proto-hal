@@ -13,19 +13,14 @@ pub struct Hal {
 }
 
 impl Hal {
-    pub fn empty() -> Self {
+    pub fn new(peripherals: impl IntoIterator<Item = Peripheral>) -> Self {
         Self {
-            peripherals: HashMap::new(),
+            peripherals: HashMap::from_iter(
+                peripherals
+                    .into_iter()
+                    .map(|peripheral| (peripheral.ident.clone(), peripheral)),
+            ),
         }
-    }
-
-    pub fn peripherals(mut self, peripherals: impl IntoIterator<Item = Peripheral>) -> Self {
-        for peripheral in peripherals {
-            self.peripherals
-                .insert(peripheral.ident.clone(), peripheral);
-        }
-
-        self
     }
 }
 

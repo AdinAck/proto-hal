@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{field::Field, Ident};
+use super::{entitlement::Entitlement, field::Field, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Register {
@@ -17,20 +17,23 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn empty(ident: impl Into<String>, offset: u32) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        offset: u32,
+        fields: impl IntoIterator<Item = Field>,
+    ) -> Self {
         Self {
             ident: ident.into(),
             offset,
-            fields: HashMap::new(),
+            fields: HashMap::from_iter(
+                fields.into_iter().map(|field| (field.ident.clone(), field)),
+            ),
         }
     }
 
-    pub fn fields(mut self, fields: impl IntoIterator<Item = Field>) -> Self {
-        for field in fields {
-            self.fields.insert(field.ident.clone(), field);
-        }
-
-        self
+    #[expect(unused)]
+    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
+        todo!()
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {

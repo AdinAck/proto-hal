@@ -16,12 +16,20 @@ pub struct Peripheral {
 }
 
 impl Peripheral {
-    pub fn empty(ident: impl Into<String>, base_addr: u32) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        base_addr: u32,
+        registers: impl IntoIterator<Item = Register>,
+    ) -> Self {
         Self {
             ident: ident.into(),
             base_addr,
             entitlements: HashSet::new(),
-            registers: HashMap::new(),
+            registers: HashMap::from_iter(
+                registers
+                    .into_iter()
+                    .map(|register| (register.ident.clone(), register)),
+            ),
         }
     }
 
@@ -33,12 +41,9 @@ impl Peripheral {
             .unwrap_or(0)
     }
 
-    pub fn registers(mut self, registers: impl IntoIterator<Item = Register>) -> Self {
-        for register in registers {
-            self.registers.insert(register.ident.clone(), register);
-        }
-
-        self
+    #[expect(unused)]
+    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
+        todo!()
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
