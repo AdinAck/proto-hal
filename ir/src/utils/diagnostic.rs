@@ -46,24 +46,26 @@ impl Display for Context {
 #[ters]
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
+    #[get]
     message: String,
     #[get]
     kind: Kind,
+    #[get]
     context: Option<Context>,
 }
 
 impl Diagnostic {
-    pub fn warning(message: String) -> Self {
+    pub fn warning(message: impl Into<String>) -> Self {
         Self {
-            message,
+            message: message.into(),
             kind: Kind::Warning,
             context: None,
         }
     }
 
-    pub fn error(message: String) -> Self {
+    pub fn error(message: impl Into<String>) -> Self {
         Self {
-            message,
+            message: message.into(),
             kind: Kind::Error,
             context: None,
         }
@@ -94,7 +96,7 @@ impl Diagnostic {
                     .join("\n");
 
                 if let Some(context) = context {
-                    format!("in {}:\n{}", context, diagnostics)
+                    format!("in {}:\n\t{}", context, diagnostics)
                 } else {
                     format!("{}", diagnostics)
                 }

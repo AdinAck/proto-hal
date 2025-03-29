@@ -1,15 +1,29 @@
+use std::collections::HashMap;
+
 use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{variant::Variant, Collection, Ident};
+use super::{variant::Variant, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Numericity {
     Numeric,
-    Enumerated { variants: Collection<Variant> },
+    Enumerated { variants: HashMap<String, Variant> },
+}
+
+impl Numericity {
+    pub fn enumerated(variants: impl IntoIterator<Item = Variant>) -> Self {
+        Self::Enumerated {
+            variants: HashMap::from_iter(
+                variants
+                    .into_iter()
+                    .map(|variant| (variant.ident.clone(), variant)),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,9 +35,9 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn empty(ident: String, offset: u8, width: u8, numericity: Numericity) -> Self {
+    pub fn empty(ident: impl Into<String>, offset: u8, width: u8, numericity: Numericity) -> Self {
         Self {
-            ident,
+            ident: ident.into(),
             offset,
             width,
             numericity,
@@ -31,15 +45,30 @@ impl Field {
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
+        let new_context = context.clone().and(self.ident.clone());
+
         match &self.numericity {
             Numericity::Numeric => todo!(),
             Numericity::Enumerated { variants } => {
                 let mut diagnostics = Vec::new();
 
-                let mut variants = variants.values().collect::<Vec<_>>();
-                variants.sort();
+                if let Some(largest_variant) = variants.values().map(|variant| variant.bits).max() {
+                    let variant_limit = (1 << self.width) - 1;
+                    if largest_variant > variant_limit {
+                        diagnostics.push(
+                            Diagnostic::error(format!(
+                        "field variants exceed field width. (largest variant: {}, largest possible: {})",
+                        largest_variant, variant_limit,
+                    ))
+                            .with_context(new_context.clone()),
+                        );
+                    }
+                }
 
-                for window in variants.windows(2) {
+                let mut sorted_variants = variants.values().collect::<Vec<_>>();
+                sorted_variants.sort();
+
+                for window in sorted_variants.windows(2) {
                     let lhs = window[0];
                     let rhs = window[1];
 
@@ -50,7 +79,7 @@ impl Field {
                                 lhs.ident.bold(),
                                 rhs.ident.bold()
                             ))
-                            .with_context(context.clone().and(self.ident.clone())),
+                            .with_context(new_context.clone()),
                         );
                     }
                 }

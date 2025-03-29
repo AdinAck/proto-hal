@@ -1,20 +1,31 @@
-use quote::{format_ident, quote, ToTokens};
+use std::collections::HashMap;
+
+use quote::{quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostics};
 
-use super::{peripheral::Peripheral, Collection, Ident};
+use super::{peripheral::Peripheral, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hal {
-    pub peripherals: Collection<Peripheral>,
+    pub peripherals: HashMap<String, Peripheral>,
 }
 
 impl Hal {
     pub fn empty() -> Self {
         Self {
-            peripherals: Collection::new(),
+            peripherals: HashMap::new(),
         }
+    }
+
+    pub fn peripherals(mut self, peripherals: impl IntoIterator<Item = Peripheral>) -> Self {
+        for peripheral in peripherals {
+            self.peripherals
+                .insert(peripheral.ident.clone(), peripheral);
+        }
+
+        self
     }
 }
 
@@ -36,6 +47,10 @@ impl Hal {
 
         for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
+
+            // for entitlement in &peripheral.entitlements {
+            //     let p = self.peripherals.get(entitlement.)
+            // }
         }
 
         diagnostics
@@ -50,15 +65,8 @@ impl Ident for Hal {
 
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let peripheral_idents = self
-            .peripherals
-            .map
-            .values()
-            .map(|peripheral| format_ident!("{}", peripheral.ident));
-
         let peripheral_bodies = self
             .peripherals
-            .map
             .values()
             .map(|peripheral| peripheral.to_token_stream());
 
@@ -66,12 +74,6 @@ impl ToTokens for Hal {
             #(
                 #peripheral_bodies
             )*
-
-            pub struct Reset {
-                #(
-                    #peripheral_idents: #peripheral_idents::Reset,
-                )*
-            }
         });
     }
 }

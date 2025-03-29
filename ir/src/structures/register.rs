@@ -1,26 +1,36 @@
+use std::collections::HashMap;
+
 use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{field::Field, Collection, Ident};
+use super::{field::Field, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Register {
     pub ident: String,
     pub offset: u32,
 
-    pub fields: Collection<Field>,
+    pub fields: HashMap<String, Field>,
 }
 
 impl Register {
-    pub fn empty(ident: String, offset: u32) -> Self {
+    pub fn empty(ident: impl Into<String>, offset: u32) -> Self {
         Self {
-            ident,
+            ident: ident.into(),
             offset,
-            fields: Collection::new(),
+            fields: HashMap::new(),
         }
+    }
+
+    pub fn fields(mut self, fields: impl IntoIterator<Item = Field>) -> Self {
+        for field in fields {
+            self.fields.insert(field.ident.clone(), field);
+        }
+
+        self
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
@@ -29,7 +39,10 @@ impl Register {
 
         if self.offset % 4 != 0 {
             diagnostics.push(
-                Diagnostic::error(format!("register offset must be word aligned."))
+                Diagnostic::error(format!(
+                    "register offset must be word aligned. (offset {} does not satisfy: offset % 4 == 0)",
+                    self.offset
+                ))
                     .with_context(new_context.clone()),
             );
         }
@@ -94,11 +107,7 @@ impl Ident for Register {
 impl ToTokens for Register {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = format_ident!("{}", self.ident);
-
-        let field_idents = self
-            .fields
-            .values()
-            .map(|field| format_ident!("{}", field.ident));
+        let offset = self.offset;
 
         let field_bodies = self.fields.values().map(|field| field.to_token_stream());
 
@@ -108,12 +117,9 @@ impl ToTokens for Register {
                     #field_bodies
                 )*
 
-                pub struct Reset {
-                    #(
-                        #field_idents: #field_idents::Reset,
-                    )*
-                }
+                pub const OFFSET: u32 = #offset;
             }
+
         });
     }
 }

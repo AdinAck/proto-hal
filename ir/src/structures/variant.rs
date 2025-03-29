@@ -9,8 +9,11 @@ pub struct Variant {
 }
 
 impl Variant {
-    pub fn empty(ident: String, bits: u32) -> Self {
-        Self { ident, bits }
+    pub fn new(ident: impl Into<String>, bits: u32) -> Self {
+        Self {
+            ident: ident.into(),
+            bits,
+        }
     }
 }
 

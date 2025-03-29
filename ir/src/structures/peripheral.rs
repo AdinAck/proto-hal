@@ -1,27 +1,27 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use quote::{format_ident, quote, ToTokens};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{entitlement::Entitlement, register::Register, Collection, Ident};
+use super::{entitlement::Entitlement, register::Register, Ident};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Peripheral {
     pub ident: String,
     pub base_addr: u32,
     pub entitlements: HashSet<Entitlement>,
-    pub registers: Collection<Register>,
+    pub registers: HashMap<String, Register>,
 }
 
 impl Peripheral {
-    pub fn empty(ident: String, base_addr: u32) -> Self {
+    pub fn empty(ident: impl Into<String>, base_addr: u32) -> Self {
         Self {
-            ident,
+            ident: ident.into(),
             base_addr,
             entitlements: HashSet::new(),
-            registers: Collection::new(),
+            registers: HashMap::new(),
         }
     }
 
@@ -33,15 +33,42 @@ impl Peripheral {
             .unwrap_or(0)
     }
 
+    pub fn registers(mut self, registers: impl IntoIterator<Item = Register>) -> Self {
+        for register in registers {
+            self.registers.insert(register.ident.clone(), register);
+        }
+
+        self
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone());
 
         if self.base_addr % 4 != 0 {
             diagnostics.push(
-                Diagnostic::error("peripheral address must be word aligned.".to_owned())
+                Diagnostic::error("peripheral address must be word aligned.")
                     .with_context(new_context.clone()),
             );
+        }
+
+        let mut sorted_registers = self.registers.values().collect::<Vec<_>>();
+
+        sorted_registers.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+
+        for window in sorted_registers.windows(2) {
+            let lhs = window[0];
+            let rhs = window[1];
+
+            if lhs.offset + 4 > rhs.offset {
+                diagnostics.push(
+                    Diagnostic::error(format!(
+                        "registers [{}] and [{}] overlap.",
+                        lhs.ident, rhs.ident
+                    ))
+                    .with_context(new_context.clone()),
+                );
+            }
         }
 
         for register in self.registers.values() {
@@ -73,11 +100,8 @@ impl Ident for Peripheral {
 impl ToTokens for Peripheral {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = format_ident!("{}", self.ident);
-
-        let register_idents = self
-            .registers
-            .values()
-            .map(|register| format_ident!("{}", register.ident));
+        let base_addr = self.base_addr;
+        let base_addr_formatted = format!("0x{:08x}", base_addr);
 
         let register_bodies = self
             .registers
@@ -90,11 +114,8 @@ impl ToTokens for Peripheral {
                     #register_bodies
                 )*
 
-                pub struct Reset {
-                    #(
-                        #register_idents: #register_idents::Reset,
-                    )*
-                }
+                #[doc = #base_addr_formatted]
+                pub const BASE_ADDR: u32 = #base_addr;
             }
         });
     }
