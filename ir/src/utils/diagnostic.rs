@@ -96,7 +96,7 @@ impl Diagnostic {
                     .join("\n");
 
                 if let Some(context) = context {
-                    format!("in {}:\n\t{}", context, diagnostics)
+                    format!("in {}:\n{}", context, diagnostics)
                 } else {
                     format!("{}", diagnostics)
                 }
@@ -116,3 +116,9 @@ impl Display for Diagnostic {
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
+
+impl From<Diagnostic> for Diagnostics {
+    fn from(diagnostic: Diagnostic) -> Self {
+        vec![diagnostic]
+    }
+}
