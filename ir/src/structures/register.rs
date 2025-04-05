@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use colored::Colorize;
 use quote::{format_ident, quote, ToTokens};
-use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::{entitlement::Entitlement, field::Field, Ident};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Register {
     pub ident: String,
     pub offset: u32,
@@ -51,7 +50,7 @@ impl Register {
         }
 
         let mut fields = self.fields.values().collect::<Vec<_>>();
-        fields.sort();
+        fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
 
         for window in fields.windows(2) {
             let lhs = window[0];
@@ -86,18 +85,6 @@ impl Register {
         }
 
         diagnostics
-    }
-}
-
-impl PartialOrd for Register {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Register {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.offset.cmp(&other.offset)
     }
 }
 

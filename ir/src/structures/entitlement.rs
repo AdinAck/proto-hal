@@ -1,10 +1,14 @@
-use serde::{Deserialize, Serialize};
+use ters::ters;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Entitlement {}
+#[ters]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Entitlement {
+    #[get]
+    path: String,
+}
 
 impl Entitlement {
-    pub fn to(_path: impl Into<String>) -> Self {
-        Self {}
+    pub fn to(path: impl Into<String>) -> Self {
+        Self { path: path.into() }
     }
 }

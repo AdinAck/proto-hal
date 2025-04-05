@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
 use quote::{quote, ToTokens};
-use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostics};
 
 use super::{peripheral::Peripheral, Ident};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Hal {
     pub peripherals: HashMap<String, Peripheral>,
 }
@@ -22,17 +21,11 @@ impl Hal {
             ),
         }
     }
-}
 
-impl PartialOrd for Hal {
-    fn partial_cmp(&self, #[allow(unused)] other: &Self) -> Option<std::cmp::Ordering> {
-        None
-    }
-}
-
-impl Ord for Hal {
-    fn cmp(&self, #[allow(unused)] other: &Self) -> std::cmp::Ordering {
-        std::cmp::Ordering::Equal
+    pub fn render(&self) -> String {
+        prettyplease::unparse(
+            &syn::parse_file(self.to_token_stream().to_string().as_str()).unwrap(),
+        )
     }
 }
 
@@ -43,9 +36,7 @@ impl Hal {
         for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
 
-            // for entitlement in &peripheral.entitlements {
-            //     let p = self.peripherals.get(entitlement.)
-            // }
+            // TODO: validate entitlements
         }
 
         diagnostics

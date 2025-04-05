@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use quote::{format_ident, quote, ToTokens};
-use serde::{Deserialize, Serialize};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::{entitlement::Entitlement, register::Register, Ident};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Peripheral {
     pub ident: String,
     pub base_addr: u32,
@@ -36,7 +35,7 @@ impl Peripheral {
     pub fn width(&self) -> u32 {
         self.registers
             .values()
-            .max()
+            .max_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset))
             .map(|register| register.offset + 4)
             .unwrap_or(0)
     }
@@ -81,18 +80,6 @@ impl Peripheral {
         }
 
         diagnostics
-    }
-}
-
-impl PartialOrd for Peripheral {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Peripheral {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.base_addr.cmp(&other.base_addr)
     }
 }
 

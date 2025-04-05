@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
+use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens};
-use serde::{Deserialize, Serialize};
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    access::Access,
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+};
 
 use super::{variant::Variant, Ident};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Numericity {
     Numeric,
     Enumerated { variants: HashMap<String, Variant> },
@@ -26,47 +29,48 @@ impl Numericity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Field {
     pub ident: String,
     pub offset: u8,
     pub width: u8,
-    pub numericity: Numericity,
+
+    pub access: Access,
 }
 
 impl Field {
-    pub fn new(ident: impl Into<String>, offset: u8, width: u8, numericity: Numericity) -> Self {
+    pub fn new(ident: impl Into<String>, offset: u8, width: u8, access: Access) -> Self {
         Self {
             ident: ident.into(),
             offset,
             width,
-            numericity,
+            access,
         }
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone());
 
-        match &self.numericity {
+        let validate_numericity = |numericity: &Numericity| match numericity {
             Numericity::Numeric => todo!(),
             Numericity::Enumerated { variants } => {
-                let mut diagnostics = Vec::new();
+                let mut diagnostics = Diagnostics::new();
 
                 if let Some(largest_variant) = variants.values().map(|variant| variant.bits).max() {
                     let variant_limit = (1 << self.width) - 1;
                     if largest_variant > variant_limit {
                         diagnostics.push(
-                            Diagnostic::error(format!(
-                        "field variants exceed field width. (largest variant: {}, largest possible: {})",
-                        largest_variant, variant_limit,
-                    ))
-                            .with_context(new_context.clone()),
-                        );
+                                Diagnostic::error(format!(
+                            "field variants exceed field width. (largest variant: {}, largest possible: {})",
+                            largest_variant, variant_limit,
+                        ))
+                                .with_context(new_context.clone()),
+                            );
                     }
                 }
 
                 let mut sorted_variants = variants.values().collect::<Vec<_>>();
-                sorted_variants.sort();
+                sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
 
                 for window in sorted_variants.windows(2) {
                     let lhs = window[0];
@@ -86,19 +90,20 @@ impl Field {
 
                 diagnostics
             }
+        };
+
+        match &self.access {
+            Access::Read(read) => validate_numericity(&read.numericity),
+            Access::Write(write) => validate_numericity(&write.numericity),
+            Access::ReadWrite { read, write } => {
+                let mut diagnostics = Diagnostics::new();
+
+                diagnostics.extend(validate_numericity(&read.numericity));
+                diagnostics.extend(validate_numericity(&write.numericity));
+
+                diagnostics
+            }
         }
-    }
-}
-
-impl PartialOrd for Field {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Field {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.offset.cmp(&other.offset)
     }
 }
 
@@ -114,10 +119,146 @@ impl ToTokens for Field {
         let offset = &(self.offset as u32);
         let width = &(self.width as u32);
 
+        let mut body = quote! {};
+
+        // variant bodies
+        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = &self.access {
+            if let Numericity::Enumerated { variants } = &read.numericity {
+                for variant in variants.values() {
+                    body.extend(variant.to_token_stream());
+                }
+            }
+        }
+
+        // offset and width constants
+        body.extend(quote! {
+            pub const OFFSET: u32 = #offset;
+            pub const WIDTH: u32 = #width;
+        });
+
+        // variant enum(s)
+        let variant_enum = |ident, variants: &HashMap<String, Variant>| {
+            let variant_idents = variants
+                .values()
+                .map(|variant| {
+                    syn::Ident::new(
+                        &inflector::cases::pascalcase::to_pascal_case(variant.ident()),
+                        Span::call_site(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let variant_bits = variants
+                .values()
+                .map(|variant| variant.bits)
+                .collect::<Vec<_>>();
+
+            let is_variant_idents = variants.values().map(|variant| {
+                format_ident!(
+                    "is_{}",
+                    inflector::cases::snakecase::to_snake_case(variant.ident())
+                )
+            });
+
+            quote! {
+                #[repr(u32)]
+                pub enum #ident {
+                    #(
+                        #variant_idents = #variant_bits,
+                    )*
+                }
+
+                impl #ident {
+                    pub unsafe fn from_bits(bits: u32) -> Self {
+                        match bits {
+                            #(
+                                #variant_bits => Self::#variant_idents,
+                            )*
+                            _ => ::core::hint::unreachable_unchecked(),
+                        }
+                    }
+
+                    #(
+                        pub fn #is_variant_idents(&self) -> bool {
+                            matches!(self, Self::#variant_idents)
+                        }
+                    )*
+                }
+            }
+        };
+
+        match &self.access {
+            Access::Read(read) => {
+                if let Numericity::Enumerated { variants } = &read.numericity {
+                    let variant_enum =
+                        variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
+
+                    body.extend(quote! {
+                        pub type ReadVariant = Variant;
+                        pub type WriteVariant = Variant;
+                        #variant_enum
+                    });
+                }
+            }
+            Access::Write(write) => {
+                if let Numericity::Enumerated { variants } = &write.numericity {
+                    let variant_enum =
+                        variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
+
+                    body.extend(quote! {
+                        pub type ReadVariant = Variant;
+                        pub type WriteVariant = Variant;
+                        #variant_enum
+                    });
+                }
+            }
+            Access::ReadWrite { read, write } => {
+                if read.numericity == write.numericity {
+                    if let Numericity::Enumerated { variants } = &read.numericity {
+                        let variant_enum =
+                            variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
+
+                        body.extend(quote! {
+                            pub type ReadVariant = Variant;
+                            pub type WriteVariant = Variant;
+                            #variant_enum
+                        });
+                    };
+                } else {
+                    if let Numericity::Enumerated { variants } = &read.numericity {
+                        body.extend(variant_enum(
+                            syn::Ident::new("ReadVariant", Span::call_site()),
+                            variants,
+                        ));
+                    }
+
+                    if let Numericity::Enumerated { variants } = &write.numericity {
+                        body.extend(variant_enum(
+                            syn::Ident::new("WriteVariant", Span::call_site()),
+                            variants,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // state trait
+
+        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = &self.access {
+            if let Numericity::Enumerated { variants: _ } = &read.numericity {
+                body.extend(quote! {
+                    pub trait State {
+                        const RAW: ReadVariant;
+
+                        unsafe fn conjure() -> Self;
+                    }
+                });
+            }
+        }
+
+        // final module
         tokens.extend(quote! {
             pub mod #ident {
-                pub const OFFSET: u32 = #offset;
-                pub const WIDTH: u32 = #width;
+                #body
             }
         });
     }

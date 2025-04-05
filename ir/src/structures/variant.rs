@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use proc_macro2::Span;
+use quote::{quote, ToTokens};
+use syn::Path;
 
 use super::{entitlement::Entitlement, Ident};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub ident: String,
     pub bits: u32,
@@ -26,20 +28,48 @@ impl Variant {
     }
 }
 
-impl PartialOrd for Variant {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Variant {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.bits.cmp(&other.bits)
-    }
-}
-
 impl Ident for Variant {
     fn ident(&self) -> &str {
         &self.ident
+    }
+}
+
+impl ToTokens for Variant {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = syn::Ident::new(
+            &inflector::cases::pascalcase::to_pascal_case(self.ident()),
+            Span::call_site(),
+        );
+
+        tokens.extend(quote! {
+            pub struct #ident {
+                _sealed: (),
+            }
+
+            impl State for #ident {
+                const RAW: ReadVariant = ReadVariant::#ident;
+
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
+            }
+        });
+
+        if self.entitlements.is_empty() {
+            tokens.extend(quote! {
+                unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #ident {}
+            });
+        } else {
+            for entitlement in &self.entitlements {
+                let entitlement_path =
+                    syn::parse_str::<Path>(&format!("crate::{}", entitlement.path())).unwrap();
+
+                tokens.extend(quote! {
+                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_path> for #ident {}
+                });
+            }
+        }
     }
 }
