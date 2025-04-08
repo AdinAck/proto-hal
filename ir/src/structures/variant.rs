@@ -2,21 +2,21 @@ use std::collections::HashSet;
 
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
-use syn::Path;
+use syn::{Ident, Path};
 
-use super::{entitlement::Entitlement, Ident};
+use super::entitlement::Entitlement;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
-    pub ident: String,
+    pub ident: Ident,
     pub bits: u32,
     pub entitlements: HashSet<Entitlement>,
 }
 
 impl Variant {
-    pub fn new(ident: impl Into<String>, bits: u32) -> Self {
+    pub fn new(ident: impl AsRef<str>, bits: u32) -> Self {
         Self {
-            ident: ident.into(),
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
             bits,
             entitlements: HashSet::new(),
         }
@@ -28,16 +28,10 @@ impl Variant {
     }
 }
 
-impl Ident for Variant {
-    fn ident(&self) -> &str {
-        &self.ident
-    }
-}
-
 impl ToTokens for Variant {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = syn::Ident::new(
-            &inflector::cases::pascalcase::to_pascal_case(self.ident()),
+            &inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()),
             Span::call_site(),
         );
 

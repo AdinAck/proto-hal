@@ -25,7 +25,9 @@ impl Register {
             ident: ident.into(),
             offset,
             fields: HashMap::from_iter(
-                fields.into_iter().map(|field| (field.ident.clone(), field)),
+                fields
+                    .into_iter()
+                    .map(|field| (field.ident.to_string().clone(), field)),
             ),
         }
     }
@@ -60,8 +62,8 @@ impl Register {
                 diagnostics.push(
                     Diagnostic::error(format!(
                         "fields [{}] and [{}] overlap.",
-                        lhs.ident.bold(),
-                        rhs.ident.bold()
+                        lhs.ident.to_string().bold(),
+                        rhs.ident.to_string().bold()
                     ))
                     .with_context(new_context.clone()),
                 );
@@ -73,7 +75,7 @@ impl Register {
                 diagnostics.push(
                     Diagnostic::error(format!(
                         "field [{}] exceeds register width.",
-                        field.ident.bold()
+                        field.ident.to_string().bold()
                     ))
                     .with_context(new_context.clone()),
                 );
@@ -96,20 +98,126 @@ impl Ident for Register {
 
 impl ToTokens for Register {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let mut body = quote! {};
+
         let ident = format_ident!("{}", self.ident);
         let offset = self.offset;
 
-        let field_bodies = self.fields.values().map(|field| field.to_token_stream());
+        // field bodies
+        for field in self.fields.values() {
+            body.extend(field.to_token_stream());
+        }
+
+        // unsafe interface
+        if self.fields.values().any(|field| field.access.is_read()) {
+            // reader
+
+            let readable_numeric_fields = self.fields.values().filter_map(|field| {
+                if field.access.is_read() {
+                    Some(&field.ident)
+                } else {
+                    None
+                }
+            });
+            // let readable_numeric_field_idents = self
+            //     .fields()
+            //     .readable()
+            //     .numeric(AccessMarker::Read)
+            //     .idents();
+            // let readable_enumerated_field_idents = self
+            //     .fields()
+            //     .readable()
+            //     .enumerated(AccessMarker::Read)
+            //     .idents();
+
+            // let value_tys = readable_numeric_fields
+            //     .map(|field| {
+            //         let ident = format_ident!(
+            //             "u{}",
+            //             Index {
+            //                 index: field.width() as _,
+            //                 span: Span::call_site(),
+            //             }
+            //         );
+
+            //         match field.width() {
+            //             1 => parse_quote! { bool },
+            //             8 | 16 | 32 => {
+            //                 parse_quote! { #ident }
+            //             }
+            //             _ => {
+            //                 parse_quote! { ::proto_hal::macro_utils::arbitrary_int::#ident }
+            //             }
+            //         }
+            //     })
+            //     .collect::<Vec<Path>>();
+
+            // body.extend(quote! {
+            //     pub struct UnsafeReader {
+            //         value: ::proto_hal::ir_utils::RegisterValue,
+            //     }
+
+            //     impl UnsafeReader {
+            //         const fn new(value: u32) -> Self {
+            //             Self {
+            //                 value: ::proto_hal::ir_utils::RegisterValue::new(value),
+            //             }
+            //         }
+
+            //         #(
+            //             pub fn #readable_enumerated_field_idents(&self) -> #readable_enumerated_field_idents::ReadVariant {
+            //                 // SAFETY: assumes
+            //                 // 1. peripheral description is correct (offset/width)
+            //                 // 2. hardware is operating correctly
+            //                 unsafe {
+            //                     #readable_enumerated_field_idents::ReadVariant::from_bits(
+            //                         self.value.region(
+            //                             #readable_enumerated_field_idents::OFFSET,
+            //                             #readable_enumerated_field_idents::WIDTH
+            //                         )
+            //                     )
+            //                 }
+            //             }
+            //         )*
+
+            //         #(
+            //             pub fn #readable_numeric_field_idents(&self) -> #value_tys {
+            //                 self.value.#value_tys(#readable_numeric_field_idents::OFFSET)
+            //             }
+            //         )*
+            //     }
+            // });
+
+            body.extend(quote! {
+                pub unsafe fn read() -> UnsafeReader {
+                    UnsafeReader::new(
+                        ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32)
+                    )
+                }
+            });
+        }
+
+        if self.fields.values().any(|field| field.access.is_write()) {
+            body.extend(quote! {
+                pub unsafe fn write(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    let mut writer = UnsafeWriter::new();
+
+                    f(&mut writer);
+
+                    ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value);
+                }
+            });
+        }
+
+        // offset constant
+        body.extend(quote! {
+            pub const OFFSET: u32 = #offset;
+        });
 
         tokens.extend(quote! {
             pub mod #ident {
-                #(
-                    #field_bodies
-                )*
-
-                pub const OFFSET: u32 = #offset;
+                #body
             }
-
         });
     }
 }

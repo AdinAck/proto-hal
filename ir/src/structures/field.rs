@@ -3,18 +3,19 @@ use std::collections::HashMap;
 use colored::Colorize;
 use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens};
+use syn::Ident;
 
 use crate::{
     access::Access,
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
-use super::{variant::Variant, Ident};
+use super::variant::Variant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Numericity {
     Numeric,
-    Enumerated { variants: HashMap<String, Variant> },
+    Enumerated { variants: HashMap<Ident, Variant> },
 }
 
 impl Numericity {
@@ -31,7 +32,7 @@ impl Numericity {
 
 #[derive(Debug, Clone)]
 pub struct Field {
-    pub ident: String,
+    pub ident: Ident,
     pub offset: u8,
     pub width: u8,
 
@@ -39,9 +40,9 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn new(ident: impl Into<String>, offset: u8, width: u8, access: Access) -> Self {
+    pub fn new(ident: impl AsRef<str>, offset: u8, width: u8, access: Access) -> Self {
         Self {
-            ident: ident.into(),
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
             offset,
             width,
             access,
@@ -49,7 +50,7 @@ impl Field {
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
-        let new_context = context.clone().and(self.ident.clone());
+        let new_context = context.clone().and(self.ident.clone().to_string());
 
         let validate_numericity = |numericity: &Numericity| match numericity {
             Numericity::Numeric => todo!(),
@@ -80,8 +81,8 @@ impl Field {
                         diagnostics.push(
                             Diagnostic::error(format!(
                                 "variants [{}] and [{}] have overlapping bit values.",
-                                lhs.ident.bold(),
-                                rhs.ident.bold()
+                                lhs.ident.to_string().bold(),
+                                rhs.ident.to_string().bold()
                             ))
                             .with_context(new_context.clone()),
                         );
@@ -104,12 +105,6 @@ impl Field {
                 diagnostics
             }
         }
-    }
-}
-
-impl Ident for Field {
-    fn ident(&self) -> &str {
-        &self.ident
     }
 }
 
@@ -137,12 +132,14 @@ impl ToTokens for Field {
         });
 
         // variant enum(s)
-        let variant_enum = |ident, variants: &HashMap<String, Variant>| {
+        let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
             let variant_idents = variants
                 .values()
                 .map(|variant| {
                     syn::Ident::new(
-                        &inflector::cases::pascalcase::to_pascal_case(variant.ident()),
+                        &inflector::cases::pascalcase::to_pascal_case(
+                            variant.ident.to_string().as_str(),
+                        ),
                         Span::call_site(),
                     )
                 })
@@ -155,7 +152,7 @@ impl ToTokens for Field {
             let is_variant_idents = variants.values().map(|variant| {
                 format_ident!(
                     "is_{}",
-                    inflector::cases::snakecase::to_snake_case(variant.ident())
+                    inflector::cases::snakecase::to_snake_case(variant.ident.to_string().as_str())
                 )
             });
 

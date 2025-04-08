@@ -6,7 +6,7 @@ pub mod gpio;
 pub mod stm32;
 
 pub mod interrupt;
-pub mod macro_utils;
+pub mod ir_utils;
 pub mod prelude;
 pub mod stasis;
 
