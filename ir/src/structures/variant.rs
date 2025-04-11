@@ -1,16 +1,18 @@
 use std::collections::HashSet;
 
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{Ident, Path};
+use syn::{parse_quote, Ident, Path};
 
 use super::entitlement::Entitlement;
+
+type Entitlements = HashSet<Entitlement>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub ident: Ident,
     pub bits: u32,
-    pub entitlements: HashSet<Entitlement>,
+    pub entitlements: Entitlements,
 }
 
 impl Variant {
@@ -28,18 +30,18 @@ impl Variant {
     }
 }
 
-impl ToTokens for Variant {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = syn::Ident::new(
-            &inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()),
-            Span::call_site(),
-        );
-
-        tokens.extend(quote! {
+// codegen
+impl Variant {
+    pub fn generate_state(ident: &Ident) -> TokenStream {
+        quote! {
             pub struct #ident {
                 _sealed: (),
             }
+        }
+    }
 
+    pub fn generate_state_impl(ident: &Ident) -> TokenStream {
+        quote! {
             impl State for #ident {
                 const RAW: ReadVariant = ReadVariant::#ident;
 
@@ -49,21 +51,46 @@ impl ToTokens for Variant {
                     }
                 }
             }
-        });
+        }
+    }
 
-        if self.entitlements.is_empty() {
-            tokens.extend(quote! {
+    pub fn generate_entitlement_impls(ident: &Ident, entitlements: &Entitlements) -> TokenStream {
+        if entitlements.is_empty() {
+            // any T satisfies this state's entitlement requirements
+
+            quote! {
                 unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #ident {}
-            });
+            }
         } else {
-            for entitlement in &self.entitlements {
-                let entitlement_path =
-                    syn::parse_str::<Path>(&format!("crate::{}", entitlement.path())).unwrap();
+            // exactly this finite set of states satisfy this state's entitlement requirements
 
-                tokens.extend(quote! {
-                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_path> for #ident {}
-                });
+            let entitlement_paths = entitlements.iter().map(|entitlement| {
+                let path = entitlement.path();
+                let path: Path = parse_quote! {
+                    crate::#path
+                };
+
+                path
+            });
+
+            quote! {
+                #(
+                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident {}
+                )*
             }
         }
+    }
+}
+
+impl ToTokens for Variant {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = Ident::new(
+            &inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()),
+            Span::call_site(),
+        );
+
+        tokens.extend(Self::generate_state(&ident));
+        tokens.extend(Self::generate_state_impl(&ident));
+        tokens.extend(Self::generate_entitlement_impls(&ident, &self.entitlements));
     }
 }

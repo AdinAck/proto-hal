@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::Ident;
 
@@ -108,28 +108,39 @@ impl Field {
     }
 }
 
-impl ToTokens for Field {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = format_ident!("{}", self.ident);
-        let offset = &(self.offset as u32);
-        let width = &(self.width as u32);
-
-        let mut body = quote! {};
-
-        // variant bodies
-        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = &self.access {
+// codegen
+impl Field {
+    pub fn generate_variant_bodies(access: &Access) -> Option<TokenStream> {
+        // TODO: ???
+        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants } = &read.numericity {
-                for variant in variants.values() {
-                    body.extend(variant.to_token_stream());
-                }
+                let variants = variants.values();
+                return Some(quote! { #(#variants)* });
             }
         }
 
-        // offset and width constants
-        body.extend(quote! {
+        None
+    }
+
+    pub fn generate_layout_consts(offset: u32, width: u32) -> TokenStream {
+        quote! {
             pub const OFFSET: u32 = #offset;
             pub const WIDTH: u32 = #width;
-        });
+        }
+    }
+}
+
+impl ToTokens for Field {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = format_ident!("{}", self.ident);
+
+        let mut body = quote! {};
+
+        body.extend(Self::generate_variant_bodies(&self.access));
+        body.extend(Self::generate_layout_consts(
+            self.offset as u32,
+            self.width as u32,
+        ));
 
         // variant enum(s)
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
