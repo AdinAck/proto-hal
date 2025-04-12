@@ -110,8 +110,15 @@ impl Field {
 
 // codegen
 impl Field {
-    pub fn generate_variant_bodies(access: &Access) -> Option<TokenStream> {
-        // TODO: ???
+    fn generate_states(access: &Access) -> Option<TokenStream> {
+        // NOTE: if a field is resolvable and has split schemas,
+        // the schema that represents the resolvable aspect of the
+        // field must be from read access, as the value the field
+        // holds must represent the state to be resolved
+        //
+        // NOTE: states can only be generated for the resolvable component(s)
+        // of a field (since the definition of resolvability is that the state
+        // it holds is statically known)
         if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants } = &read.numericity {
                 let variants = variants.values();
@@ -122,27 +129,14 @@ impl Field {
         None
     }
 
-    pub fn generate_layout_consts(offset: u32, width: u32) -> TokenStream {
+    fn generate_layout_consts(offset: u32, width: u32) -> TokenStream {
         quote! {
             pub const OFFSET: u32 = #offset;
             pub const WIDTH: u32 = #width;
         }
     }
-}
 
-impl ToTokens for Field {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = format_ident!("{}", self.ident);
-
-        let mut body = quote! {};
-
-        body.extend(Self::generate_variant_bodies(&self.access));
-        body.extend(Self::generate_layout_consts(
-            self.offset as u32,
-            self.width as u32,
-        ));
-
-        // variant enum(s)
+    fn generate_variant_enums(access: &Access) -> TokenStream {
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
             let variant_idents = variants
                 .values()
@@ -194,17 +188,19 @@ impl ToTokens for Field {
             }
         };
 
-        match &self.access {
+        match access {
             Access::Read(read) => {
                 if let Numericity::Enumerated { variants } = &read.numericity {
                     let variant_enum =
                         variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                    body.extend(quote! {
+                    quote! {
                         pub type ReadVariant = Variant;
                         pub type WriteVariant = Variant;
                         #variant_enum
-                    });
+                    }
+                } else {
+                    todo!()
                 }
             }
             Access::Write(write) => {
@@ -212,11 +208,13 @@ impl ToTokens for Field {
                     let variant_enum =
                         variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                    body.extend(quote! {
+                    quote! {
                         pub type ReadVariant = Variant;
                         pub type WriteVariant = Variant;
                         #variant_enum
-                    });
+                    }
+                } else {
+                    todo!()
                 }
             }
             Access::ReadWrite { read, write } => {
@@ -225,43 +223,69 @@ impl ToTokens for Field {
                         let variant_enum =
                             variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                        body.extend(quote! {
+                        quote! {
                             pub type ReadVariant = Variant;
                             pub type WriteVariant = Variant;
                             #variant_enum
-                        });
-                    };
-                } else {
-                    if let Numericity::Enumerated { variants } = &read.numericity {
-                        body.extend(variant_enum(
-                            syn::Ident::new("ReadVariant", Span::call_site()),
-                            variants,
-                        ));
+                        }
+                    } else {
+                        todo!()
                     }
+                } else {
+                    let read_enum = if let Numericity::Enumerated { variants } = &read.numericity {
+                        variant_enum(syn::Ident::new("ReadVariant", Span::call_site()), variants)
+                    } else {
+                        todo!()
+                    };
 
-                    if let Numericity::Enumerated { variants } = &write.numericity {
-                        body.extend(variant_enum(
-                            syn::Ident::new("WriteVariant", Span::call_site()),
-                            variants,
-                        ));
+                    let write_enum = if let Numericity::Enumerated { variants } = &write.numericity
+                    {
+                        variant_enum(syn::Ident::new("WriteVariant", Span::call_site()), variants)
+                    } else {
+                        todo!()
+                    };
+
+                    quote! {
+                        #read_enum
+                        #write_enum
                     }
                 }
             }
         }
+    }
 
-        // state trait
-
-        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = &self.access {
+    fn generate_state_trait(access: &Access) -> Option<TokenStream> {
+        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants: _ } = &read.numericity {
-                body.extend(quote! {
+                Some(quote! {
                     pub trait State {
                         const RAW: ReadVariant;
 
                         unsafe fn conjure() -> Self;
                     }
-                });
+                })
+            } else {
+                todo!()
             }
+        } else {
+            None
         }
+    }
+}
+
+impl ToTokens for Field {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = format_ident!("{}", self.ident);
+
+        let mut body = quote! {};
+
+        body.extend(Self::generate_states(&self.access));
+        body.extend(Self::generate_layout_consts(
+            self.offset as u32,
+            self.width as u32,
+        ));
+        body.extend(Self::generate_variant_enums(&self.access));
+        body.extend(Self::generate_state_trait(&self.access));
 
         // final module
         tokens.extend(quote! {
