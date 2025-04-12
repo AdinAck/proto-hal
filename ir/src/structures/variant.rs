@@ -65,7 +65,7 @@ impl Variant {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
             let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let path = entitlement.path();
+                let path = syn::parse_str::<Path>(entitlement.path()).unwrap();
                 let path: Path = parse_quote! {
                     crate::#path
                 };
