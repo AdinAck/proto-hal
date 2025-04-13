@@ -147,6 +147,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
+name = "model"
+version = "0.1.0"
+dependencies = [
+ "colored",
+ "proto-hal-build",
+]
+
+[[package]]
+name = "out"
+version = "0.1.0"
+dependencies = [
+ "model",
+ "proto-hal-build",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"

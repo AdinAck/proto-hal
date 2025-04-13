@@ -57,7 +57,6 @@ impl Peripheral {
         }
 
         let mut sorted_registers = self.registers.values().collect::<Vec<_>>();
-
         sorted_registers.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
 
         for window in sorted_registers.windows(2) {

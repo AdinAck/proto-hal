@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use quote::{quote, ToTokens};
 
-use crate::utils::diagnostic::{Context, Diagnostics};
+use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::{peripheral::Peripheral, Ident};
 
@@ -32,6 +32,25 @@ impl Hal {
 impl Hal {
     pub fn validate(&self) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
+        let new_context = Context::new();
+
+        let mut sorted_peripherals = self.peripherals.values().collect::<Vec<_>>();
+        sorted_peripherals.sort_by(|lhs, rhs| lhs.base_addr.cmp(&rhs.base_addr));
+
+        for window in sorted_peripherals.windows(2) {
+            let lhs = window[0];
+            let rhs = window[1];
+
+            if lhs.base_addr + lhs.width() > rhs.base_addr {
+                diagnostics.push(
+                    Diagnostic::error(format!(
+                        "peripherals [{}] and [{}] overlap.",
+                        lhs.ident, rhs.ident
+                    ))
+                    .with_context(new_context.clone()),
+                );
+            }
+        }
 
         for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
