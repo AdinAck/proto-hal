@@ -191,7 +191,7 @@ impl ToTokens for Register {
             body.extend(quote! {
                 pub unsafe fn read() -> UnsafeReader {
                     UnsafeReader::new(
-                        ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32)
+                        unsafe { ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32) }
                     )
                 }
             });
@@ -204,7 +204,7 @@ impl ToTokens for Register {
 
                     f(&mut writer);
 
-                    ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value);
+                    unsafe { ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value) };
                 }
             });
         }
