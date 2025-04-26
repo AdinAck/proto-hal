@@ -159,6 +159,7 @@ name = "out"
 version = "0.1.0"
 dependencies = [
  "model",
+ "proto-hal",
  "proto-hal-build",
 ]
 

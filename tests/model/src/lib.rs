@@ -1,11 +1,33 @@
 use proto_hal_build::ir::{
-    structures::{hal::Hal, peripheral::Peripheral, register::Register},
+    access::Access,
+    structures::{
+        field::{Field, Numericity},
+        hal::Hal,
+        peripheral::Peripheral,
+        register::Register,
+        variant::Variant,
+    },
     utils::diagnostic::Diagnostics,
 };
 
 pub fn generate() -> Result<Hal, Diagnostics> {
     let hal = Hal::new([
-        Peripheral::new("foo", 0, [Register::new("foo0", 0, [])]),
+        Peripheral::new(
+            "foo",
+            0,
+            [Register::new(
+                "foo0",
+                0,
+                [Field::new(
+                    "a",
+                    0,
+                    4,
+                    Access::read_write(Numericity::enumerated(
+                        (0..6).map(|i| Variant::new(format!("V{i}"), i)),
+                    )),
+                )],
+            )],
+        ),
         Peripheral::new(
             "bar",
             0x100,

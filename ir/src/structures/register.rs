@@ -1,11 +1,17 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
+use syn::Ident;
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    access::Access,
+    structures::field::Numericity,
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+};
 
-use super::{entitlement::Entitlement, field::Field, Ident};
+use super::{entitlement::Entitlement, field::Field};
 
 #[derive(Debug, Clone)]
 pub struct Register {
@@ -90,9 +96,191 @@ impl Register {
     }
 }
 
-impl Ident for Register {
-    fn ident(&self) -> &str {
-        &self.ident
+// codegen
+impl Register {
+    fn generate_fields<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
+        quote! {
+            #(
+                #fields
+            )*
+        }
+    }
+
+    fn generate_layout_consts(offset: u32) -> TokenStream {
+        quote! {
+            pub const OFFSET: u32 = #offset;
+        }
+    }
+
+    fn generate_refined_writers<'a>(
+        fields: impl Iterator<Item = &'a Field>,
+        writer_idents: impl Iterator<Item = &'a Ident>,
+    ) -> TokenStream {
+        let mut enumerated_field_idents = Vec::new();
+        let mut variant_idents = Vec::new();
+
+        for field in fields {
+            match &field.access {
+                Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                    match &write.numericity {
+                        Numericity::Enumerated { variants } => {
+                            enumerated_field_idents.push(&field.ident);
+                            variant_idents.push(
+                                variants
+                                    .values()
+                                    .map(|variant| &variant.ident)
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                        Numericity::Numeric => todo!(),
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let accessors = variant_idents
+            .iter()
+            .map(|variants| {
+                variants
+                    .iter()
+                    .map(|ident| {
+                        Ident::new(
+                            inflector::cases::snakecase::to_snake_case(ident.to_string().as_str())
+                                .as_str(),
+                            Span::call_site(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        quote! {
+            #(
+                pub struct #writer_idents<'a, W, F>
+                where
+                    F: FnOnce(&mut W, u32),
+                {
+                    w: &'a mut W,
+                    f: F,
+                }
+
+                impl<'a, W, F> #writer_idents<'a, W, F>
+                where
+                    F: FnOnce(&mut W, u32),
+                {
+                    pub fn variant(self, variant: #enumerated_field_idents::WriteVariant) -> &'a mut W {
+                        (self.f)(self.w, variant as _);
+
+                        self.w
+                    }
+
+                    #(
+                        pub fn #accessors(self) -> &'a mut W {
+                            self.variant(#enumerated_field_idents::WriteVariant::#variant_idents)
+                        }
+                    )*
+                }
+            )*
+        }
+    }
+
+    fn generate_unsafe_interface<'a>(
+        fields: impl Iterator<Item = &'a Field> + Clone,
+        refined_writer_idents: impl Iterator<Item = &'a Ident>,
+    ) -> TokenStream {
+        fn read<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
+            if fields.clone().any(|field| field.access.is_read()) {
+                let enumerated_field_idents = fields.filter_map(|field| match &field.access {
+                    Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                        if matches!(read.numericity, Numericity::Enumerated { variants: _ }) {
+                            Some(&field.ident)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                });
+
+                Some(quote! {
+                    pub struct UnsafeReader {
+                        value: u32
+                    }
+
+                    impl UnsafeReader {
+                        #(
+                            pub fn #enumerated_field_idents(&self) -> #enumerated_field_idents::ReadVariant {
+                                unsafe {
+                                    #enumerated_field_idents::ReadVariant::from_bits({
+                                        let mask = u32::MAX >> (32 - #enumerated_field_idents::WIDTH);
+                                        (self.value >> #enumerated_field_idents::OFFSET) & mask
+                                    })
+                                }
+                            }
+                        )*
+                    }
+
+                    pub unsafe fn read() -> UnsafeReader {
+                        UnsafeReader {
+                            value: unsafe { ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32) }
+                        }
+                    }
+                })
+            } else {
+                None
+            }
+        }
+
+        fn write<'a>(
+            fields: impl Iterator<Item = &'a Field> + Clone,
+            refined_writer_idents: impl Iterator<Item = &'a Ident>,
+        ) -> Option<TokenStream> {
+            if fields.clone().any(|field| field.access.is_write()) {
+                let enumerated_field_idents = fields.filter_map(|field| match &field.access {
+                    Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                        if matches!(write.numericity, Numericity::Enumerated { variants: _ }) {
+                            Some(&field.ident)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                });
+
+                Some(quote! {
+                    pub struct UnsafeWriter {
+                        value: u32
+                    }
+
+                    impl UnsafeWriter {
+                        #(
+                            pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
+                                #[allow(unused_parens)]
+                                #refined_writer_idents { w: self, f: |w, value| w.value |= (value << #enumerated_field_idents::OFFSET) }
+                            }
+                        )*
+                    }
+
+                    pub unsafe fn write_from_zero(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                        let mut writer = UnsafeWriter { value: 0 };
+
+                        f(&mut writer);
+
+                        unsafe { ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value) };
+                    }
+                })
+            } else {
+                None
+            }
+        }
+
+        let read = read(fields.clone());
+        let write = write(fields, refined_writer_idents);
+
+        quote! {
+            #read
+            #write
+        }
     }
 }
 
@@ -101,118 +289,28 @@ impl ToTokens for Register {
         let mut body = quote! {};
 
         let ident = format_ident!("{}", self.ident);
-        let offset = self.offset;
 
-        // field bodies
-        for field in self.fields.values() {
-            body.extend(field.to_token_stream());
-        }
+        let refined_writer_idents = self
+            .fields
+            .values()
+            .map(|field| {
+                format_ident!(
+                    "{}Writer",
+                    inflector::cases::pascalcase::to_pascal_case(field.ident.to_string().as_str())
+                )
+            })
+            .collect::<Vec<_>>();
 
-        // unsafe interface
-        if self.fields.values().any(|field| field.access.is_read()) {
-            // reader
-
-            let readable_numeric_fields = self.fields.values().filter_map(|field| {
-                if field.access.is_read() {
-                    Some(&field.ident)
-                } else {
-                    None
-                }
-            });
-            // let readable_numeric_field_idents = self
-            //     .fields()
-            //     .readable()
-            //     .numeric(AccessMarker::Read)
-            //     .idents();
-            // let readable_enumerated_field_idents = self
-            //     .fields()
-            //     .readable()
-            //     .enumerated(AccessMarker::Read)
-            //     .idents();
-
-            // let value_tys = readable_numeric_fields
-            //     .map(|field| {
-            //         let ident = format_ident!(
-            //             "u{}",
-            //             Index {
-            //                 index: field.width() as _,
-            //                 span: Span::call_site(),
-            //             }
-            //         );
-
-            //         match field.width() {
-            //             1 => parse_quote! { bool },
-            //             8 | 16 | 32 => {
-            //                 parse_quote! { #ident }
-            //             }
-            //             _ => {
-            //                 parse_quote! { ::proto_hal::macro_utils::arbitrary_int::#ident }
-            //             }
-            //         }
-            //     })
-            //     .collect::<Vec<Path>>();
-
-            // body.extend(quote! {
-            //     pub struct UnsafeReader {
-            //         value: ::proto_hal::ir_utils::RegisterValue,
-            //     }
-
-            //     impl UnsafeReader {
-            //         const fn new(value: u32) -> Self {
-            //             Self {
-            //                 value: ::proto_hal::ir_utils::RegisterValue::new(value),
-            //             }
-            //         }
-
-            //         #(
-            //             pub fn #readable_enumerated_field_idents(&self) -> #readable_enumerated_field_idents::ReadVariant {
-            //                 // SAFETY: assumes
-            //                 // 1. peripheral description is correct (offset/width)
-            //                 // 2. hardware is operating correctly
-            //                 unsafe {
-            //                     #readable_enumerated_field_idents::ReadVariant::from_bits(
-            //                         self.value.region(
-            //                             #readable_enumerated_field_idents::OFFSET,
-            //                             #readable_enumerated_field_idents::WIDTH
-            //                         )
-            //                     )
-            //                 }
-            //             }
-            //         )*
-
-            //         #(
-            //             pub fn #readable_numeric_field_idents(&self) -> #value_tys {
-            //                 self.value.#value_tys(#readable_numeric_field_idents::OFFSET)
-            //             }
-            //         )*
-            //     }
-            // });
-
-            body.extend(quote! {
-                pub unsafe fn read() -> UnsafeReader {
-                    UnsafeReader::new(
-                        unsafe { ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32) }
-                    )
-                }
-            });
-        }
-
-        if self.fields.values().any(|field| field.access.is_write()) {
-            body.extend(quote! {
-                pub unsafe fn write(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
-                    let mut writer = UnsafeWriter::new();
-
-                    f(&mut writer);
-
-                    unsafe { ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value) };
-                }
-            });
-        }
-
-        // offset constant
-        body.extend(quote! {
-            pub const OFFSET: u32 = #offset;
-        });
+        body.extend(Self::generate_fields(self.fields.values()));
+        body.extend(Self::generate_layout_consts(self.offset));
+        body.extend(Self::generate_refined_writers(
+            self.fields.values(),
+            refined_writer_idents.iter(),
+        ));
+        body.extend(Self::generate_unsafe_interface(
+            self.fields.values(),
+            refined_writer_idents.iter(),
+        ));
 
         tokens.extend(quote! {
             pub mod #ident {
