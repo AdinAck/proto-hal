@@ -175,7 +175,7 @@ impl Field {
                             #(
                                 #variant_bits => Self::#variant_idents,
                             )*
-                            _ => ::core::hint::unreachable_unchecked(),
+                            _ => unsafe { ::core::hint::unreachable_unchecked() },
                         }
                     }
 
