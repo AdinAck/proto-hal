@@ -22,10 +22,10 @@ impl Hal {
         }
     }
 
-    pub fn render(&self) -> String {
-        prettyplease::unparse(
-            &syn::parse_file(self.to_token_stream().to_string().as_str()).unwrap(),
-        )
+    pub fn render(&self) -> syn::Result<String> {
+        Ok(prettyplease::unparse(&syn::parse_file(
+            self.to_token_stream().to_string().as_str(),
+        )?))
     }
 }
 
