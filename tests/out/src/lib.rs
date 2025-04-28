@@ -29,31 +29,40 @@ mod tests {
 
             use crate::foo::{self, foo0};
 
-            static MOCK_FOO: u32 = foo0::a::Variant::V3 as _;
+            static mut MOCK_FOO: u32 = 0;
 
             #[unsafe(export_name = "__PROTO_HAL_ADDR_OF_FOO")]
             fn addr_of() -> usize {
-                (&MOCK_FOO as *const u32).addr()
+                (&raw const MOCK_FOO).addr()
             }
 
             #[test]
-            fn _unsafe_read() {
-                // test harness is properly addressing
+            fn harness_addressing() {
                 assert_eq!(foo::base_addr(), addr_of());
-
-                assert!(unsafe { foo0::read().a().is_v3() });
             }
 
-            // #[test]
-            // fn _unsafe_write() {
-            //     unsafe { foo0::write_from_zero(|w| w.a().v4()) };
-            //     assert!(unsafe { foo0::read().a().is_v4() });
-            // }
+            #[test]
+            fn unsafe_read() {
+                unsafe { MOCK_FOO = foo0::a::Variant::V1 as _ };
+                assert!(unsafe { foo0::read().a().is_v1() });
+            }
 
-            // #[test]
-            // fn _unsafe_modify() {
-            //     unsafe { foo0::modify(|r, w| w.a().variant(r.a())) }
-            // }
+            #[test]
+            fn unsafe_write() {
+                unsafe { foo0::write_from_zero(|w| w.a().v2()) };
+                assert!(unsafe { foo0::read().a().is_v2() });
+            }
+
+            #[test]
+            fn unsafe_modify() {
+                unsafe { foo0::write_from_zero(|w| w.a().v3()) };
+                unsafe {
+                    foo0::modify(|r, w| {
+                        w.a().variant(foo0::a::Variant::from_bits(r.a() as u32 + 1))
+                    })
+                }
+                assert!(unsafe { foo0::read().a().is_v4() });
+            }
         }
     }
 }

@@ -115,17 +115,19 @@ impl ToTokens for Peripheral {
                 #[doc = #base_addr_formatted]
                 pub const BASE_ADDR: usize = #base_addr as _;
 
-                pub fn base_addr() -> usize {
-                    if cfg!(test) {
-                        unsafe extern "C" {
-                            #[link_name = #link_symbol]
-                            fn addr_of() -> usize;
-                        }
+                #[cfg(not(test))]
+                pub const fn base_addr() -> usize {
+                    BASE_ADDR
+                }
 
-                        unsafe { addr_of() }
-                    } else {
-                        BASE_ADDR
+                #[cfg(test)]
+                pub fn base_addr() -> usize {
+                    unsafe extern "Rust" {
+                        #[link_name = #link_symbol]
+                        fn addr_of() -> usize;
                     }
+
+                    unsafe { addr_of() }
                 }
             }
         });
