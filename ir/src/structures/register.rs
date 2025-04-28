@@ -208,7 +208,8 @@ impl Register {
                     }
 
                     impl UnsafeReader {
-                        pub unsafe fn bits(&self) -> u32 {
+                        /// View the raw bits captured from the register.
+                        pub fn bits(&self) -> u32 {
                             self.value
                         }
 
@@ -257,6 +258,11 @@ impl Register {
                     }
 
                     impl UnsafeWriter {
+                        /// View the raw bits pending to be written to the register.
+                        pub fn bits(&self) -> u32 {
+                            self.value
+                        }
+
                         #(
                             pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
                                 let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
