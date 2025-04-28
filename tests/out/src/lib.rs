@@ -16,7 +16,6 @@ mod tests {
     }
 
     mod registers {
-        extern crate std;
         use crate::{bar::bar0, foo::foo0};
 
         #[test]
@@ -26,8 +25,6 @@ mod tests {
         }
 
         mod unsafe_interface {
-            extern crate std;
-
             use crate::foo::{self, foo0};
 
             static mut MOCK_FOO: u32 = u32::MAX;
