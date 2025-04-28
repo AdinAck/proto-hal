@@ -6,9 +6,6 @@ edition = "2024"
 [dependencies]
 proto-hal = { path = "../../proto-hal" }
 
-[dev-dependencies]
-serial_test = { version = "3.2.0", default-features = false }
-
 [build-dependencies]
 model = { path = "../model" }
 proto-hal-build = { path = "../../proto-hal-build" }

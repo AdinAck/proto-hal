@@ -3,7 +3,6 @@
 include!(concat!(env!("OUT_DIR"), "/hal.rs"));
 
 #[cfg(test)]
-#[serial_test::serial]
 mod tests {
     mod peripherals {
         use crate::{bar, foo};
@@ -25,9 +24,14 @@ mod tests {
         }
 
         mod unsafe_interface {
+            extern crate std;
             use crate::foo::{self, foo0};
 
             static mut MOCK_FOO: u32 = u32::MAX;
+
+            // the unsafe interfaces tests interact with a shared resource. in order for this to be sound, the tests
+            // must run sequentially, which is achieved by requiring acquisition of this lock.
+            static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
             #[unsafe(export_name = "__PROTO_HAL_ADDR_OF_FOO")]
             fn addr_of() -> usize {
@@ -41,18 +45,24 @@ mod tests {
 
             #[test]
             fn unsafe_read() {
+                let _lock = LOCK.lock().unwrap();
+
                 unsafe { MOCK_FOO = foo0::a::Variant::V1 as _ };
                 assert!(unsafe { foo0::read().a().is_v1() });
             }
 
             #[test]
             fn unsafe_write() {
+                let _lock = LOCK.lock().unwrap();
+
                 unsafe { foo0::write_from_zero(|w| w.a().v2()) };
                 assert!(unsafe { foo0::read().a().is_v2() });
             }
 
             #[test]
             fn unsafe_modify() {
+                let _lock = LOCK.lock().unwrap();
+
                 unsafe { foo0::write_from_zero(|w| w.a().v3()) };
                 unsafe {
                     foo0::modify(|r, w| {
