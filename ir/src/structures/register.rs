@@ -208,6 +208,10 @@ impl Register {
                     }
 
                     impl UnsafeReader {
+                        pub unsafe fn bits(&self) -> u32 {
+                            self.value
+                        }
+
                         #(
                             pub fn #enumerated_field_idents(&self) -> #enumerated_field_idents::ReadVariant {
                                 unsafe {
@@ -255,8 +259,9 @@ impl Register {
                     impl UnsafeWriter {
                         #(
                             pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
-                                #[allow(unused_parens)]
-                                #refined_writer_idents { w: self, f: |w, value| w.value |= (value << #enumerated_field_idents::OFFSET) }
+                                let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
+
+                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
                             }
                         )*
                     }

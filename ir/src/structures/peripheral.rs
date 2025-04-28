@@ -112,13 +112,14 @@ impl ToTokens for Peripheral {
                     #register_bodies
                 )*
 
-                #[doc = #base_addr_formatted]
-                pub const BASE_ADDR: usize = #base_addr as _;
-
                 #[cfg(not(test))]
+                #[doc = #base_addr_formatted]
                 pub const fn base_addr() -> usize {
-                    BASE_ADDR
+                    #base_addr as _
                 }
+
+                #[cfg(test)]
+                pub(crate) const BASE_ADDR: usize = #base_addr as _;
 
                 #[cfg(test)]
                 pub fn base_addr() -> usize {

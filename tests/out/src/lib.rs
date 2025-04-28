@@ -3,6 +3,7 @@
 include!(concat!(env!("OUT_DIR"), "/hal.rs"));
 
 #[cfg(test)]
+#[serial_test::serial]
 mod tests {
     mod peripherals {
         use crate::{bar, foo};
@@ -29,7 +30,7 @@ mod tests {
 
             use crate::foo::{self, foo0};
 
-            static mut MOCK_FOO: u32 = 0;
+            static mut MOCK_FOO: u32 = u32::MAX;
 
             #[unsafe(export_name = "__PROTO_HAL_ADDR_OF_FOO")]
             fn addr_of() -> usize {
