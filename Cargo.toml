@@ -2,3 +2,8 @@
 members = ["proto-hal", "proto-hal-build", "ir", "tests/model", "tests/out"]
 exclude = ["debug-bin"]
 resolver = "2"
+
+[profile.dev]
+opt-level = "z"
+codegen-units = 1
+lto = "fat"

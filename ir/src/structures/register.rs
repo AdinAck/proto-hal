@@ -108,7 +108,7 @@ impl Register {
 
     fn generate_layout_consts(offset: u32) -> TokenStream {
         quote! {
-            pub const OFFSET: u32 = #offset;
+            pub const OFFSET: usize = #offset as _;
         }
     }
 
@@ -222,7 +222,7 @@ impl Register {
 
                     pub unsafe fn read() -> UnsafeReader {
                         UnsafeReader {
-                            value: unsafe { ::core::ptr::read_volatile((super::BASE_ADDR + OFFSET) as *const u32) }
+                            value: unsafe { ::core::ptr::read_volatile((super::base_addr() + OFFSET) as *const u32) }
                         }
                     }
                 })
@@ -266,7 +266,16 @@ impl Register {
 
                         f(&mut writer);
 
-                        unsafe { ::core::ptr::write_volatile((super::BASE_ADDR + OFFSET) as *mut u32, writer.value) };
+                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+                    }
+
+                    pub unsafe fn modify(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
+                        let reader = unsafe { read() };
+                        let mut writer = UnsafeWriter { value: reader.value };
+
+                        f(reader, &mut writer);
+
+                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
                     }
                 })
             } else {

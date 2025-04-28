@@ -99,6 +99,13 @@ impl ToTokens for Peripheral {
             .values()
             .map(|register| register.to_token_stream());
 
+        let link_symbol = format!(
+            "__PROTO_HAL_ADDR_OF_{}",
+            inflector::cases::screamingsnakecase::to_screaming_snake_case(
+                ident.to_string().as_str()
+            )
+        );
+
         tokens.extend(quote! {
             pub mod #ident {
                 #(
@@ -106,7 +113,20 @@ impl ToTokens for Peripheral {
                 )*
 
                 #[doc = #base_addr_formatted]
-                pub const BASE_ADDR: u32 = #base_addr;
+                pub const BASE_ADDR: usize = #base_addr as _;
+
+                pub fn base_addr() -> usize {
+                    if cfg!(test) {
+                        unsafe extern "C" {
+                            #[link_name = #link_symbol]
+                            fn addr_of() -> usize;
+                        }
+
+                        unsafe { addr_of() }
+                    } else {
+                        BASE_ADDR
+                    }
+                }
             }
         });
     }
