@@ -37,6 +37,8 @@ pub struct Field {
     pub width: u8,
 
     pub access: Access,
+
+    pub reset: Option<Ident>,
 }
 
 impl Field {
@@ -46,65 +48,94 @@ impl Field {
             offset,
             width,
             access,
+            reset: None,
         }
+    }
+
+    pub fn reset(mut self, ident: impl AsRef<str>) -> Self {
+        self.reset = Some(Ident::new(ident.as_ref(), Span::call_site()));
+
+        self
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
+        let mut diagnostics = Diagnostics::new();
 
-        let validate_numericity = |numericity: &Numericity| match numericity {
-            Numericity::Numeric => todo!(),
-            Numericity::Enumerated { variants } => {
-                let mut diagnostics = Diagnostics::new();
-
-                if let Some(largest_variant) = variants.values().map(|variant| variant.bits).max() {
-                    let variant_limit = (1 << self.width) - 1;
-                    if largest_variant > variant_limit {
-                        diagnostics.push(
+        let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
+            match numericity {
+                Numericity::Numeric => todo!(),
+                Numericity::Enumerated { variants } => {
+                    if let Some(largest_variant) =
+                        variants.values().map(|variant| variant.bits).max()
+                    {
+                        let variant_limit = (1 << self.width) - 1;
+                        if largest_variant > variant_limit {
+                            diagnostics.push(
                                 Diagnostic::error(format!(
                             "field variants exceed field width. (largest variant: {}, largest possible: {})",
                             largest_variant, variant_limit,
                         ))
                                 .with_context(new_context.clone()),
                             );
+                        }
+                    }
+
+                    let mut sorted_variants = variants.values().collect::<Vec<_>>();
+                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+
+                    for window in sorted_variants.windows(2) {
+                        let lhs = window[0];
+                        let rhs = window[1];
+
+                        if lhs.bits == rhs.bits {
+                            diagnostics.push(
+                                Diagnostic::error(format!(
+                                    "variants [{}] and [{}] have overlapping bit values.",
+                                    lhs.ident.to_string().bold(),
+                                    rhs.ident.to_string().bold()
+                                ))
+                                .with_context(new_context.clone()),
+                            );
+                        }
                     }
                 }
+            }
+        };
 
-                let mut sorted_variants = variants.values().collect::<Vec<_>>();
-                sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
-
-                for window in sorted_variants.windows(2) {
-                    let lhs = window[0];
-                    let rhs = window[1];
-
-                    if lhs.bits == rhs.bits {
-                        diagnostics.push(
-                            Diagnostic::error(format!(
-                                "variants [{}] and [{}] have overlapping bit values.",
-                                lhs.ident.to_string().bold(),
-                                rhs.ident.to_string().bold()
-                            ))
-                            .with_context(new_context.clone()),
-                        );
-                    }
-                }
-
-                diagnostics
+        let unused_reset = |diagnostics: &mut Diagnostics| {
+            // TODO: check for resolving effects
+            if self.reset.is_some() {
+                diagnostics.push(Diagnostic::warning(
+                    "provided reset unused because the field is unresolvable",
+                ));
             }
         };
 
         match &self.access {
-            Access::Read(read) => validate_numericity(&read.numericity),
-            Access::Write(write) => validate_numericity(&write.numericity),
+            Access::Read(read) => {
+                validate_numericity(&read.numericity, &mut diagnostics);
+
+                unused_reset(&mut diagnostics);
+            }
+            Access::Write(write) => {
+                validate_numericity(&write.numericity, &mut diagnostics);
+
+                unused_reset(&mut diagnostics);
+            }
             Access::ReadWrite { read, write } => {
-                let mut diagnostics = Diagnostics::new();
+                validate_numericity(&read.numericity, &mut diagnostics);
+                validate_numericity(&write.numericity, &mut diagnostics);
 
-                diagnostics.extend(validate_numericity(&read.numericity));
-                diagnostics.extend(validate_numericity(&write.numericity));
-
-                diagnostics
+                if self.reset.is_none() {
+                    diagnostics.push(Diagnostic::error(
+                        "resolvable fields requre a reset state to be specified",
+                    ));
+                }
             }
         }
+
+        diagnostics
     }
 }
 

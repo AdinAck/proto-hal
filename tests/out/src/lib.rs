@@ -29,7 +29,7 @@ mod tests {
 
             static mut MOCK_FOO: u32 = u32::MAX;
 
-            // the unsafe interfaces tests interact with a shared resource. in order for this to be sound, the tests
+            // the unsafe interface tests interact with a shared resource. in order for this to be sound, the tests
             // must run sequentially, which is achieved by requiring acquisition of this lock.
             static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -46,7 +46,6 @@ mod tests {
             #[test]
             fn unsafe_read() {
                 let _lock = LOCK.lock().unwrap();
-
                 unsafe { MOCK_FOO = foo0::a::Variant::V1 as _ };
                 assert!(unsafe { foo0::read().a().is_v1() });
             }
@@ -68,7 +67,8 @@ mod tests {
                     foo0::modify(|r, w| {
                         w.a().variant(foo0::a::Variant::from_bits(r.a() as u32 + 1))
                     })
-                }
+                };
+
                 assert!(unsafe { foo0::read().a().is_v4() });
             }
         }

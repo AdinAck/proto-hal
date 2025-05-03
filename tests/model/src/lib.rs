@@ -25,7 +25,8 @@ pub fn generate() -> Result<Hal, Diagnostics> {
                     Access::read_write(Numericity::enumerated(
                         (0..6).map(|i| Variant::new(format!("V{i}"), i)),
                     )),
-                )],
+                )
+                .reset("V3")],
             )],
         ),
         Peripheral::new(
