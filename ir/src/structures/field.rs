@@ -24,7 +24,7 @@ impl Numericity {
             variants: HashMap::from_iter(
                 variants
                     .into_iter()
-                    .map(|variant| (variant.ident.clone(), variant)),
+                    .map(|variant| (variant.type_name(), variant)),
             ),
         }
     }
