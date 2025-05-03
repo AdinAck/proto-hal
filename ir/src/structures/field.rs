@@ -53,7 +53,10 @@ impl Field {
     }
 
     pub fn reset(mut self, ident: impl AsRef<str>) -> Self {
-        self.reset = Some(Ident::new(ident.as_ref(), Span::call_site()));
+        self.reset = Some(Ident::new(
+            inflector::cases::pascalcase::to_pascal_case(ident.as_ref()).as_str(),
+            Span::call_site(),
+        ));
 
         self
     }
