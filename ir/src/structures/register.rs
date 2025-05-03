@@ -15,25 +15,23 @@ use super::{entitlement::Entitlement, field::Field};
 
 #[derive(Debug, Clone)]
 pub struct Register {
-    pub ident: String,
+    pub ident: Ident,
     pub offset: u32,
 
-    pub fields: HashMap<String, Field>,
+    pub fields: HashMap<Ident, Field>,
 }
 
 impl Register {
     pub fn new(
-        ident: impl Into<String>,
+        ident: impl AsRef<str>,
         offset: u32,
         fields: impl IntoIterator<Item = Field>,
     ) -> Self {
         Self {
-            ident: ident.into(),
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
             offset,
             fields: HashMap::from_iter(
-                fields
-                    .into_iter()
-                    .map(|field| (field.ident.to_string().clone(), field)),
+                fields.into_iter().map(|field| (field.ident.clone(), field)),
             ),
         }
     }
@@ -43,9 +41,16 @@ impl Register {
         todo!()
     }
 
+    pub fn module_name(&self) -> Ident {
+        Ident::new(
+            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
+            Span::call_site(),
+        )
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.ident.clone());
+        let new_context = context.clone().and(self.ident.clone().to_string());
 
         if self.offset % 4 != 0 {
             diagnostics.push(
@@ -302,13 +307,38 @@ impl Register {
             #write
         }
     }
+
+    fn generate_reset<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
+        let field_idents = fields
+            .filter_map(|field| field.reset.as_ref().and(Some(field.module_name())))
+            .collect::<Vec<_>>();
+
+        quote! {
+            pub struct Reset {
+                #(
+                    pub #field_idents: #field_idents::Reset,
+                )*
+            }
+
+            impl Reset {
+                pub unsafe fn conjure() -> Self {
+                    #[allow(unsafe_op_in_unsafe_fn)]
+                    Self {
+                        #(
+                            #field_idents: <#field_idents::Reset as #field_idents::State>::conjure(),
+                        )*
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl ToTokens for Register {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let mut body = quote! {};
 
-        let ident = format_ident!("{}", self.ident);
+        let module_name = self.module_name();
 
         let refined_writer_idents = self
             .fields
@@ -331,9 +361,10 @@ impl ToTokens for Register {
             self.fields.values(),
             refined_writer_idents.iter(),
         ));
+        body.extend(Self::generate_reset(self.fields.values()));
 
         tokens.extend(quote! {
-            pub mod #ident {
+            pub mod #module_name {
                 #body
             }
         });

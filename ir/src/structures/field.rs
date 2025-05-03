@@ -58,6 +58,20 @@ impl Field {
         self
     }
 
+    pub fn module_name(&self) -> Ident {
+        Ident::new(
+            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
+            Span::call_site(),
+        )
+    }
+
+    pub fn type_name(&self) -> Ident {
+        Ident::new(
+            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
+            Span::call_site(),
+        )
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
@@ -167,7 +181,13 @@ impl Field {
         }
     }
 
-    fn generate_variant_enums(access: &Access) -> TokenStream {
+    fn generate_reset(reset: &Ident) -> TokenStream {
+        quote! {
+            pub type Reset = #reset;
+        }
+    }
+
+    fn generate_variant_enum(access: &Access) -> TokenStream {
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
             let variant_idents = variants
                 .values()
@@ -315,7 +335,10 @@ impl ToTokens for Field {
             self.offset as u32,
             self.width as u32,
         ));
-        body.extend(Self::generate_variant_enums(&self.access));
+        if let Some(reset) = &self.reset {
+            body.extend(Self::generate_reset(&reset));
+        }
+        body.extend(Self::generate_variant_enum(&self.access));
         body.extend(Self::generate_state_trait(&self.access));
 
         // final module

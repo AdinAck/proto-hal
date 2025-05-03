@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
+use syn::Ident;
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::{peripheral::Peripheral, Ident};
+use super::peripheral::Peripheral;
 
 #[derive(Debug, Clone)]
 pub struct Hal {
-    pub peripherals: HashMap<String, Peripheral>,
+    pub peripherals: HashMap<Ident, Peripheral>,
 }
 
 impl Hal {
@@ -62,23 +64,48 @@ impl Hal {
     }
 }
 
-impl Ident for Hal {
-    fn ident(&self) -> &str {
-        "hal"
+// codegen
+impl Hal {
+    fn generate_peripherals<'a>(peripherals: impl Iterator<Item = &'a Peripheral>) -> TokenStream {
+        quote! {
+            #(
+                #peripherals
+            )*
+        }
+    }
+
+    fn generate_peripherals_struct<'a>(
+        peripherals: impl Iterator<Item = &'a Peripheral> + Clone,
+    ) -> TokenStream {
+        let peripherals = peripherals.filter(|peripheral| peripheral.entitlements.is_empty());
+
+        let peripheral_idents = peripherals
+            .clone()
+            .map(|peripheral| peripheral.module_name())
+            .collect::<Vec<_>>();
+
+        quote! {
+            pub struct FundamentalPeripherals {
+                #(
+                    pub #peripheral_idents: #peripheral_idents::Reset,
+                )*
+            }
+
+            pub unsafe fn fundamental_peripherals() -> FundamentalPeripherals {
+                #[allow(unsafe_op_in_unsafe_fn)]
+                FundamentalPeripherals {
+                    #(
+                        #peripheral_idents: #peripheral_idents::Reset::conjure(),
+                    )*
+                }
+            }
+        }
     }
 }
 
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let peripheral_bodies = self
-            .peripherals
-            .values()
-            .map(|peripheral| peripheral.to_token_stream());
-
-        tokens.extend(quote! {
-            #(
-                #peripheral_bodies
-            )*
-        });
+        tokens.extend(Self::generate_peripherals(self.peripherals.values()));
+        tokens.extend(Self::generate_peripherals_struct(self.peripherals.values()));
     }
 }
