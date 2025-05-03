@@ -145,7 +145,19 @@ impl Field {
                 validate_numericity(&read.numericity, &mut diagnostics);
                 validate_numericity(&write.numericity, &mut diagnostics);
 
-                if self.reset.is_none() {
+                if let Some(reset) = &self.reset {
+                    // TODO: resets for resolvable fields with inequal read/write schemas
+                    if let Numericity::Enumerated { variants } = &read.numericity {
+                        if !variants.contains_key(reset) {
+                            diagnostics.push(
+                                Diagnostic::error(format!(
+                                    "provided reset \"{reset}\" does not exist"
+                                ))
+                                .with_context(new_context),
+                            );
+                        }
+                    }
+                } else {
                     diagnostics.push(
                         Diagnostic::error(
                             "resolvable fields require a reset state to be specified",
