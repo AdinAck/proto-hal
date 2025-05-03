@@ -120,9 +120,10 @@ impl Field {
         let unused_reset = |diagnostics: &mut Diagnostics| {
             // TODO: check for resolving effects
             if self.reset.is_some() {
-                diagnostics.push(Diagnostic::warning(
-                    "provided reset unused because the field is unresolvable",
-                ));
+                diagnostics.push(
+                    Diagnostic::warning("provided reset unused because the field is unresolvable")
+                        .with_context(new_context.clone()),
+                );
             }
         };
 
@@ -142,9 +143,10 @@ impl Field {
                 validate_numericity(&write.numericity, &mut diagnostics);
 
                 if self.reset.is_none() {
-                    diagnostics.push(Diagnostic::error(
-                        "resolvable fields requre a reset state to be specified",
-                    ));
+                    diagnostics.push(
+                        Diagnostic::error("resolvable fields requre a reset state to be specified")
+                            .with_context(new_context),
+                    );
                 }
             }
         }
