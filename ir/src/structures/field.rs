@@ -144,8 +144,10 @@ impl Field {
 
                 if self.reset.is_none() {
                     diagnostics.push(
-                        Diagnostic::error("resolvable fields requre a reset state to be specified")
-                            .with_context(new_context),
+                        Diagnostic::error(
+                            "resolvable fields require a reset state to be specified",
+                        )
+                        .with_context(new_context),
                     );
                 }
             }
