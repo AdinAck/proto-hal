@@ -28,6 +28,20 @@ impl Variant {
         self.entitlements.extend(entitlements);
         self
     }
+
+    pub fn module_name(&self) -> Ident {
+        Ident::new(
+            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
+            Span::call_site(),
+        )
+    }
+
+    pub fn type_name(&self) -> Ident {
+        Ident::new(
+            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
+            Span::call_site(),
+        )
+    }
 }
 
 // codegen

@@ -122,7 +122,7 @@ impl Register {
         writer_idents: impl Iterator<Item = &'a Ident>,
     ) -> TokenStream {
         let mut enumerated_field_idents = Vec::new();
-        let mut variant_idents = Vec::new();
+        let mut nested_variants = Vec::new();
 
         for field in fields {
             match &field.access {
@@ -130,12 +130,7 @@ impl Register {
                     match &write.numericity {
                         Numericity::Enumerated { variants } => {
                             enumerated_field_idents.push(&field.ident);
-                            variant_idents.push(
-                                variants
-                                    .values()
-                                    .map(|variant| &variant.ident)
-                                    .collect::<Vec<_>>(),
-                            );
+                            nested_variants.push(variants.values().collect::<Vec<_>>());
                         }
                         Numericity::Numeric => todo!(),
                     }
@@ -144,18 +139,22 @@ impl Register {
             }
         }
 
-        let accessors = variant_idents
+        let variant_tys = nested_variants
             .iter()
             .map(|variants| {
                 variants
                     .iter()
-                    .map(|ident| {
-                        Ident::new(
-                            inflector::cases::snakecase::to_snake_case(ident.to_string().as_str())
-                                .as_str(),
-                            Span::call_site(),
-                        )
-                    })
+                    .map(|variant| variant.type_name())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let accessors = nested_variants
+            .iter()
+            .map(|variants| {
+                variants
+                    .iter()
+                    .map(|variant| variant.module_name())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
@@ -182,7 +181,7 @@ impl Register {
 
                     #(
                         pub fn #accessors(self) -> &'a mut W {
-                            self.variant(#enumerated_field_idents::WriteVariant::#variant_idents)
+                            self.variant(#enumerated_field_idents::WriteVariant::#variant_tys)
                         }
                     )*
                 }
