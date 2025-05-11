@@ -173,10 +173,14 @@ impl Register {
                 where
                     F: FnOnce(&mut W, u32),
                 {
-                    pub fn variant(self, variant: #enumerated_field_idents::WriteVariant) -> &'a mut W {
-                        (self.f)(self.w, variant as _);
+                    pub unsafe fn bits(self, bits: u32) -> &'a mut W {
+                        (self.f)(self.w, bits);
 
                         self.w
+                    }
+
+                    pub fn variant(self, variant: #enumerated_field_idents::WriteVariant) -> &'a mut W {
+                        unsafe { self.bits(variant as _) }
                     }
 
                     #(
@@ -331,6 +335,87 @@ impl Register {
             }
         }
     }
+
+    fn generate_states_struct<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> TokenStream {
+        let field_idents = fields.clone().map(|field| field.module_name());
+        let states = fields.map(|field| field.type_name()).collect::<Vec<_>>();
+
+        quote! {
+            pub struct States<#(#states,)*> {
+                #(
+                    pub #field_idents: #states,
+                )*
+            }
+        }
+    }
+
+    fn generate_field_transition_builders<'a>(
+        fields: impl Iterator<Item = &'a Field>,
+    ) -> TokenStream {
+        let fields = fields.filter(|field| field.is_resolvable() && field.access.is_write());
+
+        let builder_names =
+            fields.map(|field| format_ident!("{}TransitionBuilder", field.type_name()));
+
+        quote! {
+            #(
+                pub struct #builder_names<>
+            )*
+        }
+    }
+
+    fn generate_transition_builder<'a>(
+        fields: impl Iterator<Item = &'a Field> + Clone,
+    ) -> TokenStream {
+        let resolvable_fields = fields.filter_map(|field| {
+            if field.is_resolvable() {
+                Some(field)
+            } else {
+                None
+            }
+        });
+
+        let states = resolvable_fields
+            .clone()
+            .map(|field| field.type_name())
+            .collect::<Vec<_>>();
+
+        let field_module_idents = resolvable_fields.clone().map(|field| field.module_name());
+
+        quote! {
+            pub struct TransitionBuilder<#(#states,)*> {
+                w: UnsafeWriter,
+                _p: core::marker::PhantomData<(#(#states,)*)>,
+            }
+
+            impl<#(#states,)*> TransitionBuilder<#(#states,)*> {
+                fn empty() -> Self {
+                    Self {
+                        w: UnsafeWriter { value: 0 },
+                        _p: core::marker:PhantomData,
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_transition_gate<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
+        let new_states = fields
+            .filter_map(|field| {
+                if field.is_resolvable() {
+                    Some(field.type_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        quote! {
+            pub fn transition<#(#new_states,)*>(f: impl FnOnce(TransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*> {
+                f(TransitionBuilder::empty()).build()
+            }
+        }
+    }
 }
 
 impl ToTokens for Register {
@@ -342,12 +427,7 @@ impl ToTokens for Register {
         let refined_writer_idents = self
             .fields
             .values()
-            .map(|field| {
-                format_ident!(
-                    "{}Writer",
-                    inflector::cases::pascalcase::to_pascal_case(field.ident.to_string().as_str())
-                )
-            })
+            .map(|field| format_ident!("{}Writer", field.type_name()))
             .collect::<Vec<_>>();
 
         body.extend(Self::generate_fields(self.fields.values()));
@@ -361,6 +441,8 @@ impl ToTokens for Register {
             refined_writer_idents.iter(),
         ));
         body.extend(Self::generate_reset(self.fields.values()));
+        body.extend(Self::generate_transition_builder(self.fields.values()));
+        body.extend(Self::generate_transition_gate(self.fields.values()));
 
         tokens.extend(quote! {
             pub mod #module_name {

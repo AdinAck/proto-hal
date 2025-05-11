@@ -75,6 +75,41 @@ impl Field {
         )
     }
 
+    pub fn is_resolvable(&self) -> bool {
+        // TODO: external resolving effects
+
+        let Access::ReadWrite { read, write } = &self.access else {
+            return false;
+        };
+
+        let (
+            Numericity::Enumerated {
+                variants: read_variants,
+            },
+            Numericity::Enumerated {
+                variants: write_variants,
+            },
+        ) = (&read.numericity, &write.numericity)
+        else {
+            return false;
+        };
+
+        if read_variants.len() != write_variants.len() {
+            return false;
+        }
+
+        for (key, variant) in read_variants.iter() {
+            if write_variants
+                .get(key)
+                .is_none_or(|other| other.bits != variant.bits)
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
