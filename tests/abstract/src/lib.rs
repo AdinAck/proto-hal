@@ -9,7 +9,7 @@ mod tests {
 
         #[test]
         fn fundamental_peripherals() {
-            let p = unsafe { crate::fundamental_peripherals() };
+            let p = unsafe { crate::peripherals() };
 
             assert_eq!(
                 TypeId::of::<crate::foo::foo_0::a::Reset>(),

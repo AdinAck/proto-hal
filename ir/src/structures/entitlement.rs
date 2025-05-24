@@ -1,3 +1,5 @@
+use log::trace;
+use syn::{parse_quote, Path};
 use ters::ters;
 
 #[ters]
@@ -10,5 +12,14 @@ pub struct Entitlement {
 impl Entitlement {
     pub fn to(path: impl Into<String>) -> Self {
         Self { path: path.into() }
+    }
+
+    pub fn render(&self) -> Path {
+        trace!("Rendering entitlement with path: \"{}\".", self.path());
+
+        let path = syn::parse_str::<Path>(self.path()).unwrap();
+        parse_quote! {
+            crate::#path
+        }
     }
 }

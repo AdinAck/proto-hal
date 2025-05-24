@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use colored::Colorize;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
-use syn::Ident;
+use syn::{parse_quote, Ident, Path};
 
 use crate::{
     access::Access,
@@ -46,6 +46,11 @@ impl Register {
             inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
             Span::call_site(),
         )
+    }
+
+    /// A register is resolvable if at least one field within it is resolvable.
+    pub fn is_resolvable(&self) -> bool {
+        self.fields.values().any(|field| field.is_resolvable())
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
@@ -350,18 +355,35 @@ impl Register {
     }
 
     fn generate_field_transition_builders<'a>(
-        fields: impl Iterator<Item = &'a Field>,
+        fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> TokenStream {
         let fields = fields.filter(|field| field.is_resolvable() && field.access.is_write());
+        let field_tys = fields
+            .clone()
+            .map(|field| field.type_name())
+            .collect::<Vec<_>>();
 
-        let builder_names =
-            fields.map(|field| format_ident!("{}TransitionBuilder", field.type_name()));
+        let mut body = quote! {};
 
-        quote! {
-            #(
-                pub struct #builder_names<>
-            )*
+        for (i, field) in fields.enumerate() {
+            let builder_name = format_ident!("{}TransitionBuilder", field.type_name());
+
+            let prev_field_tys = field_tys.get(..i).unwrap();
+            let next_field_tys = field_tys.get(i + 1..).unwrap();
+
+            let variants = match &field.access {
+                Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                    let Numericity::Enumerated { variants } = &read.numericity else {
+                        todo!()
+                    };
+
+                    variants
+                }
+                _ => unreachable!(),
+            };
         }
+
+        body
     }
 
     fn generate_transition_builder<'a>(
@@ -382,17 +404,26 @@ impl Register {
 
         let field_module_idents = resolvable_fields.clone().map(|field| field.module_name());
 
+        let unresolved = states.iter().map(|_| {
+            let path: Path = parse_quote! {
+                ::proto_hal::stasis::Unresolved
+            };
+            path
+        });
+
         quote! {
             pub struct TransitionBuilder<#(#states,)*> {
                 w: UnsafeWriter,
                 _p: core::marker::PhantomData<(#(#states,)*)>,
             }
 
-            impl<#(#states,)*> TransitionBuilder<#(#states,)*> {
-                fn empty() -> Self {
+            type EmptyTransitionBuilder = TransitionBuilder<#(#unresolved,)*>;
+
+            impl EmptyTransitionBuilder {
+                fn new() -> Self {
                     Self {
                         w: UnsafeWriter { value: 0 },
-                        _p: core::marker:PhantomData,
+                        _p: core::marker::PhantomData,
                     }
                 }
             }
@@ -411,8 +442,8 @@ impl Register {
             .collect::<Vec<_>>();
 
         quote! {
-            pub fn transition<#(#new_states,)*>(f: impl FnOnce(TransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*> {
-                f(TransitionBuilder::empty()).build()
+            pub fn transition<#(#new_states,)*>(f: impl FnOnce(EmptyTransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*> {
+                f(EmptyTransitionBuilder::new()).build()
             }
         }
     }
@@ -440,9 +471,12 @@ impl ToTokens for Register {
             self.fields.values(),
             refined_writer_idents.iter(),
         ));
-        body.extend(Self::generate_reset(self.fields.values()));
-        body.extend(Self::generate_transition_builder(self.fields.values()));
-        body.extend(Self::generate_transition_gate(self.fields.values()));
+        if self.is_resolvable() {
+            body.extend(Self::generate_reset(self.fields.values()));
+            body.extend(Self::generate_states_struct(self.fields.values()));
+            body.extend(Self::generate_transition_builder(self.fields.values()));
+            body.extend(Self::generate_transition_gate(self.fields.values()));
+        }
 
         tokens.extend(quote! {
             pub mod #module_name {

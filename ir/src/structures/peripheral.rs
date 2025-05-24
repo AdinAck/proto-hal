@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, ToTokens};
-use syn::Ident;
+use quote::{format_ident, quote, ToTokens};
+use syn::{Ident, Path};
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
@@ -42,9 +42,9 @@ impl Peripheral {
             .unwrap_or(0)
     }
 
-    #[expect(unused)]
     pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
-        todo!()
+        self.entitlements.extend(entitlements);
+        self
     }
 
     pub fn module_name(&self) -> Ident {
@@ -140,25 +140,84 @@ impl Peripheral {
         }
     }
 
-    fn generate_reset<'a>(registers: impl Iterator<Item = &'a Register>) -> TokenStream {
+    fn generate_reset<'a>(
+        registers: impl Iterator<Item = &'a Register>,
+        entitlement_idents: &Vec<Ident>,
+        entitlement_paths: &Vec<Path>,
+        entitlement_generic_tys: &Vec<Ident>,
+    ) -> TokenStream {
         let register_idents = registers
-            .map(|register| register.module_name())
+            .filter_map(|register| {
+                if register.is_resolvable() {
+                    Some(register.module_name())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
 
         quote! {
-            pub struct Reset {
+            pub struct Reset<#(#entitlement_generic_tys,)*>
+            where
+                #(
+                    #entitlement_generic_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlement_paths>,
+                )*
+            {
+                #(
+                    #entitlement_idents: #entitlement_generic_tys,
+                )*
+
                 #(
                     pub #register_idents: #register_idents::Reset,
                 )*
             }
 
-            impl Reset {
-                pub unsafe fn conjure() -> Self {
+            impl<#(#entitlement_generic_tys,)*> Reset<#(#entitlement_generic_tys,)*>
+            where
+                #(
+                    #entitlement_generic_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlement_paths>,
+                )*
+            {
+                pub unsafe fn conjure(#(#entitlement_idents: #entitlement_generic_tys,)*) -> Self {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
                         #(
+                            #entitlement_idents,
+                        )*
+                        #(
                             #register_idents: #register_idents::Reset::conjure(),
                         )*
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_masked(
+        entitlement_idents: &Vec<Ident>,
+        entitlement_paths: &Vec<Path>,
+        entitlement_generic_tys: &Vec<Ident>,
+    ) -> TokenStream {
+        quote! {
+            pub struct Masked {
+                _sealed: (),
+            }
+
+            impl Masked {
+                pub unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
+
+                pub fn unmask<#(#entitlement_generic_tys,)*>(self, #(#entitlement_idents: #entitlement_generic_tys),*) -> Reset<#(#entitlement_generic_tys,)*>
+                where
+                    #(
+                        #entitlement_generic_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlement_paths>,
+                    )*
+                {
+                    unsafe {
+                        Reset::conjure(#(#entitlement_idents),*)
                     }
                 }
             }
@@ -174,7 +233,36 @@ impl ToTokens for Peripheral {
 
         body.extend(Self::generate_registers(self.registers.values()));
         body.extend(Self::generate_base_addr(self.base_addr, &self.ident));
-        body.extend(Self::generate_reset(self.registers.values()));
+
+        let entitlement_idents = self
+            .entitlements
+            .iter()
+            .enumerate()
+            .map(|(i, ..)| format_ident!("entitlement_{i}"))
+            .collect::<Vec<_>>();
+        let entitlement_paths = self
+            .entitlements
+            .iter()
+            .map(|entitlement| entitlement.render())
+            .collect::<Vec<_>>();
+        let entitlement_generic_tys = (0..self.entitlements.len())
+            .map(|i| format_ident!("E{i}"))
+            .collect::<Vec<_>>();
+
+        body.extend(Self::generate_reset(
+            self.registers.values(),
+            &entitlement_idents,
+            &entitlement_paths,
+            &entitlement_generic_tys,
+        ));
+
+        if !self.entitlements.is_empty() {
+            body.extend(Self::generate_masked(
+                &entitlement_idents,
+                &entitlement_paths,
+                &entitlement_generic_tys,
+            ));
+        }
 
         tokens.extend(quote! {
             pub mod #ident {

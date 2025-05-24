@@ -1,0 +1,11 @@
+[package]
+name = "abstract"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proto-hal = { path = "../../proto-hal" }
+
+[build-dependencies]
+model = { package = "abstract-model", path = "model" }
+proto-hal-build = { path = "../../proto-hal-build" }

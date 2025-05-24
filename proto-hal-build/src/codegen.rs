@@ -37,8 +37,9 @@ pub fn validate(source: impl FnOnce() -> Result<Hal, Diagnostics>) {
     println!("Validating codegen...");
     if let Err(e) = hal.render() {
         println!(
-            "{}: Codegen failed: {e}.\nThis is probably a bug, please submit an issue.",
-            "error".red().bold()
+            "{}: Codegen failed: {e}.\n{}",
+            "error".red().bold(),
+            "This is probably a bug, please submit an issue: https://github.com/adinack/proto-hal/issues".bold(),
         );
     } else {
         println!("{}", "Done".green().bold());

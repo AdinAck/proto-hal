@@ -1,5 +1,5 @@
 [package]
-name = "out"
+name = "g4"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,5 +7,5 @@ edition = "2024"
 proto-hal = { path = "../../proto-hal" }
 
 [build-dependencies]
-model = { path = "../model" }
+model = { package = "g4-model", path = "model" }
 proto-hal-build = { path = "../../proto-hal-build" }

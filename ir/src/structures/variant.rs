@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{parse_quote, Ident, Path};
+use syn::Ident;
 
 use super::entitlement::Entitlement;
 
@@ -78,14 +78,7 @@ impl Variant {
         } else {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
-            let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let path = syn::parse_str::<Path>(entitlement.path()).unwrap();
-                let path: Path = parse_quote! {
-                    crate::#path
-                };
-
-                path
-            });
+            let entitlement_paths = entitlements.iter().map(|entitlement| entitlement.render());
 
             quote! {
                 #(

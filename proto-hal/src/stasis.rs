@@ -91,3 +91,6 @@ pub struct Unsatisfied;
 /// A marker type for
 /// an unavailable resource.
 pub struct Unavailable;
+
+/// A marker type for an unresolved state.
+pub struct Unresolved;

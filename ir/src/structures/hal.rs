@@ -77,25 +77,51 @@ impl Hal {
     fn generate_peripherals_struct<'a>(
         peripherals: impl Iterator<Item = &'a Peripheral> + Clone,
     ) -> TokenStream {
-        let peripherals = peripherals.filter(|peripheral| peripheral.entitlements.is_empty());
-
-        let peripheral_idents = peripherals
+        let fundamental_peripheral_idents = peripherals
             .clone()
-            .map(|peripheral| peripheral.module_name())
+            .filter_map(|peripheral| {
+                if peripheral.entitlements.is_empty() {
+                    Some(peripheral.module_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let conditional_peripheral_idents = peripherals
+            .filter_map(|peripheral| {
+                if !peripheral.entitlements.is_empty() {
+                    Some(peripheral.module_name())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
 
         quote! {
-            pub struct FundamentalPeripherals {
+            pub struct Peripherals {
+                // fundamental
                 #(
-                    pub #peripheral_idents: #peripheral_idents::Reset,
+                    pub #fundamental_peripheral_idents: #fundamental_peripheral_idents::Reset,
+                )*
+
+                // conditional
+                #(
+                    pub #conditional_peripheral_idents: #conditional_peripheral_idents::Masked,
                 )*
             }
 
-            pub unsafe fn fundamental_peripherals() -> FundamentalPeripherals {
+            pub unsafe fn peripherals() -> Peripherals {
                 #[allow(unsafe_op_in_unsafe_fn)]
-                FundamentalPeripherals {
+                Peripherals {
+                    // fundamental
                     #(
-                        #peripheral_idents: #peripheral_idents::Reset::conjure(),
+                        #fundamental_peripheral_idents: #fundamental_peripheral_idents::Reset::conjure(),
+                    )*
+
+                    // conditional
+                    #(
+                        #conditional_peripheral_idents: #conditional_peripheral_idents::Masked::conjure(),
                     )*
                 }
             }
