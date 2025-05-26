@@ -164,7 +164,7 @@ impl Peripheral {
                 )*
             {
                 #(
-                    #entitlement_idents: #entitlement_generic_tys,
+                    #[expect(unused)] #entitlement_idents: #entitlement_generic_tys,
                 )*
 
                 #(

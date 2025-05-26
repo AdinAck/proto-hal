@@ -363,10 +363,8 @@ impl Field {
         if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants: _ } = &read.numericity {
                 Some(quote! {
-                    pub trait State {
+                    pub trait State: ::proto_hal::stasis::PartialState<super::UnsafeWriter> {
                         const RAW: ReadVariant;
-
-                        unsafe fn conjure() -> Self;
                     }
                 })
             } else {
@@ -376,11 +374,36 @@ impl Field {
             None
         }
     }
+
+    fn generate_partial_state_impls(access: &Access, field_ident: &Ident) -> Option<TokenStream> {
+        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
+            if let Numericity::Enumerated { variants } = &read.numericity {
+                let variants = variants.values().map(|variant| variant.type_name());
+                return Some(quote! {
+                    #(
+                        impl ::proto_hal::stasis::PartialState<super::UnsafeWriter> for #variants {
+                            fn set(w: &mut super::UnsafeWriter) {
+                                w.#field_ident().variant(Self::RAW);
+                            }
+
+                            unsafe fn conjure() -> Self {
+                                Self {
+                                    _sealed: (),
+                                }
+                            }
+                        }
+                    )*
+                });
+            }
+        }
+
+        None
+    }
 }
 
 impl ToTokens for Field {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = format_ident!("{}", self.ident);
+        let ident = &self.ident;
 
         let mut body = quote! {};
 
@@ -394,6 +417,7 @@ impl ToTokens for Field {
         }
         body.extend(Self::generate_variant_enum(&self.access));
         body.extend(Self::generate_state_trait(&self.access));
+        body.extend(Self::generate_partial_state_impls(&self.access, ident));
 
         // final module
         tokens.extend(quote! {

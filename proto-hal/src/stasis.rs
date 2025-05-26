@@ -98,3 +98,19 @@ pub struct Unresolved;
 /// To satisfy state-wise entitlement constrains when the states are not tracked,
 /// this impl is needed.
 unsafe impl Entitled<Self> for Unresolved {}
+
+pub trait PartialState<Writer> {
+    fn set(w: &mut Writer);
+
+    unsafe fn conjure() -> Self;
+}
+
+impl<Writer> PartialState<Writer> for Unresolved {
+    fn set(#[expect(unused)] w: &mut Writer) {
+        // do nothing
+    }
+
+    unsafe fn conjure() -> Self {
+        Self
+    }
+}

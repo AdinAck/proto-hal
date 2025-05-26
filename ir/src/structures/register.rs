@@ -28,7 +28,7 @@ impl Register {
         fields: impl IntoIterator<Item = Field>,
     ) -> Self {
         Self {
-            ident: Ident::new(ident.as_ref(), Span::call_site()),
+            ident: Ident::new(ident.as_ref().to_lowercase().as_str(), Span::call_site()),
             offset,
             fields: HashMap::from_iter(
                 fields.into_iter().map(|field| (field.ident.clone(), field)),
@@ -42,10 +42,7 @@ impl Register {
     }
 
     pub fn module_name(&self) -> Ident {
-        Ident::new(
-            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
-            Span::call_site(),
-        )
+        self.ident.clone()
     }
 
     /// A register is resolvable if at least one field within it is resolvable.
@@ -333,7 +330,7 @@ impl Register {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
                         #(
-                            #field_idents: <#field_idents::Reset as #field_idents::State>::conjure(),
+                            #field_idents: <#field_idents::Reset as ::proto_hal::stasis::PartialState<UnsafeWriter>>::conjure(),
                         )*
                     }
                 }
@@ -342,14 +339,39 @@ impl Register {
     }
 
     fn generate_states_struct<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> TokenStream {
-        let field_idents = fields.clone().map(|field| field.module_name());
+        let field_idents = fields
+            .clone()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
         let states = fields.map(|field| field.type_name()).collect::<Vec<_>>();
 
         quote! {
-            pub struct States<#(#states,)*> {
+            pub struct States<#(#states,)*>
+            where
+                #(
+                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+            {
                 #(
                     pub #field_idents: #states,
                 )*
+            }
+
+            impl<#(#states,)*> States<#(#states,)*>
+            where
+                #(
+                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+            {
+                pub unsafe fn conjure() -> Self {
+                    unsafe {
+                        Self {
+                            #(
+                                #field_idents: #states::conjure(),
+                            )*
+                        }
+                    }
+                }
             }
         }
     }
@@ -366,7 +388,8 @@ impl Register {
         let mut body = quote! {};
 
         for (i, field) in fields.enumerate() {
-            let builder_name = format_ident!("{}TransitionBuilder", field.type_name());
+            let field_module_ident = field.module_name();
+            let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
 
             let prev_field_tys = field_tys.get(..i).unwrap();
             let next_field_tys = field_tys.get(i + 1..).unwrap();
@@ -381,6 +404,59 @@ impl Register {
                 }
                 _ => unreachable!(),
             };
+
+            body.extend(quote! {
+                pub struct #builder_ident<#(#field_tys,)*>
+                where
+                    #(
+                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    )*
+                {
+                    _p: ::core::marker::PhantomData<(#(#field_tys,)*)>,
+                }
+
+                impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
+                where
+                    #(
+                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    )*
+                {
+                    pub unsafe fn conjure() -> Self {
+                        unsafe { ::core::mem::transmute(()) }
+                    }
+
+                    pub fn generic<_NewState>(self) -> TransitionBuilder<#(#prev_field_tys,)* _NewState, #(#next_field_tys,)*>
+                    where
+                        _NewState: #field_module_ident::State,
+                    {
+                        unsafe { TransitionBuilder::conjure() }
+                    }
+                }
+            });
+
+            let mut body2 = quote! {};
+
+            for (ty, accessor) in variants
+                .values()
+                .map(|variant| (variant.type_name(), variant.module_name()))
+            {
+                body2.extend(quote! {
+                    pub fn #accessor(self) -> TransitionBuilder<#(#prev_field_tys,)* #field_module_ident::#ty, #(#next_field_tys,)*> {
+                        self.generic()
+                    }
+                });
+            }
+
+            body.extend(quote! {
+                impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
+                where
+                    #(
+                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    )*
+                {
+                    #body2
+                }
+            });
         }
 
         body
@@ -402,8 +478,6 @@ impl Register {
             .map(|field| field.type_name())
             .collect::<Vec<_>>();
 
-        let field_module_idents = resolvable_fields.clone().map(|field| field.module_name());
-
         let unresolved = states.iter().map(|_| {
             let path: Path = parse_quote! {
                 ::proto_hal::stasis::Unresolved
@@ -411,9 +485,26 @@ impl Register {
             path
         });
 
+        let mut methods = quote! {};
+
+        for field in resolvable_fields {
+            let field_module_ident = field.module_name();
+            let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
+
+            methods.extend(quote! {
+                pub fn #field_module_ident(self, #[expect(unused_variables)] state: impl #field_module_ident::State) -> #builder_ident<#(#states,)*> {
+                    unsafe { #builder_ident::conjure() }
+                }
+            })
+        }
+
         quote! {
-            pub struct TransitionBuilder<#(#states,)*> {
-                w: UnsafeWriter,
+            pub struct TransitionBuilder<#(#states,)*>
+            where
+                #(
+                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+            {
                 _p: core::marker::PhantomData<(#(#states,)*)>,
             }
 
@@ -422,10 +513,28 @@ impl Register {
             impl EmptyTransitionBuilder {
                 fn new() -> Self {
                     Self {
-                        w: UnsafeWriter { value: 0 },
                         _p: core::marker::PhantomData,
                     }
                 }
+            }
+
+            impl<#(#states,)*> TransitionBuilder<#(#states,)*>
+            where
+                #(
+                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+            {
+                pub unsafe fn conjure() -> Self {
+                    unsafe { ::core::mem::transmute(()) }
+                }
+
+                fn finish(self, w: &mut UnsafeWriter) {
+                    #(
+                        #states::set(w);
+                    )*;
+                }
+
+                #methods
             }
         }
     }
@@ -442,8 +551,15 @@ impl Register {
             .collect::<Vec<_>>();
 
         quote! {
-            pub fn transition<#(#new_states,)*>(f: impl FnOnce(EmptyTransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*> {
-                f(EmptyTransitionBuilder::new()).build()
+            pub fn transition<#(#new_states,)*>(f: impl FnOnce(EmptyTransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*>
+            where
+                #(
+                    #new_states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+            {
+                unsafe { modify(|_, w| { f(EmptyTransitionBuilder::new()).finish(w); w }) };
+
+                unsafe { States::conjure() }
             }
         }
     }
@@ -474,6 +590,9 @@ impl ToTokens for Register {
         if self.is_resolvable() {
             body.extend(Self::generate_reset(self.fields.values()));
             body.extend(Self::generate_states_struct(self.fields.values()));
+            body.extend(Self::generate_field_transition_builders(
+                self.fields.values(),
+            ));
             body.extend(Self::generate_transition_builder(self.fields.values()));
             body.extend(Self::generate_transition_gate(self.fields.values()));
         }

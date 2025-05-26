@@ -35,14 +35,21 @@ pub fn validate(source: impl FnOnce() -> Result<Hal, Diagnostics>) {
 
     // codegen validation
     println!("Validating codegen...");
-    if let Err(e) = hal.render() {
-        println!(
-            "{}: Codegen failed: {e}.\n{}",
-            "error".red().bold(),
-            "This is probably a bug, please submit an issue: https://github.com/adinack/proto-hal/issues".bold(),
-        );
-    } else {
-        println!("{}", "Done".green().bold());
+    match hal.render() {
+        Ok(output) => {
+            println!(
+                "{}. Produced {} lines.",
+                "Done".green().bold(),
+                output.lines().count()
+            );
+        }
+        Err(e) => {
+            println!(
+                "{}: Codegen failed: {e}.\n{}",
+                "error".red().bold(),
+                "This is probably a bug, please submit an issue: https://github.com/adinack/proto-hal/issues".bold(),
+            );
+        }
     }
 }
 

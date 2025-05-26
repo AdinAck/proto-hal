@@ -58,12 +58,6 @@ impl Variant {
         quote! {
             impl State for #ident {
                 const RAW: ReadVariant = ReadVariant::#ident;
-
-                unsafe fn conjure() -> Self {
-                    Self {
-                        _sealed: (),
-                    }
-                }
             }
         }
     }
@@ -87,6 +81,12 @@ impl Variant {
             }
         }
     }
+
+    pub fn generate_freeze_impl(ident: &Ident) -> TokenStream {
+        quote! {
+            impl ::proto_hal::stasis::Freeze for #ident {}
+        }
+    }
 }
 
 impl ToTokens for Variant {
@@ -99,5 +99,6 @@ impl ToTokens for Variant {
         tokens.extend(Self::generate_state(&ident));
         tokens.extend(Self::generate_state_impl(&ident));
         tokens.extend(Self::generate_entitlement_impls(&ident, &self.entitlements));
+        tokens.extend(Self::generate_freeze_impl(&ident));
     }
 }
