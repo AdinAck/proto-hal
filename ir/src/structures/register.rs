@@ -235,7 +235,13 @@ impl Register {
                         )*
                     }
 
-                    pub unsafe fn read() -> UnsafeReader {
+                    /// Read the contents of the register, ignoring any implicative effects.
+                    ///
+                    /// # Safety
+                    ///
+                    /// Invoking this function will render statically tracked operations unsound if the operation's
+                    /// invariances are violated by the effects of the invocation.
+                    pub unsafe fn read_untracked() -> UnsafeReader {
                         UnsafeReader {
                             value: unsafe { ::core::ptr::read_volatile((super::base_addr() + OFFSET) as *const u32) }
                         }
@@ -282,7 +288,13 @@ impl Register {
                         )*
                     }
 
-                    pub unsafe fn write_from_zero(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    /// Write to fields of the register with a default value of 0, ignoring any implicative effects.
+                    ///
+                    /// # Safety
+                    ///
+                    /// Invoking this function will render statically tracked operations unsound if the operation's
+                    /// invariances are violated by the effects of the invocation.
+                    pub unsafe fn write_from_zero_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
                         let mut writer = UnsafeWriter { value: 0 };
 
                         f(&mut writer);
@@ -290,7 +302,14 @@ impl Register {
                         unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
                     }
 
-                    pub unsafe fn modify(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    /// Read the contents of a register for modification which can be written back, ignoring implicative
+                    /// effects.
+                    ///
+                    /// # Safety
+                    ///
+                    /// Invoking this function will render statically tracked operations unsound if the operation's
+                    /// invariances are violated by the effects of the invocation.
+                    pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
                         let reader = unsafe { read() };
                         let mut writer = UnsafeWriter { value: reader.value };
 

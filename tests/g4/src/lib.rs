@@ -43,7 +43,7 @@ mod tests {
             });
 
             assert!({
-                let csr = unsafe { cordic::csr::read() };
+                let csr = unsafe { cordic::csr::read_untracked() };
 
                 csr.func().is_sqrt() && csr.scale().is_n1()
             })

@@ -99,6 +99,8 @@ pub struct Unresolved;
 /// this impl is needed.
 unsafe impl Entitled<Self> for Unresolved {}
 
+/// Indicates a type-state *may* carry state information for transition builders.
+/// This trait also provides the interface for states to emplace themselves with a writer.
 pub trait PartialState<Writer> {
     fn set(w: &mut Writer);
 

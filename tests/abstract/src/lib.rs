@@ -61,29 +61,29 @@ mod tests {
             fn unsafe_read() {
                 let _lock = LOCK.lock().unwrap();
                 unsafe { MOCK_FOO = foo0::a::Variant::V1 as _ };
-                assert!(unsafe { foo0::read().a().is_v1() });
+                assert!(unsafe { foo0::read_untracked().a().is_v1() });
             }
 
             #[test]
             fn unsafe_write() {
                 let _lock = LOCK.lock().unwrap();
 
-                unsafe { foo0::write_from_zero(|w| w.a().v2()) };
-                assert!(unsafe { foo0::read().a().is_v2() });
+                unsafe { foo0::write_from_zero_untracked(|w| w.a().v2()) };
+                assert!(unsafe { foo0::read_untracked().a().is_v2() });
             }
 
             #[test]
             fn unsafe_modify() {
                 let _lock = LOCK.lock().unwrap();
 
-                unsafe { foo0::write_from_zero(|w| w.a().v3()) };
+                unsafe { foo0::write_from_zero_untracked(|w| w.a().v3()) };
                 unsafe {
-                    foo0::modify(|r, w| {
+                    foo0::modify_untracked(|r, w| {
                         w.a().variant(foo0::a::Variant::from_bits(r.a() as u32 + 1))
                     })
                 };
 
-                assert!(unsafe { foo0::read().a().is_v4() });
+                assert!(unsafe { foo0::read_untracked().a().is_v4() });
             }
         }
     }
