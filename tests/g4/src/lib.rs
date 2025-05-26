@@ -39,19 +39,27 @@ mod tests {
                 reg.func(cordic.csr.func)
                     .sqrt()
                     .scale(cordic.csr.scale)
-                    .n1()
+                    .preserve()
             });
 
             assert!({
                 let csr = unsafe { cordic::csr::read_untracked() };
 
                 csr.func().is_sqrt() && csr.scale().is_n1()
-            })
+            });
 
             // crate::cordic::wdata::write_from_zero(&cordic.csr.nargs, &cordic.csr.argsize, |w| {
             //     w.arg(0)
             // });
             // crate::cordic::rdata::read(&cordic.csr.nres, &cordic.csr.ressize).res();
+
+            unsafe { cordic::csr::write_from_reset_untracked(|w| w) };
+
+            assert!({
+                let csr = unsafe { cordic::csr::read_untracked() };
+
+                csr.func().is_cos() && csr.scale().is_n0() && csr.precision().is_p20()
+            });
         }
     }
 }

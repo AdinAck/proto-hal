@@ -302,6 +302,23 @@ impl Register {
                         unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
                     }
 
+                    /// Write to fields of the register with a default hardware reset value, ignoring any implicative
+                    /// effects.
+                    ///
+                    /// # Safety
+                    ///
+                    /// Invoking this function will render statically tracked operations unsound if the operation's
+                    /// invariances are violated by the effects of the invocation.
+                    pub unsafe fn write_from_reset_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                        let mut writer = UnsafeWriter { value: 0 };
+
+                        unsafe { ResetTransitionBuilder::new().finish(&mut writer) };
+
+                        f(&mut writer);
+
+                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+                    }
+
                     /// Read the contents of a register for modification which can be written back, ignoring implicative
                     /// effects.
                     ///
@@ -310,7 +327,7 @@ impl Register {
                     /// Invoking this function will render statically tracked operations unsound if the operation's
                     /// invariances are violated by the effects of the invocation.
                     pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
-                        let reader = unsafe { read() };
+                        let reader = unsafe { read_untracked() };
                         let mut writer = UnsafeWriter { value: reader.value };
 
                         f(reader, &mut writer);
@@ -450,6 +467,15 @@ impl Register {
                     {
                         unsafe { TransitionBuilder::conjure() }
                     }
+
+                    /// Preserve the state being added to the builder. In other words, **do not** perform a transition
+                    /// on the state inhabited by the specified field.
+                    ///
+                    /// This is useful when entitled states must be provided to the builder but need not be
+                    /// transitioned.
+                    pub fn preserve(self) -> TransitionBuilder<#(#field_tys,)*> {
+                        unsafe { TransitionBuilder::conjure() }
+                    }
                 }
             });
 
@@ -495,6 +521,7 @@ impl Register {
             })
             .collect::<Vec<_>>();
 
+        let field_module_idents = resolvable_fields.iter().map(|field| field.module_name());
         let states = resolvable_fields
             .iter()
             .map(|field| field.type_name())
@@ -509,12 +536,18 @@ impl Register {
 
         let mut methods = quote! {};
 
-        for field in &resolvable_fields {
+        for (i, field) in resolvable_fields.iter().enumerate() {
             let field_module_ident = field.module_name();
             let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
 
+            let prev_states = states.get(..i).unwrap();
+            let next_states = states.get(i + 1..).unwrap();
+
             methods.extend(quote! {
-                pub fn #field_module_ident(self, #[expect(unused_variables)] state: impl #field_module_ident::State) -> #builder_ident<#(#states,)*> {
+                pub fn #field_module_ident<_OldState>(self, #[expect(unused_variables)] state: _OldState) -> #builder_ident<#(#prev_states,)* _OldState, #(#next_states,)*>
+                where
+                    _OldState: #field_module_ident::State,
+                {
                     unsafe { #builder_ident::conjure() }
                 }
             })
@@ -531,11 +564,24 @@ impl Register {
             }
 
             type EmptyTransitionBuilder = TransitionBuilder<#(#unresolved,)*>;
+            type ResetTransitionBuilder = TransitionBuilder<
+                #(
+                    #field_module_idents::Reset,
+                )*
+            >;
+
+            impl ResetTransitionBuilder {
+                unsafe fn new() -> Self {
+                    Self {
+                        _p: ::core::marker::PhantomData,
+                    }
+                }
+            }
 
             impl EmptyTransitionBuilder {
                 fn new() -> Self {
                     Self {
-                        _p: core::marker::PhantomData,
+                        _p: ::core::marker::PhantomData,
                     }
                 }
             }
@@ -624,7 +670,7 @@ impl Register {
                     #entitlement_bounds,
                 )*
             {
-                unsafe { modify(|_, w| { f(EmptyTransitionBuilder::new()).finish(w); w }) };
+                unsafe { modify_untracked(|_, w| { f(EmptyTransitionBuilder::new()).finish(w); w }) };
 
                 unsafe { States::conjure() }
             }
