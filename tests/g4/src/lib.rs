@@ -45,7 +45,7 @@ mod tests {
             assert!({
                 let csr = unsafe { cordic::csr::read_untracked() };
 
-                csr.func().is_sqrt() && csr.scale().is_n1()
+                csr.func().is_sqrt() && csr.scale().is_n0()
             });
 
             // crate::cordic::wdata::write_from_zero(&cordic.csr.nargs, &cordic.csr.argsize, |w| {

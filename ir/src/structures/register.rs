@@ -310,13 +310,12 @@ impl Register {
                     /// Invoking this function will render statically tracked operations unsound if the operation's
                     /// invariances are violated by the effects of the invocation.
                     pub unsafe fn write_from_reset_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
-                        let mut writer = UnsafeWriter { value: 0 };
-
-                        unsafe { ResetTransitionBuilder::new().finish(&mut writer) };
-
-                        f(&mut writer);
-
-                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+                        unsafe {
+                            write_from_zero_untracked(|w| {
+                                ResetTransitionBuilder::new().finish(w);
+                                f(w)
+                            })
+                        }
                     }
 
                     /// Read the contents of a register for modification which can be written back, ignoring implicative
