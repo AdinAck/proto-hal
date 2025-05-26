@@ -32,7 +32,9 @@ mod tests {
 
             crate::cordic::csr::transition(|reg| reg.func(cordic.csr.func).sqrt());
 
-            crate::cordic::wdata::write(&cordic.csr.nargs, &cordic.csr.argsize, |w| w.arg(0));
+            crate::cordic::wdata::write_from_zero(&cordic.csr.nargs, &cordic.csr.argsize, |w| {
+                w.arg(0)
+            });
             crate::cordic::rdata::read(&cordic.csr.nres, &cordic.csr.ressize).res();
         }
     }

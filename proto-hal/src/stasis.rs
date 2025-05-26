@@ -94,3 +94,7 @@ pub struct Unavailable;
 
 /// A marker type for an unresolved state.
 pub struct Unresolved;
+
+/// To satisfy state-wise entitlement constrains when the states are not tracked,
+/// this impl is needed.
+unsafe impl Entitled<Self> for Unresolved {}
