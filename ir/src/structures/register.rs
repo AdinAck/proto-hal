@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use colored::Colorize;
 use proc_macro2::{Span, TokenStream};
@@ -464,17 +464,20 @@ impl Register {
 
     fn generate_transition_builder<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
+        entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
     ) -> TokenStream {
-        let resolvable_fields = fields.filter_map(|field| {
-            if field.is_resolvable() {
-                Some(field)
-            } else {
-                None
-            }
-        });
+        let resolvable_fields = fields
+            .filter_map(|field| {
+                if field.is_resolvable() {
+                    Some(field)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         let states = resolvable_fields
-            .clone()
+            .iter()
             .map(|field| field.type_name())
             .collect::<Vec<_>>();
 
@@ -487,7 +490,7 @@ impl Register {
 
         let mut methods = quote! {};
 
-        for field in resolvable_fields {
+        for field in &resolvable_fields {
             let field_module_ident = field.module_name();
             let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
 
@@ -528,7 +531,12 @@ impl Register {
                     unsafe { ::core::mem::transmute(()) }
                 }
 
-                fn finish(self, w: &mut UnsafeWriter) {
+                fn finish(self, w: &mut UnsafeWriter)
+                where
+                    #(
+                        #entitlement_bounds,
+                    )*
+                {
                     #(
                         #states::set(w);
                     )*;
@@ -539,7 +547,44 @@ impl Register {
         }
     }
 
-    fn generate_transition_gate<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
+    fn create_entitlement_bounds<'a>(fields: impl Iterator<Item = &'a Field>) -> Vec<TokenStream> {
+        fields
+            .filter_map(|field| match &field.access {
+                Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                    let Numericity::Enumerated { variants } = &read.numericity else {
+                        unreachable!()
+                    };
+
+                    let field_ty = field.type_name();
+                    let entitled_fields = variants
+                        .values()
+                        .flat_map(|variant| {
+                            variant.entitlements.iter().map(|entitlement| {
+                                Ident::new(
+                                    inflector::cases::pascalcase::to_pascal_case(
+                                        entitlement.field().as_str(),
+                                    )
+                                    .as_str(),
+                                    Span::call_site(),
+                                )
+                            })
+                        })
+                        .collect::<HashSet<_>>()
+                        .into_iter();
+
+                    Some(quote! {
+                        #field_ty: #(::proto_hal::stasis::Entitled<#entitled_fields>)+*
+                    })
+                }
+                _ => unreachable!(),
+            })
+            .collect()
+    }
+
+    fn generate_transition_gate<'a>(
+        fields: impl Iterator<Item = &'a Field>,
+        entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
+    ) -> TokenStream {
         let new_states = fields
             .filter_map(|field| {
                 if field.is_resolvable() {
@@ -555,6 +600,9 @@ impl Register {
             where
                 #(
                     #new_states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                )*
+                #(
+                    #entitlement_bounds,
                 )*
             {
                 unsafe { modify(|_, w| { f(EmptyTransitionBuilder::new()).finish(w); w }) };
@@ -593,8 +641,17 @@ impl ToTokens for Register {
             body.extend(Self::generate_field_transition_builders(
                 self.fields.values(),
             ));
-            body.extend(Self::generate_transition_builder(self.fields.values()));
-            body.extend(Self::generate_transition_gate(self.fields.values()));
+
+            let entitlement_bounds = Self::create_entitlement_bounds(self.fields.values());
+
+            body.extend(Self::generate_transition_builder(
+                self.fields.values(),
+                entitlement_bounds.iter(),
+            ));
+            body.extend(Self::generate_transition_gate(
+                self.fields.values(),
+                entitlement_bounds.iter(),
+            ));
         }
 
         tokens.extend(quote! {

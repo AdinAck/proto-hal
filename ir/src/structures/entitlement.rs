@@ -1,25 +1,39 @@
-use log::trace;
-use syn::{parse_quote, Path};
+use proc_macro2::Span;
+use syn::{parse_quote, Ident, Path};
 use ters::ters;
 
 #[ters]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Entitlement {
     #[get]
-    path: String,
+    peripheral: String,
+    #[get]
+    register: String,
+    #[get]
+    field: String,
+    #[get]
+    variant: String,
 }
 
 impl Entitlement {
-    pub fn to(path: impl Into<String>) -> Self {
-        Self { path: path.into() }
+    pub fn to(path: impl AsRef<str>) -> Self {
+        let mut path = path.as_ref().split("::");
+
+        Self {
+            peripheral: path.next().unwrap_or("").to_string(),
+            register: path.next().unwrap_or("").to_string(),
+            field: path.next().unwrap_or("").to_string(),
+            variant: path.next().unwrap_or("").to_string(),
+        }
     }
 
     pub fn render(&self) -> Path {
-        trace!("Rendering entitlement with path: \"{}\".", self.path());
-
-        let path = syn::parse_str::<Path>(self.path()).unwrap();
+        let peripheral = Ident::new(&self.peripheral(), Span::call_site());
+        let register = Ident::new(&self.register(), Span::call_site());
+        let field = Ident::new(&self.field(), Span::call_site());
+        let variant = Ident::new(&self.variant(), Span::call_site());
         parse_quote! {
-            crate::#path
+            crate::#peripheral::#register::#field::#variant
         }
     }
 }

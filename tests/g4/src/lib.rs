@@ -35,7 +35,12 @@ mod tests {
                 rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
             let cordic = p.cordic.unmask(cordicen);
 
-            cordic::csr::transition(|reg| reg.func(cordic.csr.func).sqrt());
+            cordic::csr::transition(|reg| {
+                reg.func(cordic.csr.func)
+                    .sqrt()
+                    .scale(cordic.csr.scale)
+                    .n1()
+            });
 
             assert!({
                 let csr = unsafe { cordic::csr::read() };
