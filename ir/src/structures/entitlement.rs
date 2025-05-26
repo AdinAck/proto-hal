@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use proc_macro2::Span;
 use syn::{parse_quote, Ident, Path};
 use ters::ters;
@@ -6,13 +8,13 @@ use ters::ters;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Entitlement {
     #[get]
-    peripheral: String,
+    peripheral: Ident,
     #[get]
-    register: String,
+    register: Ident,
     #[get]
-    field: String,
+    field: Ident,
     #[get]
-    variant: String,
+    variant: Ident,
 }
 
 impl Entitlement {
@@ -20,20 +22,33 @@ impl Entitlement {
         let mut path = path.as_ref().split("::");
 
         Self {
-            peripheral: path.next().unwrap_or("").to_string(),
-            register: path.next().unwrap_or("").to_string(),
-            field: path.next().unwrap_or("").to_string(),
-            variant: path.next().unwrap_or("").to_string(),
+            peripheral: Ident::new(path.next().unwrap_or(""), Span::call_site()),
+            register: Ident::new(path.next().unwrap_or(""), Span::call_site()),
+            field: Ident::new(path.next().unwrap_or(""), Span::call_site()),
+            variant: Ident::new(path.next().unwrap_or(""), Span::call_site()),
         }
     }
 
     pub fn render(&self) -> Path {
-        let peripheral = Ident::new(&self.peripheral(), Span::call_site());
-        let register = Ident::new(&self.register(), Span::call_site());
-        let field = Ident::new(&self.field(), Span::call_site());
-        let variant = Ident::new(&self.variant(), Span::call_site());
+        let peripheral = self.peripheral();
+        let register = self.register();
+        let field = self.field();
+        let variant = self.variant();
         parse_quote! {
             crate::#peripheral::#register::#field::#variant
         }
+    }
+}
+
+impl Display for Entitlement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}::{}::{}::{}",
+            self.peripheral(),
+            self.register(),
+            self.field(),
+            self.variant()
+        )
     }
 }

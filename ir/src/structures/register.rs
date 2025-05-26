@@ -562,7 +562,7 @@ impl Register {
                             variant.entitlements.iter().map(|entitlement| {
                                 Ident::new(
                                     inflector::cases::pascalcase::to_pascal_case(
-                                        entitlement.field().as_str(),
+                                        entitlement.field().to_string().as_str(),
                                     )
                                     .as_str(),
                                     Span::call_site(),

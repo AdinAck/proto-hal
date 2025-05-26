@@ -126,9 +126,6 @@ impl Peripheral {
             }
 
             #[cfg(test)]
-            pub(crate) const BASE_ADDR: usize = #base_addr as _;
-
-            #[cfg(test)]
             pub fn base_addr() -> usize {
                 unsafe extern "Rust" {
                     #[link_name = #link_symbol]

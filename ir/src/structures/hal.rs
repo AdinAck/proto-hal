@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
+use colored::Colorize;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::Ident;
 
 use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
 
-use super::peripheral::Peripheral;
+use super::{entitlement::Entitlement, field::Numericity, peripheral::Peripheral};
 
 #[derive(Debug, Clone)]
 pub struct Hal {
@@ -56,8 +57,122 @@ impl Hal {
 
         for peripheral in self.peripherals.values() {
             diagnostics.extend(peripheral.validate(&Context::new()));
+        }
 
-            // TODO: validate entitlements
+        // collect all entitlements
+        let mut entitlements = HashMap::<Context, Vec<Entitlement>>::new();
+
+        let context = Context::new();
+
+        for peripheral in self.peripherals.values() {
+            let context = context.clone().and(peripheral.module_name().to_string());
+
+            entitlements
+                .entry(context.clone())
+                .or_default()
+                .extend(peripheral.entitlements.clone());
+
+            for register in peripheral.registers.values() {
+                let context = context.clone().and(register.module_name().to_string());
+
+                for field in register.fields.values() {
+                    let context = context.clone().and(field.module_name().to_string());
+
+                    // TODO: when field superpositioning is implemented:
+                    // TODO: entitlements.extend(field.entitlements.clone());
+
+                    let accesses = [field.access.get_read(), field.access.get_write()];
+
+                    for access in accesses.iter().flatten() {
+                        entitlements
+                            .entry(context.clone())
+                            .or_default()
+                            .extend(access.entitlements.clone());
+
+                        if let Numericity::Enumerated { variants } = &access.numericity {
+                            for variant in variants.values() {
+                                let context = context.clone().and(variant.type_name().to_string());
+
+                                entitlements
+                                    .entry(context)
+                                    .or_default()
+                                    .extend(variant.entitlements.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // traverse the hal tree given the entitlement path and ensure the path exists
+        for (context, entitlements) in entitlements {
+            for entitlement in entitlements {
+                let Some(peripheral) = self.peripherals.get(entitlement.peripheral()) else {
+                    diagnostics.push(
+                        Diagnostic::error(format!(
+                            "entitlement peripheral [{}] does not exist",
+                            entitlement.peripheral().to_string().bold()
+                        ))
+                        .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+
+                let Some(register) = peripheral.registers.get(entitlement.register()) else {
+                    diagnostics.push(
+                        Diagnostic::error(format!(
+                            "entitlement register [{}] does not exist",
+                            entitlement.register().to_string().bold()
+                        ))
+                        .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+
+                let Some(field) = register.fields.get(entitlement.field()) else {
+                    diagnostics.push(
+                        Diagnostic::error(format!(
+                            "entitlement field [{}] does not exist",
+                            entitlement.field().to_string().bold()
+                        ))
+                        .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+
+                let Some(read) = field.access.get_read() else {
+                    diagnostics.push(
+                        Diagnostic::error(format!("entitlements path [{}] targets unresolvable field which cannot be entitled to", entitlement.to_string().bold()))
+                            .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+
+                let Numericity::Enumerated { variants } = &read.numericity else {
+                    diagnostics.push(
+                        Diagnostic::error(format!("entitlement path [{}] targets numeric field which cannot be entitled to", entitlement.to_string().bold()))
+                            .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+
+                let Some(_variant) = variants.get(entitlement.variant()) else {
+                    diagnostics.push(
+                        Diagnostic::error(format!(
+                            "entitlement variant [{}] does not exist",
+                            entitlement.variant().to_string().bold()
+                        ))
+                        .with_context(context.clone()),
+                    );
+
+                    continue;
+                };
+            }
         }
 
         diagnostics

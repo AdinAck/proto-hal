@@ -3,14 +3,7 @@ use std::collections::HashSet;
 use crate::structures::{entitlement::Entitlement, field::Numericity};
 
 #[derive(Debug, Clone)]
-pub struct Read {
-    pub numericity: Numericity,
-    pub entitlements: HashSet<Entitlement>,
-    pub effects: (),
-}
-
-#[derive(Debug, Clone)]
-pub struct Write {
+pub struct AccessProperties {
     pub numericity: Numericity,
     pub entitlements: HashSet<Entitlement>,
     pub effects: (),
@@ -18,20 +11,23 @@ pub struct Write {
 
 #[derive(Debug, Clone)]
 pub enum Access {
-    Read(Read),
-    Write(Write),
-    ReadWrite { read: Read, write: Write },
+    Read(AccessProperties),
+    Write(AccessProperties),
+    ReadWrite {
+        read: AccessProperties,
+        write: AccessProperties,
+    },
 }
 
 impl Access {
     pub fn read_write(numericity: Numericity) -> Access {
         Access::ReadWrite {
-            read: Read {
+            read: AccessProperties {
                 numericity: numericity.clone(),
                 entitlements: HashSet::new(),
                 effects: (),
             },
-            write: Write {
+            write: AccessProperties {
                 numericity,
                 entitlements: HashSet::new(),
                 effects: (),
@@ -39,17 +35,27 @@ impl Access {
         }
     }
 
-    pub fn is_read(&self) -> bool {
-        match self {
-            Self::Read(_) | Self::ReadWrite { read: _, write: _ } => true,
-            Self::Write(_) => false,
+    pub fn get_read(&self) -> Option<&AccessProperties> {
+        if let Self::Read(read) | Self::ReadWrite { read, write: _ } = self {
+            Some(read)
+        } else {
+            None
         }
     }
 
-    pub fn is_write(&self) -> bool {
-        match self {
-            Self::Write(_) | Self::ReadWrite { read: _, write: _ } => true,
-            Self::Read(_) => false,
+    pub fn get_write(&self) -> Option<&AccessProperties> {
+        if let Self::Write(write) | Self::ReadWrite { read: _, write } = self {
+            Some(write)
+        } else {
+            None
         }
+    }
+
+    pub fn is_read(&self) -> bool {
+        self.get_read().is_some()
+    }
+
+    pub fn is_write(&self) -> bool {
+        self.get_write().is_some()
     }
 }
