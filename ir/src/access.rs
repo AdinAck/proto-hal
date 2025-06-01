@@ -20,6 +20,22 @@ pub enum Access {
 }
 
 impl Access {
+    pub fn read(numericity: Numericity) -> Access {
+        Access::Read(AccessProperties {
+            numericity,
+            entitlements: HashSet::new(),
+            effects: (),
+        })
+    }
+
+    pub fn write(numericity: Numericity) -> Access {
+        Access::Write(AccessProperties {
+            numericity,
+            entitlements: HashSet::new(),
+            effects: (),
+        })
+    }
+
     pub fn read_write(numericity: Numericity) -> Access {
         Access::ReadWrite {
             read: AccessProperties {

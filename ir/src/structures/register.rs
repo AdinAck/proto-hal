@@ -450,6 +450,7 @@ impl Register {
     }
 
     fn generate_states_struct<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> TokenStream {
+        let fields = fields.filter(|field| field.is_resolvable());
         let field_idents = fields
             .clone()
             .map(|field| field.module_name())
@@ -689,34 +690,40 @@ impl Register {
 
     fn create_entitlement_bounds<'a>(fields: impl Iterator<Item = &'a Field>) -> Vec<TokenStream> {
         fields
-            .filter_map(|field| match &field.access {
-                Access::Read(read) | Access::ReadWrite { read, write: _ } => {
-                    let Numericity::Enumerated { variants } = &read.numericity else {
-                        unreachable!()
-                    };
-
-                    let field_ty = field.type_name();
-                    let entitled_fields = variants
-                        .values()
-                        .flat_map(|variant| {
-                            variant.entitlements.iter().map(|entitlement| {
-                                Ident::new(
-                                    inflector::cases::pascalcase::to_pascal_case(
-                                        entitlement.field().to_string().as_str(),
-                                    )
-                                    .as_str(),
-                                    Span::call_site(),
-                                )
-                            })
-                        })
-                        .collect::<HashSet<_>>()
-                        .into_iter();
-
-                    Some(quote! {
-                        #field_ty: #(::proto_hal::stasis::Entitled<#entitled_fields>)+*
-                    })
+            .filter_map(|field| {
+                if !field.is_resolvable() {
+                    None?
                 }
-                _ => unreachable!(),
+
+                match &field.access {
+                    Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                        let Numericity::Enumerated { variants } = &read.numericity else {
+                            unreachable!()
+                        };
+
+                        let field_ty = field.type_name();
+                        let entitled_fields = variants
+                            .values()
+                            .flat_map(|variant| {
+                                variant.entitlements.iter().map(|entitlement| {
+                                    Ident::new(
+                                        inflector::cases::pascalcase::to_pascal_case(
+                                            entitlement.field().to_string().as_str(),
+                                        )
+                                        .as_str(),
+                                        Span::call_site(),
+                                    )
+                                })
+                            })
+                            .collect::<HashSet<_>>()
+                            .into_iter();
+
+                        Some(quote! {
+                            #field_ty: #(::proto_hal::stasis::Entitled<#entitled_fields>)+*
+                        })
+                    }
+                    _ => unreachable!(),
+                }
             })
             .collect()
     }
