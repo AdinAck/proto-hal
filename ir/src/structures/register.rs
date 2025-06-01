@@ -55,7 +55,7 @@ impl Register {
         let new_context = context.clone().and(self.ident.clone().to_string());
 
         if self.offset % 4 != 0 {
-            diagnostics.push(
+            diagnostics.insert(
                 Diagnostic::error(format!(
                     "register offset must be word aligned. (offset {} does not satisfy: offset % 4 == 0)",
                     self.offset
@@ -72,7 +72,7 @@ impl Register {
             let rhs = window[1];
 
             if lhs.offset + lhs.width > rhs.offset {
-                diagnostics.push(
+                diagnostics.insert(
                     Diagnostic::error(format!(
                         "fields [{}] and [{}] overlap.",
                         lhs.ident.to_string().bold(),
@@ -85,7 +85,7 @@ impl Register {
 
         if let Some(field) = fields.last() {
             if field.offset + field.width > 32 {
-                diagnostics.push(
+                diagnostics.insert(
                     Diagnostic::error(format!(
                         "field [{}] exceeds register width.",
                         field.ident.to_string().bold()
@@ -346,6 +346,82 @@ impl Register {
             #read
             #write
         }
+    }
+
+    fn maybe_generate_reader<'a>(fields: impl Iterator<Item = &'a Field>) -> Option<TokenStream> {
+        let enumerated_field_idents = fields
+            .filter_map(|field| {
+                if field.access.is_read() && !field.is_resolvable() {
+                    Some(field.module_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if enumerated_field_idents.is_empty() {
+            None?
+        }
+
+        Some(quote! {
+            pub struct Reader {
+                r: UnsafeReader,
+            }
+
+            impl Reader {
+                #(
+                    pub fn #enumerated_field_idents(&self) -> #enumerated_field_idents::ReadVariant {
+                        self.r.#enumerated_field_idents()
+                    }
+                )*
+            }
+
+            // TODO: track potential effects
+            pub fn read() -> Reader {
+                Reader { r: unsafe { read_untracked() } }
+            }
+        })
+    }
+
+    fn maybe_generate_writer<'a>(
+        fields: impl Iterator<Item = &'a Field>,
+        refined_writer_idents: impl Iterator<Item = &'a Ident>,
+    ) -> Option<TokenStream> {
+        let enumerated_field_idents = fields
+            .filter_map(|field| {
+                if field.access.is_write() && !field.is_resolvable() {
+                    Some(field.module_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if enumerated_field_idents.is_empty() {
+            None?
+        }
+
+        Some(quote! {
+            pub struct Writer<'a> {
+                w: &'a mut UnsafeWriter,
+            }
+
+            impl<'a> Writer<'a> {
+                // TODO: this should be improved, reduce duplicate code
+                #(
+                    pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
+                        let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
+
+                        #refined_writer_idents { w: self, f: move |w, value| w.w.value = (w.w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
+                    }
+                )*
+            }
+
+            // TODO: track potential effects
+            pub fn modify(f: impl FnOnce(Reader, &mut Writer) -> &mut Writer) {
+                unsafe { modify_untracked(|r, w| f(Reader { r }, Writer { w })) };
+            }
+        })
     }
 
     fn generate_reset<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
@@ -696,6 +772,11 @@ impl ToTokens for Register {
             refined_writer_idents.iter(),
         ));
         body.extend(Self::generate_unsafe_interface(
+            self.fields.values(),
+            refined_writer_idents.iter(),
+        ));
+        body.extend(Self::maybe_generate_reader(self.fields.values()));
+        body.extend(Self::maybe_generate_writer(
             self.fields.values(),
             refined_writer_idents.iter(),
         ));

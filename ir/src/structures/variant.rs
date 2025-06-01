@@ -15,6 +15,7 @@ pub struct Variant {
     pub ident: Ident,
     pub bits: u32,
     pub entitlements: Entitlements,
+    pub docs: Vec<String>,
 }
 
 impl Variant {
@@ -23,11 +24,23 @@ impl Variant {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             bits,
             entitlements: HashSet::new(),
+            docs: Vec::new(),
         }
     }
 
     pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
         self.entitlements.extend(entitlements);
+        self
+    }
+
+    pub fn docs<I>(mut self, docs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.docs
+            .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
+
         self
     }
 
@@ -52,7 +65,7 @@ impl Variant {
         let reserved = ["variant", "generic", "preserve"];
 
         if reserved.contains(&self.module_name().to_string().as_str()) {
-            diagnostics.push(
+            diagnostics.insert(
                 Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
                     .notes([format!("reserved variant keywords are: {reserved:?}")])
                     .with_context(new_context.clone()),
@@ -65,8 +78,14 @@ impl Variant {
 
 // codegen
 impl Variant {
-    pub fn generate_state(ident: &Ident) -> TokenStream {
+    pub fn generate_state<'a>(
+        ident: &Ident,
+        docs: impl Iterator<Item = &'a String>,
+    ) -> TokenStream {
         quote! {
+            #(
+                #[doc = #docs]
+            )*
             pub struct #ident {
                 _sealed: (),
             }
@@ -115,7 +134,7 @@ impl ToTokens for Variant {
             Span::call_site(),
         );
 
-        tokens.extend(Self::generate_state(&ident));
+        tokens.extend(Self::generate_state(&ident, self.docs.iter()));
         tokens.extend(Self::generate_state_impl(&ident));
         tokens.extend(Self::generate_entitlement_impls(&ident, &self.entitlements));
         tokens.extend(Self::generate_freeze_impl(&ident));

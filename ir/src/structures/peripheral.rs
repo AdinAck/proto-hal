@@ -66,7 +66,7 @@ impl Peripheral {
         let new_context = context.clone().and(self.ident.clone().to_string());
 
         if self.base_addr % 4 != 0 {
-            diagnostics.push(
+            diagnostics.insert(
                 Diagnostic::error("peripheral address must be word aligned.")
                     .with_context(new_context.clone()),
             );
@@ -80,7 +80,7 @@ impl Peripheral {
             let rhs = window[1];
 
             if lhs.offset + 4 > rhs.offset {
-                diagnostics.push(
+                diagnostics.insert(
                     Diagnostic::error(format!(
                         "registers [{}] and [{}] overlap.",
                         lhs.ident, rhs.ident

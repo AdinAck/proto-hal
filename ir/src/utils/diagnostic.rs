@@ -1,9 +1,12 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use colored::Colorize;
 use ters::ters;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Kind {
     Warning,
     Error,
@@ -44,7 +47,7 @@ impl Display for Context {
 }
 
 #[ters]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Diagnostic {
     #[get]
     message: String,
@@ -90,7 +93,7 @@ impl Diagnostic {
         self
     }
 
-    pub fn report(diagnostics: &Vec<Self>) -> String {
+    pub fn report(diagnostics: &HashSet<Self>) -> String {
         let mut diagnostic_groups = HashMap::new();
 
         for diagnostic in diagnostics {
@@ -143,10 +146,10 @@ impl Display for Diagnostic {
     }
 }
 
-pub type Diagnostics = Vec<Diagnostic>;
+pub type Diagnostics = HashSet<Diagnostic>;
 
 impl From<Diagnostic> for Diagnostics {
     fn from(diagnostic: Diagnostic) -> Self {
-        vec![diagnostic]
+        HashSet::from([diagnostic])
     }
 }

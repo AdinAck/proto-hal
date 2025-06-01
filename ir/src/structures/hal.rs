@@ -45,7 +45,7 @@ impl Hal {
             let rhs = window[1];
 
             if lhs.base_addr + lhs.width() > rhs.base_addr {
-                diagnostics.push(
+                diagnostics.insert(
                     Diagnostic::error(format!(
                         "peripherals [{}] and [{}] overlap.",
                         lhs.ident, rhs.ident
@@ -108,7 +108,7 @@ impl Hal {
         for (context, entitlements) in entitlements {
             for entitlement in entitlements {
                 let Some(peripheral) = self.peripherals.get(entitlement.peripheral()) else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement peripheral [{}] does not exist",
                             entitlement.peripheral().to_string().bold()
@@ -120,7 +120,7 @@ impl Hal {
                 };
 
                 let Some(register) = peripheral.registers.get(entitlement.register()) else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement register [{}] does not exist",
                             entitlement.register().to_string().bold()
@@ -132,7 +132,7 @@ impl Hal {
                 };
 
                 let Some(field) = register.fields.get(entitlement.field()) else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement field [{}] does not exist",
                             entitlement.field().to_string().bold()
@@ -144,7 +144,7 @@ impl Hal {
                 };
 
                 let Some(read) = field.access.get_read() else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!("entitlements path [{}] targets unresolvable field which cannot be entitled to", entitlement.to_string().bold()))
                             .with_context(context.clone()),
                     );
@@ -153,7 +153,7 @@ impl Hal {
                 };
 
                 let Numericity::Enumerated { variants } = &read.numericity else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!("entitlement path [{}] targets numeric field which cannot be entitled to", entitlement.to_string().bold()))
                             .with_context(context.clone()),
                     );
@@ -162,7 +162,7 @@ impl Hal {
                 };
 
                 let Some(_variant) = variants.get(entitlement.variant()) else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement variant [{}] does not exist",
                             entitlement.variant().to_string().bold()

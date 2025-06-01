@@ -35,10 +35,9 @@ pub struct Field {
     pub ident: Ident,
     pub offset: u8,
     pub width: u8,
-
     pub access: Access,
-
     pub reset: Option<Ident>,
+    pub docs: Vec<String>,
 }
 
 impl Field {
@@ -49,6 +48,7 @@ impl Field {
             width,
             access,
             reset: None,
+            docs: Vec::new(),
         }
     }
 
@@ -57,6 +57,17 @@ impl Field {
             inflector::cases::pascalcase::to_pascal_case(ident.as_ref()).as_str(),
             Span::call_site(),
         ));
+
+        self
+    }
+
+    pub fn docs<I>(mut self, docs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.docs
+            .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
 
         self
     }
@@ -123,7 +134,7 @@ impl Field {
                     {
                         let variant_limit = (1 << self.width) - 1;
                         if largest_variant > variant_limit {
-                            diagnostics.push(
+                            diagnostics.insert(
                                 Diagnostic::error(format!(
                             "field variants exceed field width. (largest variant: {}, largest possible: {})",
                             largest_variant, variant_limit,
@@ -141,7 +152,7 @@ impl Field {
                         let rhs = window[1];
 
                         if lhs.bits == rhs.bits {
-                            diagnostics.push(
+                            diagnostics.insert(
                                 Diagnostic::error(format!(
                                     "variants [{}] and [{}] have overlapping bit values.",
                                     lhs.ident.to_string().bold(),
@@ -158,7 +169,7 @@ impl Field {
         let unused_reset = |diagnostics: &mut Diagnostics| {
             // TODO: check for resolving effects
             if self.reset.is_some() {
-                diagnostics.push(
+                diagnostics.insert(
                     Diagnostic::warning("provided reset unused because the field is unresolvable")
                         .with_context(new_context.clone()),
                 );
@@ -176,7 +187,7 @@ impl Field {
                     // TODO: resets for resolvable fields with inequal read/write schemas
                     if let Numericity::Enumerated { variants } = &access.numericity {
                         if !variants.contains_key(reset) {
-                            diagnostics.push(
+                            diagnostics.insert(
                                 Diagnostic::error(format!(
                                     "provided reset \"{reset}\" does not exist"
                                 ))
@@ -185,7 +196,7 @@ impl Field {
                         }
                     }
                 } else {
-                    diagnostics.push(
+                    diagnostics.insert(
                         Diagnostic::error(
                             "resolvable fields require a reset state to be specified",
                         )
@@ -419,8 +430,13 @@ impl ToTokens for Field {
         body.extend(Self::generate_state_trait(&self.access));
         body.extend(Self::generate_partial_state_impls(&self.access, ident));
 
+        let docs = &self.docs;
+
         // final module
         tokens.extend(quote! {
+            #(
+                #[doc = #docs]
+            )*
             pub mod #ident {
                 #body
             }
