@@ -165,30 +165,22 @@ impl Field {
             }
         };
 
-        match &self.access {
-            Access::Read(read) => {
-                validate_numericity(&read.numericity, &mut diagnostics);
+        for access in [self.access.get_read(), self.access.get_write()]
+            .into_iter()
+            .flatten()
+        {
+            validate_numericity(&access.numericity, &mut diagnostics);
 
-                unused_reset(&mut diagnostics);
-            }
-            Access::Write(write) => {
-                validate_numericity(&write.numericity, &mut diagnostics);
-
-                unused_reset(&mut diagnostics);
-            }
-            Access::ReadWrite { read, write } => {
-                validate_numericity(&read.numericity, &mut diagnostics);
-                validate_numericity(&write.numericity, &mut diagnostics);
-
+            if self.is_resolvable() {
                 if let Some(reset) = &self.reset {
                     // TODO: resets for resolvable fields with inequal read/write schemas
-                    if let Numericity::Enumerated { variants } = &read.numericity {
+                    if let Numericity::Enumerated { variants } = &access.numericity {
                         if !variants.contains_key(reset) {
                             diagnostics.push(
                                 Diagnostic::error(format!(
                                     "provided reset \"{reset}\" does not exist"
                                 ))
-                                .with_context(new_context),
+                                .with_context(new_context.clone()),
                             );
                         }
                     }
@@ -197,8 +189,16 @@ impl Field {
                         Diagnostic::error(
                             "resolvable fields require a reset state to be specified",
                         )
-                        .with_context(new_context),
+                        .with_context(new_context.clone()),
                     );
+                }
+            } else {
+                unused_reset(&mut diagnostics);
+            }
+
+            if let Numericity::Enumerated { variants } = &access.numericity {
+                for variant in variants.values() {
+                    diagnostics.extend(variant.validate(&new_context));
                 }
             }
         }

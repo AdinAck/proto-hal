@@ -4,6 +4,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::Ident;
 
+use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+
 use super::entitlement::Entitlement;
 
 type Entitlements = HashSet<Entitlement>;
@@ -41,6 +43,23 @@ impl Variant {
             inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
             Span::call_site(),
         )
+    }
+
+    pub fn validate(&self, context: &Context) -> Diagnostics {
+        let mut diagnostics = Diagnostics::new();
+        let new_context = context.clone().and(self.module_name().clone().to_string());
+
+        let reserved = ["variant", "generic", "preserve"];
+
+        if reserved.contains(&self.module_name().to_string().as_str()) {
+            diagnostics.push(
+                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
+                    .notes([format!("reserved variant keywords are: {reserved:?}")])
+                    .with_context(new_context.clone()),
+            );
+        }
+
+        diagnostics
     }
 }
 

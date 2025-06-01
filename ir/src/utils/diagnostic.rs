@@ -48,6 +48,7 @@ impl Display for Context {
 pub struct Diagnostic {
     #[get]
     message: String,
+    notes: Vec<String>,
     #[get]
     kind: Kind,
     #[get]
@@ -58,6 +59,7 @@ impl Diagnostic {
     pub fn warning(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            notes: Vec::new(),
             kind: Kind::Warning,
             context: None,
         }
@@ -66,6 +68,7 @@ impl Diagnostic {
     pub fn error(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            notes: Vec::new(),
             kind: Kind::Error,
             context: None,
         }
@@ -73,6 +76,17 @@ impl Diagnostic {
 
     pub fn with_context(mut self, context: Context) -> Self {
         self.context = Some(context);
+        self
+    }
+
+    pub fn notes<I>(mut self, notes: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.notes
+            .extend(notes.into_iter().map(|e| e.as_ref().to_string()));
+
         self
     }
 
@@ -108,10 +122,24 @@ impl Diagnostic {
 
 impl Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            Kind::Warning => write!(f, "{}: {}", "warning".yellow().bold(), self.message),
-            Kind::Error => write!(f, "{}: {}", "error".red().bold(), self.message),
-        }
+        let notes = if !self.notes.is_empty() {
+            format!(
+                "\n{}",
+                self.notes
+                    .iter()
+                    .map(|note| format!("\t{}: {note}", "note".bright_blue().bold()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        } else {
+            "".to_string()
+        };
+        let kind = match &self.kind {
+            Kind::Warning => "warning".yellow().bold(),
+            Kind::Error => "error".red().bold(),
+        };
+
+        write!(f, "{kind}: {}{notes}", self.message)
     }
 }
 
