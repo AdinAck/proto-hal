@@ -15,7 +15,7 @@ pub fn generate() -> Field {
         ("sin", vec![Entitlement::to(scale("N0"))]),
         ("atan2", vec![Entitlement::to(scale("N0"))]),
         ("magnitude", vec![Entitlement::to(scale("N0"))]),
-        ("preserve", vec![]),
+        ("atan", vec![]),
         ("cosh", vec![Entitlement::to(scale("N0"))]),
         ("sinh", vec![Entitlement::to(scale("N0"))]),
         ("atanh", vec![Entitlement::to(scale("N0"))]),
