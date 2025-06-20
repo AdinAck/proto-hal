@@ -92,14 +92,6 @@ impl Variant {
         }
     }
 
-    pub fn generate_state_impl(ident: &Ident) -> TokenStream {
-        quote! {
-            impl State for #ident {
-                const RAW: ReadVariant = ReadVariant::#ident;
-            }
-        }
-    }
-
     pub fn generate_entitlement_impls(ident: &Ident, entitlements: &Entitlements) -> TokenStream {
         if entitlements.is_empty() {
             // any T satisfies this state's entitlement requirements
@@ -135,7 +127,6 @@ impl ToTokens for Variant {
         );
 
         tokens.extend(Self::generate_state(&ident, self.docs.iter()));
-        tokens.extend(Self::generate_state_impl(&ident));
         tokens.extend(Self::generate_entitlement_impls(&ident, &self.entitlements));
         tokens.extend(Self::generate_freeze_impl(&ident));
     }

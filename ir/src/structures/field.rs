@@ -86,6 +86,10 @@ impl Field {
         )
     }
 
+    pub fn writer_ident(&self) -> Ident {
+        format_ident!("{}Writer", self.type_name())
+    }
+
     pub fn is_resolvable(&self) -> bool {
         // TODO: external resolving effects
 
@@ -127,7 +131,7 @@ impl Field {
 
         let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
             match numericity {
-                Numericity::Numeric => todo!(),
+                Numericity::Numeric => (),
                 Numericity::Enumerated { variants } => {
                     if let Some(largest_variant) =
                         variants.values().map(|variant| variant.bits).max()
@@ -252,7 +256,7 @@ impl Field {
         }
     }
 
-    fn generate_variant_enum(access: &Access) -> TokenStream {
+    fn generate_variant_enum(access: &Access) -> Option<TokenStream> {
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
             let variant_idents = variants
                 .values()
@@ -310,13 +314,13 @@ impl Field {
                     let variant_enum =
                         variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                    quote! {
+                    Some(quote! {
                         pub type ReadVariant = Variant;
                         pub type WriteVariant = Variant;
                         #variant_enum
-                    }
+                    })
                 } else {
-                    todo!()
+                    None
                 }
             }
             Access::Write(write) => {
@@ -324,13 +328,13 @@ impl Field {
                     let variant_enum =
                         variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                    quote! {
+                    Some(quote! {
                         pub type ReadVariant = Variant;
                         pub type WriteVariant = Variant;
                         #variant_enum
-                    }
+                    })
                 } else {
-                    todo!()
+                    None
                 }
             }
             Access::ReadWrite { read, write } => {
@@ -339,32 +343,38 @@ impl Field {
                         let variant_enum =
                             variant_enum(syn::Ident::new("Variant", Span::call_site()), variants);
 
-                        quote! {
+                        Some(quote! {
                             pub type ReadVariant = Variant;
                             pub type WriteVariant = Variant;
                             #variant_enum
-                        }
+                        })
                     } else {
-                        todo!()
+                        None
                     }
                 } else {
                     let read_enum = if let Numericity::Enumerated { variants } = &read.numericity {
-                        variant_enum(syn::Ident::new("ReadVariant", Span::call_site()), variants)
+                        Some(variant_enum(
+                            syn::Ident::new("ReadVariant", Span::call_site()),
+                            variants,
+                        ))
                     } else {
-                        todo!()
+                        None
                     };
 
                     let write_enum = if let Numericity::Enumerated { variants } = &write.numericity
                     {
-                        variant_enum(syn::Ident::new("WriteVariant", Span::call_site()), variants)
+                        Some(variant_enum(
+                            syn::Ident::new("WriteVariant", Span::call_site()),
+                            variants,
+                        ))
                     } else {
-                        todo!()
+                        None
                     };
 
-                    quote! {
+                    Some(quote! {
                         #read_enum
                         #write_enum
-                    }
+                    })
                 }
             }
         }
@@ -386,9 +396,9 @@ impl Field {
         }
     }
 
-    fn generate_partial_state_impls(access: &Access, field_ident: &Ident) -> Option<TokenStream> {
-        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
-            if let Numericity::Enumerated { variants } = &read.numericity {
+    fn generate_state_impls(access: &Access, field_ident: &Ident) -> Option<TokenStream> {
+        if let Access::Write(write) | Access::ReadWrite { read: _, write } = access {
+            if let Numericity::Enumerated { variants } = &write.numericity {
                 let variants = variants.values().map(|variant| variant.type_name());
                 return Some(quote! {
                     #(
@@ -402,6 +412,10 @@ impl Field {
                                     _sealed: (),
                                 }
                             }
+                        }
+
+                        impl State for #variants {
+                            const RAW: ReadVariant = ReadVariant::#variants;
                         }
                     )*
                 });
@@ -428,7 +442,7 @@ impl ToTokens for Field {
         }
         body.extend(Self::generate_variant_enum(&self.access));
         body.extend(Self::generate_state_trait(&self.access));
-        body.extend(Self::generate_partial_state_impls(&self.access, ident));
+        body.extend(Self::generate_state_impls(&self.access, ident));
 
         let docs = &self.docs;
 

@@ -119,51 +119,15 @@ impl Register {
         }
     }
 
-    fn generate_refined_writers<'a>(
-        fields: impl Iterator<Item = &'a Field>,
-        writer_idents: impl Iterator<Item = &'a Ident>,
-    ) -> TokenStream {
-        let mut enumerated_field_idents = Vec::new();
-        let mut nested_variants = Vec::new();
+    fn generate_refined_writers<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
+        let mut writers = quote! {};
 
         for field in fields {
-            match &field.access {
-                Access::Write(write) | Access::ReadWrite { read: _, write } => {
-                    match &write.numericity {
-                        Numericity::Enumerated { variants } => {
-                            enumerated_field_idents.push(&field.ident);
-                            nested_variants.push(variants.values().collect::<Vec<_>>());
-                        }
-                        Numericity::Numeric => todo!(),
-                    }
-                }
-                _ => {}
-            }
-        }
+            let field_ident = field.module_name();
+            let writer_ident = field.writer_ident();
 
-        let variant_tys = nested_variants
-            .iter()
-            .map(|variants| {
-                variants
-                    .iter()
-                    .map(|variant| variant.type_name())
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        let accessors = nested_variants
-            .iter()
-            .map(|variants| {
-                variants
-                    .iter()
-                    .map(|variant| variant.module_name())
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        quote! {
-            #(
-                pub struct #writer_idents<'a, W, F>
+            writers.extend(quote! {
+                pub struct #writer_ident<'a, W, F>
                 where
                     F: FnOnce(&mut W, u32),
                 {
@@ -171,7 +135,7 @@ impl Register {
                     f: F,
                 }
 
-                impl<'a, W, F> #writer_idents<'a, W, F>
+                impl<'a, W, F> #writer_ident<'a, W, F>
                 where
                     F: FnOnce(&mut W, u32),
                 {
@@ -180,24 +144,63 @@ impl Register {
 
                         self.w
                     }
-
-                    pub fn variant(self, variant: #enumerated_field_idents::WriteVariant) -> &'a mut W {
-                        unsafe { self.bits(variant as _) }
-                    }
-
-                    #(
-                        pub fn #accessors(self) -> &'a mut W {
-                            self.variant(#enumerated_field_idents::WriteVariant::#variant_tys)
-                        }
-                    )*
                 }
-            )*
+            });
+
+            match &field.access {
+                Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                    match &write.numericity {
+                        Numericity::Enumerated { variants } => {
+                            let variant_tys = variants
+                                .values()
+                                .map(|variant| variant.type_name())
+                                .collect::<Vec<_>>();
+
+                            let accessors = variants
+                                .values()
+                                .map(|variant| variant.module_name())
+                                .collect::<Vec<_>>();
+
+                            writers.extend(quote! {
+                                impl<'a, W, F> #writer_ident<'a, W, F>
+                                where
+                                    F: FnOnce(&mut W, u32),
+                                {
+                                    pub fn variant(self, variant: #field_ident::WriteVariant) -> &'a mut W {
+                                        unsafe { self.bits(variant as _) }
+                                    }
+
+                                    #(
+                                        pub fn #accessors(self) -> &'a mut W {
+                                            self.variant(#field_ident::WriteVariant::#variant_tys)
+                                        }
+                                    )*
+                                }
+                            });
+                        }
+                        Numericity::Numeric => {
+                            writers.extend(quote! {
+                                impl<'a, W, F> #writer_ident<'a, W, F>
+                                where
+                                    F: FnOnce(&mut W, u32),
+                                {
+                                    pub fn value(self, value: impl Into<u32>) -> &'a mut W {
+                                        unsafe { self.bits(value.into()) }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
+
+        writers
     }
 
     fn generate_unsafe_interface<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
-        refined_writer_idents: impl Iterator<Item = &'a Ident>,
     ) -> TokenStream {
         fn read<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_read()) {
@@ -252,21 +255,11 @@ impl Register {
             }
         }
 
-        fn write<'a>(
-            fields: impl Iterator<Item = &'a Field> + Clone,
-            refined_writer_idents: impl Iterator<Item = &'a Ident>,
-        ) -> Option<TokenStream> {
+        fn write<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_write()) {
-                let enumerated_field_idents = fields.filter_map(|field| match &field.access {
-                    Access::Write(write) | Access::ReadWrite { read: _, write } => {
-                        if matches!(write.numericity, Numericity::Enumerated { variants: _ }) {
-                            Some(&field.ident)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                });
+                let fields = fields.filter(|field| field.access.is_write());
+                let field_idents = fields.clone().map(|field| field.module_name());
+                let refined_writer_idents = fields.map(|field| field.writer_ident());
 
                 Some(quote! {
                     pub struct UnsafeWriter {
@@ -280,10 +273,10 @@ impl Register {
                         }
 
                         #(
-                            pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
-                                let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
+                            pub fn #field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
+                                let mask = (u32::MAX >> (32 - #field_idents::WIDTH)) << #field_idents::OFFSET;
 
-                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
+                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #field_idents::OFFSET) }
                             }
                         )*
                     }
@@ -301,50 +294,60 @@ impl Register {
 
                         unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
                     }
-
-                    /// Write to fields of the register with a default hardware reset value, ignoring any implicative
-                    /// effects.
-                    ///
-                    /// # Safety
-                    ///
-                    /// Invoking this function will render statically tracked operations unsound if the operation's
-                    /// invariances are violated by the effects of the invocation.
-                    pub unsafe fn write_from_reset_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
-                        unsafe {
-                            write_from_zero_untracked(|w| {
-                                ResetTransitionBuilder::new().finish(w);
-                                f(w)
-                            })
-                        }
-                    }
-
-                    /// Read the contents of a register for modification which can be written back, ignoring implicative
-                    /// effects.
-                    ///
-                    /// # Safety
-                    ///
-                    /// Invoking this function will render statically tracked operations unsound if the operation's
-                    /// invariances are violated by the effects of the invocation.
-                    pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
-                        let reader = unsafe { read_untracked() };
-                        let mut writer = UnsafeWriter { value: reader.value };
-
-                        f(reader, &mut writer);
-
-                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
-                    }
                 })
             } else {
                 None
             }
         }
 
+        fn modify<'a>(mut fields: impl Iterator<Item = &'a Field>) -> Option<TokenStream> {
+            if !fields.any(|field| field.access.is_read() && field.access.is_write()) {
+                None?
+            }
+
+            Some(quote! {
+                /// Write to fields of the register with a default hardware reset value, ignoring any implicative
+                /// effects.
+                ///
+                /// # Safety
+                ///
+                /// Invoking this function will render statically tracked operations unsound if the operation's
+                /// invariances are violated by the effects of the invocation.
+                pub unsafe fn write_from_reset_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    unsafe {
+                        write_from_zero_untracked(|w| {
+                            ResetTransitionBuilder::new().finish(w);
+                            f(w)
+                        })
+                    }
+                }
+
+                /// Read the contents of a register for modification which can be written back, ignoring implicative
+                /// effects.
+                ///
+                /// # Safety
+                ///
+                /// Invoking this function will render statically tracked operations unsound if the operation's
+                /// invariances are violated by the effects of the invocation.
+                pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    let reader = unsafe { read_untracked() };
+                    let mut writer = UnsafeWriter { value: reader.value };
+
+                    f(reader, &mut writer);
+
+                    unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+                }
+            })
+        }
+
         let read = read(fields.clone());
-        let write = write(fields, refined_writer_idents);
+        let write = write(fields.clone());
+        let modify = modify(fields);
 
         quote! {
             #read
             #write
+            #modify
         }
     }
 
@@ -384,42 +387,42 @@ impl Register {
     }
 
     fn maybe_generate_writer<'a>(
-        fields: impl Iterator<Item = &'a Field>,
-        refined_writer_idents: impl Iterator<Item = &'a Ident>,
+        fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> Option<TokenStream> {
+        let fields = fields.filter(|field| field.access.is_write() && !field.is_resolvable());
         let enumerated_field_idents = fields
-            .filter_map(|field| {
-                if field.access.is_write() && !field.is_resolvable() {
-                    Some(field.module_name())
-                } else {
-                    None
-                }
-            })
+            .clone()
+            .map(|field| field.module_name())
             .collect::<Vec<_>>();
+        let refined_writer_idents = fields.map(|field| field.writer_ident()).collect::<Vec<_>>();
 
         if enumerated_field_idents.is_empty() {
             None?
         }
 
         Some(quote! {
-            pub struct Writer<'a> {
-                w: &'a mut UnsafeWriter,
+            pub struct Writer {
+                value: u32
             }
 
-            impl<'a> Writer<'a> {
+            impl Writer {
                 // TODO: this should be improved, reduce duplicate code
                 #(
                     pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
                         let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
 
-                        #refined_writer_idents { w: self, f: move |w, value| w.w.value = (w.w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
+                        #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
                     }
                 )*
             }
 
-            // TODO: track potential effects
-            pub fn modify(f: impl FnOnce(Reader, &mut Writer) -> &mut Writer) {
-                unsafe { modify_untracked(|r, w| f(Reader { r }, Writer { w })) };
+            pub fn write(f: impl FnOnce(&mut Writer) -> &mut Writer) {
+                unsafe { write_from_zero_untracked(|w| {
+                    let mut writer = Writer { value: 0 };
+                    f(&mut writer);
+                    w.value = writer.value;
+                    w
+                })};
             }
         })
     }
@@ -766,27 +769,12 @@ impl ToTokens for Register {
 
         let module_name = self.module_name();
 
-        let refined_writer_idents = self
-            .fields
-            .values()
-            .map(|field| format_ident!("{}Writer", field.type_name()))
-            .collect::<Vec<_>>();
-
         body.extend(Self::generate_fields(self.fields.values()));
         body.extend(Self::generate_layout_consts(self.offset));
-        body.extend(Self::generate_refined_writers(
-            self.fields.values(),
-            refined_writer_idents.iter(),
-        ));
-        body.extend(Self::generate_unsafe_interface(
-            self.fields.values(),
-            refined_writer_idents.iter(),
-        ));
+        body.extend(Self::generate_refined_writers(self.fields.values()));
+        body.extend(Self::generate_unsafe_interface(self.fields.values()));
         body.extend(Self::maybe_generate_reader(self.fields.values()));
-        body.extend(Self::maybe_generate_writer(
-            self.fields.values(),
-            refined_writer_idents.iter(),
-        ));
+        body.extend(Self::maybe_generate_writer(self.fields.values()));
         if self.is_resolvable() {
             body.extend(Self::generate_reset(self.fields.values()));
             body.extend(Self::generate_states_struct(self.fields.values()));
