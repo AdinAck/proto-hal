@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use proc_macro2::Span;
 use syn::{parse_quote, Ident, Path};
@@ -52,3 +52,5 @@ impl Display for Entitlement {
         )
     }
 }
+
+pub type Entitlements = HashSet<Entitlement>;

@@ -7,6 +7,7 @@ use syn::Ident;
 
 use crate::{
     access::Access,
+    structures::entitlement::{Entitlement, Entitlements},
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -37,6 +38,7 @@ pub struct Field {
     pub width: u8,
     pub access: Access,
     pub reset: Option<Ident>,
+    pub entitlements: Entitlements,
     pub docs: Vec<String>,
 }
 
@@ -48,6 +50,7 @@ impl Field {
             width,
             access,
             reset: None,
+            entitlements: Entitlements::new(),
             docs: Vec::new(),
         }
     }
@@ -58,6 +61,11 @@ impl Field {
             Span::call_site(),
         ));
 
+        self
+    }
+
+    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
+        self.entitlements.extend(entitlements);
         self
     }
 
@@ -74,7 +82,7 @@ impl Field {
 
     pub fn module_name(&self) -> Ident {
         Ident::new(
-            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
+            self.ident.to_string().to_lowercase().as_str(),
             Span::call_site(),
         )
     }
@@ -381,7 +389,7 @@ impl Field {
     }
 
     fn generate_state_trait(access: &Access) -> Option<TokenStream> {
-        if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
+        if let Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants: _ } = &read.numericity {
                 Some(quote! {
                     pub trait State: ::proto_hal::stasis::PartialState<super::UnsafeWriter> {

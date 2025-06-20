@@ -31,7 +31,7 @@ impl Register {
             ident: Ident::new(ident.as_ref().to_lowercase().as_str(), Span::call_site()),
             offset,
             fields: HashMap::from_iter(
-                fields.into_iter().map(|field| (field.ident.clone(), field)),
+                fields.into_iter().map(|field| (field.module_name(), field)),
             ),
         }
     }
@@ -52,7 +52,7 @@ impl Register {
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.ident.clone().to_string());
+        let new_context = context.clone().and(self.module_name().to_string());
 
         if self.offset % 4 != 0 {
             diagnostics.insert(
@@ -67,18 +67,39 @@ impl Register {
         let mut fields = self.fields.values().collect::<Vec<_>>();
         fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
 
-        for window in fields.windows(2) {
-            let lhs = window[0];
-            let rhs = window[1];
+        for (i, field) in fields.iter().enumerate() {
+            let remaining = &fields[i + 1..];
 
-            if lhs.offset + lhs.width > rhs.offset {
+            for other in remaining {
+                if field.offset + field.width <= other.offset {
+                    break;
+                }
+
+                // unfortunate workaround for `is_disjoint` behavior when sets are empty
+                if !field.entitlements.is_empty() && !other.entitlements.is_empty() {
+                    if field.entitlements.is_disjoint(&other.entitlements) {
+                        continue;
+                    }
+                }
+
                 diagnostics.insert(
                     Diagnostic::error(format!(
                         "fields [{}] and [{}] overlap.",
-                        lhs.ident.to_string().bold(),
-                        rhs.ident.to_string().bold()
+                        field.module_name().to_string().bold(),
+                        other.module_name().to_string().bold()
                     ))
-                    .with_context(new_context.clone()),
+                    .with_context(new_context.clone())
+                    .notes(
+                        if !field.entitlements.is_empty() || !other.entitlements.is_empty() {
+                            vec![format!(
+                                "overlapping fields have non-trivial intersecting entitlement spaces {:?} and {:?}",
+                                field.entitlements.iter().map(|entitlement| entitlement.to_string()).collect::<Vec<_>>(),
+                                other.entitlements.iter().map(|entitlement| entitlement.to_string()).collect::<Vec<_>>(),
+                            )]
+                        } else {
+                            vec![]
+                        },
+                    ),
                 );
             }
         }
@@ -88,7 +109,7 @@ impl Register {
                 diagnostics.insert(
                     Diagnostic::error(format!(
                         "field [{}] exceeds register width.",
-                        field.ident.to_string().bold()
+                        field.module_name().to_string().bold()
                     ))
                     .with_context(new_context.clone()),
                 );
@@ -123,77 +144,55 @@ impl Register {
         let mut writers = quote! {};
 
         for field in fields {
-            let field_ident = field.module_name();
-            let writer_ident = field.writer_ident();
+            if let Access::Write(write) | Access::ReadWrite { read: _, write } = &field.access {
+                let Numericity::Enumerated { variants } = &write.numericity else {
+                    continue;
+                };
 
-            writers.extend(quote! {
-                pub struct #writer_ident<'a, W, F>
-                where
-                    F: FnOnce(&mut W, u32),
-                {
-                    w: &'a mut W,
-                    f: F,
-                }
+                let field_ident = field.module_name();
+                let writer_ident = field.writer_ident();
 
-                impl<'a, W, F> #writer_ident<'a, W, F>
-                where
-                    F: FnOnce(&mut W, u32),
-                {
-                    pub unsafe fn bits(self, bits: u32) -> &'a mut W {
-                        (self.f)(self.w, bits);
+                let variant_tys = variants
+                    .values()
+                    .map(|variant| variant.type_name())
+                    .collect::<Vec<_>>();
 
-                        self.w
+                let accessors = variants
+                    .values()
+                    .map(|variant| variant.module_name())
+                    .collect::<Vec<_>>();
+
+                writers.extend(quote! {
+                    pub struct #writer_ident<'a, W, F>
+                    where
+                        F: FnOnce(&mut W, u32),
+                    {
+                        w: &'a mut W,
+                        f: F,
                     }
-                }
-            });
 
-            match &field.access {
-                Access::Write(write) | Access::ReadWrite { read: _, write } => {
-                    match &write.numericity {
-                        Numericity::Enumerated { variants } => {
-                            let variant_tys = variants
-                                .values()
-                                .map(|variant| variant.type_name())
-                                .collect::<Vec<_>>();
+                    impl<'a, W, F> #writer_ident<'a, W, F>
+                    where
+                        F: FnOnce(&mut W, u32),
+                    {
+                        pub unsafe fn bits(self, bits: u32) -> &'a mut W {
+                            (self.f)(self.w, bits);
 
-                            let accessors = variants
-                                .values()
-                                .map(|variant| variant.module_name())
-                                .collect::<Vec<_>>();
-
-                            writers.extend(quote! {
-                                impl<'a, W, F> #writer_ident<'a, W, F>
-                                where
-                                    F: FnOnce(&mut W, u32),
-                                {
-                                    pub fn variant(self, variant: #field_ident::WriteVariant) -> &'a mut W {
-                                        unsafe { self.bits(variant as _) }
-                                    }
-
-                                    #(
-                                        pub fn #accessors(self) -> &'a mut W {
-                                            self.variant(#field_ident::WriteVariant::#variant_tys)
-                                        }
-                                    )*
-                                }
-                            });
+                            self.w
                         }
-                        Numericity::Numeric => {
-                            writers.extend(quote! {
-                                impl<'a, W, F> #writer_ident<'a, W, F>
-                                where
-                                    F: FnOnce(&mut W, u32),
-                                {
-                                    pub fn value(self, value: impl Into<u32>) -> &'a mut W {
-                                        unsafe { self.bits(value.into()) }
-                                    }
-                                }
-                            });
+
+                        pub fn variant(self, variant: #field_ident::WriteVariant) -> &'a mut W {
+                            unsafe { self.bits(variant as _) }
                         }
+
+                        #(
+                            pub fn #accessors(self) -> &'a mut W {
+                                self.variant(#field_ident::WriteVariant::#variant_tys)
+                            }
+                        )*
                     }
-                }
-                _ => {}
-            }
+                });
+            };
         }
 
         writers
@@ -204,10 +203,22 @@ impl Register {
     ) -> TokenStream {
         fn read<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_read()) {
-                let enumerated_field_idents = fields.filter_map(|field| match &field.access {
+                let enumerated_field_idents =
+                    fields.clone().filter_map(|field| match &field.access {
+                        Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                            if matches!(read.numericity, Numericity::Enumerated { variants: _ }) {
+                                Some(field.module_name())
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    });
+
+                let numeric_field_idents = fields.filter_map(|field| match &field.access {
                     Access::Read(read) | Access::ReadWrite { read, write: _ } => {
-                        if matches!(read.numericity, Numericity::Enumerated { variants: _ }) {
-                            Some(&field.ident)
+                        if matches!(read.numericity, Numericity::Numeric) {
+                            Some(field.module_name())
                         } else {
                             None
                         }
@@ -236,6 +247,13 @@ impl Register {
                                 }
                             }
                         )*
+
+                        #(
+                            pub fn #numeric_field_idents(&self) -> u32 {
+                                let mask = u32::MAX >> (32 - #numeric_field_idents::WIDTH);
+                                (self.value >> #numeric_field_idents::OFFSET) & mask
+                            }
+                        )*
                     }
 
                     /// Read the contents of the register, ignoring any implicative effects.
@@ -257,9 +275,33 @@ impl Register {
 
         fn write<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_write()) {
-                let fields = fields.filter(|field| field.access.is_write());
-                let field_idents = fields.clone().map(|field| field.module_name());
-                let refined_writer_idents = fields.map(|field| field.writer_ident());
+                let enumerated_fields = fields.clone().filter(|field| match &field.access {
+                    Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                        matches!(write.numericity, Numericity::Enumerated { variants: _ })
+                    }
+                    _ => false,
+                });
+
+                let numeric_field_idents = fields
+                    .filter_map(|field| match &field.access {
+                        Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                            if matches!(write.numericity, Numericity::Numeric) {
+                                Some(field.module_name())
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+
+                let enumerated_field_idents = enumerated_fields
+                    .clone()
+                    .map(|field| field.module_name())
+                    .collect::<Vec<_>>();
+                let refined_writer_idents = enumerated_fields
+                    .map(|field| field.writer_ident())
+                    .collect::<Vec<_>>();
 
                 Some(quote! {
                     pub struct UnsafeWriter {
@@ -273,10 +315,19 @@ impl Register {
                         }
 
                         #(
-                            pub fn #field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
-                                let mask = (u32::MAX >> (32 - #field_idents::WIDTH)) << #field_idents::OFFSET;
+                            pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
+                                let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
 
-                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #field_idents::OFFSET) }
+                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
+                            }
+                        )*
+
+                        #(
+                            pub fn #numeric_field_idents(&mut self, value: impl Into<u32>) -> &mut Self {
+                                let mask = (u32::MAX >> (32 - #numeric_field_idents::WIDTH)) << #numeric_field_idents::OFFSET;
+                                self.value = (self.value & !mask) | (value.into() << #numeric_field_idents::OFFSET);
+
+                                self
                             }
                         )*
                     }
@@ -351,18 +402,38 @@ impl Register {
         }
     }
 
-    fn maybe_generate_reader<'a>(fields: impl Iterator<Item = &'a Field>) -> Option<TokenStream> {
+    fn maybe_generate_reader<'a>(
+        fields: impl Iterator<Item = &'a Field> + Clone,
+    ) -> Option<TokenStream> {
+        let fields = fields.filter(|field| !field.is_resolvable());
         let enumerated_field_idents = fields
-            .filter_map(|field| {
-                if field.access.is_read() && !field.is_resolvable() {
-                    Some(field.module_name())
-                } else {
-                    None
+            .clone()
+            .filter_map(|field| match &field.access {
+                Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                    if matches!(read.numericity, Numericity::Enumerated { variants: _ }) {
+                        Some(field.module_name())
+                    } else {
+                        None
+                    }
                 }
+                _ => None,
             })
             .collect::<Vec<_>>();
 
-        if enumerated_field_idents.is_empty() {
+        let numeric_field_idents = fields
+            .filter_map(|field| match &field.access {
+                Access::Read(read) | Access::ReadWrite { read, write: _ } => {
+                    if matches!(read.numericity, Numericity::Numeric) {
+                        Some(field.module_name())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        if enumerated_field_idents.is_empty() && numeric_field_idents.is_empty() {
             None?
         }
 
@@ -377,6 +448,12 @@ impl Register {
                         self.r.#enumerated_field_idents()
                     }
                 )*
+
+                #(
+                    pub fn #numeric_field_idents(&self) -> u32 {
+                        self.r.#numeric_field_idents()
+                    }
+                )*
             }
 
             // TODO: track potential effects
@@ -389,15 +466,49 @@ impl Register {
     fn maybe_generate_writer<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> Option<TokenStream> {
-        let fields = fields.filter(|field| field.access.is_write() && !field.is_resolvable());
-        let enumerated_field_idents = fields
+        let fields = fields.filter(|field| !field.is_resolvable());
+        let enumerated_fields = fields.clone().filter(|field| match &field.access {
+            Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                matches!(write.numericity, Numericity::Enumerated { variants: _ })
+            }
+            _ => false,
+        });
+
+        let numeric_field_idents = fields
+            .clone()
+            .filter_map(|field| match &field.access {
+                Access::Write(write) | Access::ReadWrite { read: _, write } => {
+                    if matches!(write.numericity, Numericity::Numeric) {
+                        Some(field.module_name())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let enumerated_field_idents = enumerated_fields
             .clone()
             .map(|field| field.module_name())
             .collect::<Vec<_>>();
-        let refined_writer_idents = fields.map(|field| field.writer_ident()).collect::<Vec<_>>();
+        let refined_writer_idents = enumerated_fields
+            .map(|field| field.writer_ident())
+            .collect::<Vec<_>>();
 
-        if enumerated_field_idents.is_empty() {
+        if enumerated_field_idents.is_empty() && numeric_field_idents.is_empty() {
             None?
+        }
+
+        let mut entitlement_fields = HashSet::new();
+
+        for field in fields {
+            entitlement_fields.extend(
+                field
+                    .entitlements
+                    .iter()
+                    .map(|entitlement| entitlement.field()),
+            );
         }
 
         Some(quote! {
@@ -412,6 +523,15 @@ impl Register {
                         let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
 
                         #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
+                    }
+                )*
+
+                #(
+                    pub fn #numeric_field_idents(&mut self, value: impl Into<u32>) -> &mut Self {
+                        let mask = (u32::MAX >> (32 - #numeric_field_idents::WIDTH)) << #numeric_field_idents::OFFSET;
+                        self.value = (self.value & !mask) | (value.into() << #numeric_field_idents::OFFSET);
+
+                        self
                     }
                 )*
             }

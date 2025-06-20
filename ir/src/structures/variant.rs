@@ -1,14 +1,13 @@
-use std::collections::HashSet;
-
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::Ident;
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    structures::entitlement::Entitlements,
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+};
 
 use super::entitlement::Entitlement;
-
-type Entitlements = HashSet<Entitlement>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
@@ -23,7 +22,7 @@ impl Variant {
         Self {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             bits,
-            entitlements: HashSet::new(),
+            entitlements: Entitlements::new(),
             docs: Vec::new(),
         }
     }

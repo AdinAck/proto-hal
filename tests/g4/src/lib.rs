@@ -61,5 +61,23 @@ mod tests {
                 csr.func().is_cos() && csr.scale().is_n0() && csr.precision().is_p20()
             });
         }
+
+        #[test]
+        fn wdata() {
+            let _lock = LOCK.lock().unwrap();
+
+            cordic::wdata::write(|w| w.arg(0xdeadbeefu32));
+
+            assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
+        }
+
+        #[test]
+        fn rdata() {
+            let _lock = LOCK.lock().unwrap();
+
+            unsafe { MOCK_CORDIC[2] = 0xdeadbeef };
+
+            assert_eq!(cordic::rdata::read().res(), 0xdeadbeef);
+        }
     }
 }
