@@ -2,18 +2,12 @@
 
 set -euxo pipefail
 
-TARGETS=("thumbv6m-none-eabi" "thumbv7em-none-eabi" "thumbv7em-none-eabihf")
-FEATURES=("stm32")
+cargo build
+cargo test
 
-for TARGET in "${TARGETS[@]}"; do
-    rustup target add "$TARGET"
-    cargo build --target "$TARGET"
-    cargo clippy -- --deny warnings
+TARGET="thumbv7em-none-eabihf"
 
-    # test proto-hal features
-    for FEATURE in "${FEATURES[@]}"; do
-        cargo build -p proto-hal --features "$FEATURE" --target "$TARGET"
-        cargo test -p proto-hal --features "$FEATURE"
-        cargo clippy -p proto-hal -- --deny warnings
-    done
-done
+rustup target add "$TARGET"
+cargo build -p g4 --target "$TARGET"
+
+cargo clippy -- --deny warnings

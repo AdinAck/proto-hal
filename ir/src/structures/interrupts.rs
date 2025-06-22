@@ -120,6 +120,10 @@ impl Interrupts {
 
 impl ToTokens for Interrupts {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        if self.interrupts.is_empty() {
+            return;
+        }
+
         let handler_idents = self.interrupts.iter().filter_map(|interrupt| {
             let InterruptKind::Handler(ident) = &interrupt.kind else {
                 None?

@@ -11,6 +11,7 @@ model = { package = "g4-model", path = "model" }
 proto-hal-build = { path = "../../proto-hal-build" }
 
 [features]
+default = ["g484"]
 g431 = []
 g441 = []
 g474 = []

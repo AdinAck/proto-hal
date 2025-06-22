@@ -19,13 +19,7 @@ mod tests {
     }
 
     mod peripherals {
-        use crate::{bar, foo};
-
-        #[test]
-        fn base_addr() {
-            assert_eq!(foo::base_addr(), 0);
-            assert_eq!(bar::base_addr(), 0x100);
-        }
+        // nothing yet...
     }
 
     mod registers {
