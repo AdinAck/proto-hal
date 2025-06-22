@@ -238,6 +238,12 @@ impl Hal {
                 )*
             }
 
+            /// # Safety
+            /// This function assumes and requires all of the following:
+            /// 1. The peripherals are in the reset state.
+            /// 1. The peripherals are not accessed anywhere else.
+            ///
+            /// These invariances can be easyily achieved by limiting the call-site of this function to one place.
             pub unsafe fn peripherals() -> Peripherals {
                 #[allow(unsafe_op_in_unsafe_fn)]
                 Peripherals {

@@ -102,7 +102,3 @@ pub trait AsRegister: Into<Self::Register> {
 // Type-state indicating the state cannot
 // be statically determined currently.
 pub struct Unresolved;
-
-pub trait Writer {
-    unsafe fn write(&mut self, f: impl FnOnce(&mut u32)) -> &mut Self;
-}

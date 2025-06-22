@@ -175,6 +175,8 @@ impl Peripheral {
                     #entitlement_generic_tys: ::proto_hal::stasis::EntitlementLock<Resource = #entitlement_paths>,
                 )*
             {
+                /// # Safety
+                /// TODO: link to conjure docs.
                 pub unsafe fn conjure(#(#entitlement_idents: #entitlement_generic_tys,)*) -> Self {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
@@ -201,6 +203,8 @@ impl Peripheral {
             }
 
             impl Masked {
+                /// # Safety
+                /// TODO: link to conjure docs.
                 pub unsafe fn conjure() -> Self {
                     Self {
                         _sealed: (),

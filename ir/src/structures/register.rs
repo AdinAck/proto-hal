@@ -76,10 +76,11 @@ impl Register {
                 }
 
                 // unfortunate workaround for `is_disjoint` behavior when sets are empty
-                if !field.entitlements.is_empty() && !other.entitlements.is_empty() {
-                    if field.entitlements.is_disjoint(&other.entitlements) {
-                        continue;
-                    }
+                if !field.entitlements.is_empty()
+                    && !other.entitlements.is_empty()
+                    && field.entitlements.is_disjoint(&other.entitlements)
+                {
+                    continue;
                 }
 
                 diagnostics.insert(
@@ -175,6 +176,10 @@ impl Register {
                     where
                         F: FnOnce(&mut W, u32),
                     {
+                        /// # Safety
+                        /// If the usage of this function violates any invariances of the
+                        /// corresponding field, any logic dependent on that field will
+                        /// be rendered unsound.
                         pub unsafe fn bits(self, bits: u32) -> &'a mut W {
                             (self.f)(self.w, bits);
 
@@ -560,6 +565,8 @@ impl Register {
             }
 
             impl Reset {
+                /// # Safety
+                /// TODO: link to conjure docs.
                 pub unsafe fn conjure() -> Self {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
@@ -598,6 +605,8 @@ impl Register {
                     #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
                 )*
             {
+                /// # Safety
+                /// TODO: link to conjure docs.
                 pub unsafe fn conjure() -> Self {
                     unsafe {
                         Self {
@@ -641,6 +650,7 @@ impl Register {
             };
 
             body.extend(quote! {
+                #[allow(clippy::type_complexity)]
                 pub struct #builder_ident<#(#field_tys,)*>
                 where
                     #(
@@ -656,6 +666,8 @@ impl Register {
                         #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
                     )*
                 {
+                    /// # Safety
+                    /// TODO: link to conjure docs.
                     pub unsafe fn conjure() -> Self {
                         unsafe { ::core::mem::transmute(()) }
                     }
@@ -711,13 +723,7 @@ impl Register {
         entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
     ) -> TokenStream {
         let resolvable_fields = fields
-            .filter_map(|field| {
-                if field.is_resolvable() {
-                    Some(field)
-                } else {
-                    None
-                }
-            })
+            .filter(|field| field.is_resolvable())
             .collect::<Vec<_>>();
 
         let field_module_idents = resolvable_fields.iter().map(|field| field.module_name());
@@ -753,6 +759,7 @@ impl Register {
         }
 
         quote! {
+            #[allow(clippy::type_complexity)]
             pub struct TransitionBuilder<#(#states,)*>
             where
                 #(
@@ -791,6 +798,8 @@ impl Register {
                     #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
                 )*
             {
+                /// # Safety
+                /// TODO: link to conjure docs.
                 pub unsafe fn conjure() -> Self {
                     unsafe { ::core::mem::transmute(()) }
                 }

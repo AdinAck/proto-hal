@@ -130,7 +130,7 @@ pub fn generate(variant: DeviceVariant) -> Result<Hal, Diagnostics> {
 
     let diagnostics = hal.validate();
 
-    if diagnostics.len() > 0 {
+    if !diagnostics.is_empty() {
         Err(diagnostics)?
     }
 

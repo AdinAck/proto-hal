@@ -17,6 +17,7 @@ pub struct Context {
     path: Vec<String>,
 }
 
+#[expect(clippy::new_without_default)]
 impl Context {
     pub fn new() -> Self {
         Context { path: Vec::new() }
@@ -115,7 +116,7 @@ impl Diagnostic {
                 if let Some(context) = context {
                     format!("in {}:\n{}", context, diagnostics)
                 } else {
-                    format!("{}", diagnostics)
+                    diagnostics.to_string()
                 }
             })
             .collect::<Vec<_>>()

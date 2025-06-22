@@ -298,6 +298,10 @@ impl Field {
                 }
 
                 impl #ident {
+                    /// # Safety
+                    /// If the source bits do not correspond to any variants of this field,
+                    /// the behavior of any code dependent on the value of this field state
+                    /// will be rendered unsound.
                     pub unsafe fn from_bits(bits: u32) -> Self {
                         match bits {
                             #(
@@ -446,7 +450,7 @@ impl ToTokens for Field {
             self.width as u32,
         ));
         if let Some(reset) = &self.reset {
-            body.extend(Self::generate_reset(&reset));
+            body.extend(Self::generate_reset(reset));
         }
         body.extend(Self::generate_variant_enum(&self.access));
         body.extend(Self::generate_state_trait(&self.access));

@@ -55,9 +55,10 @@ impl<Resource: Freeze, const ENTITLEMENTS: usize> DerefMut for Frozen<Resource, 
 }
 
 impl<Resource: Freeze, const ENTITLEMENTS: usize> Frozen<Resource, ENTITLEMENTS> {
-    pub fn release(self, entitlements: [Entitlement<Resource>; ENTITLEMENTS]) -> Resource {
-        drop(entitlements);
-
+    pub fn release(
+        self,
+        #[expect(unused)] entitlements: [Entitlement<Resource>; ENTITLEMENTS],
+    ) -> Resource {
         self.resource
     }
 }
@@ -104,6 +105,8 @@ unsafe impl Entitled<Self> for Unresolved {}
 pub trait PartialState<Writer> {
     fn set(w: &mut Writer);
 
+    /// # Safety
+    /// TODO: link to conjure docs.
     unsafe fn conjure() -> Self;
 }
 
