@@ -9,3 +9,11 @@ proto-hal = { path = "../../proto-hal" }
 [build-dependencies]
 model = { package = "g4-model", path = "model" }
 proto-hal-build = { path = "../../proto-hal-build" }
+
+[features]
+g431 = []
+g441 = []
+g474 = []
+g484 = []
+
+interrupts = []

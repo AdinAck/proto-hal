@@ -5,13 +5,17 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::Ident;
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    structures::interrupts::{Interrupt, Interrupts},
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+};
 
 use super::{entitlement::Entitlement, field::Numericity, peripheral::Peripheral};
 
 #[derive(Debug, Clone)]
 pub struct Hal {
     pub peripherals: HashMap<Ident, Peripheral>,
+    pub interrupts: Interrupts,
 }
 
 impl Hal {
@@ -22,7 +26,13 @@ impl Hal {
                     .into_iter()
                     .map(|peripheral| (peripheral.ident.clone(), peripheral)),
             ),
+            interrupts: Interrupts::empty(),
         }
+    }
+
+    pub fn interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
+        self.interrupts.extend(interrupts);
+        self
     }
 
     pub fn render(&self) -> syn::Result<String> {
@@ -175,6 +185,8 @@ impl Hal {
             }
         }
 
+        diagnostics.extend(self.interrupts.validate());
+
         diagnostics
     }
 }
@@ -248,5 +260,6 @@ impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(Self::generate_peripherals(self.peripherals.values()));
         tokens.extend(Self::generate_peripherals_struct(self.peripherals.values()));
+        self.interrupts.to_tokens(tokens);
     }
 }

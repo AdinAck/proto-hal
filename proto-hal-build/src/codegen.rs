@@ -71,4 +71,12 @@ pub fn generate(source: impl FnOnce() -> Result<Hal, Diagnostics>) {
     };
 
     fs::write(&dest_path, codegen).unwrap();
+
+    // device.x
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("device.x");
+
+    fs::write(&dest_path, hal.interrupts.device_x()).unwrap();
+
+    println!("cargo:rustc-link-search={}", out_dir);
 }
