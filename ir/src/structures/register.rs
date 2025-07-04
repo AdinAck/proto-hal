@@ -963,27 +963,30 @@ impl ToTokens for Register {
 
         let module_name = self.module_name();
 
-        body.extend(Self::generate_fields(self.fields.values()));
+        let mut fields = self.fields.values().collect::<Vec<_>>();
+        fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+
+        body.extend(Self::generate_fields(fields.iter().copied()));
         body.extend(Self::generate_layout_consts(self.offset));
-        body.extend(Self::generate_refined_writers(self.fields.values()));
-        body.extend(Self::generate_unsafe_interface(self.fields.values()));
-        body.extend(Self::maybe_generate_reader(self.fields.values()));
-        body.extend(Self::maybe_generate_writer(self.fields.values()));
+        body.extend(Self::generate_refined_writers(fields.iter().copied()));
+        body.extend(Self::generate_unsafe_interface(fields.iter().copied()));
+        body.extend(Self::maybe_generate_reader(fields.iter().copied()));
+        body.extend(Self::maybe_generate_writer(fields.iter().copied()));
         if self.is_resolvable() {
-            body.extend(Self::generate_reset(self.fields.values()));
-            body.extend(Self::generate_states_struct(self.fields.values()));
+            body.extend(Self::generate_reset(fields.iter().copied()));
+            body.extend(Self::generate_states_struct(fields.iter().copied()));
             body.extend(Self::generate_field_transition_builders(
-                self.fields.values(),
+                fields.iter().copied(),
             ));
 
-            let entitlement_bounds = Self::create_entitlement_bounds(self.fields.values());
+            let entitlement_bounds = Self::create_entitlement_bounds(fields.iter().copied());
 
             body.extend(Self::generate_transition_builder(
-                self.fields.values(),
+                fields.iter().copied(),
                 entitlement_bounds.iter(),
             ));
             body.extend(Self::generate_transition_gate(
-                self.fields.values(),
+                fields.iter().copied(),
                 entitlement_bounds.iter(),
             ));
         }

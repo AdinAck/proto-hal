@@ -266,6 +266,9 @@ impl Hal {
 
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let mut peripherals = self.peripherals.values().collect::<Vec<_>>();
+        peripherals.sort_by(|lhs, rhs| lhs.base_addr.cmp(&rhs.base_addr));
+
         tokens.extend(Self::generate_peripherals(self.peripherals.values()));
         tokens.extend(Self::generate_peripherals_struct(self.peripherals.values()));
         self.interrupts.to_tokens(tokens);

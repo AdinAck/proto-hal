@@ -245,7 +245,10 @@ impl ToTokens for Peripheral {
 
         let ident = &self.ident;
 
-        body.extend(Self::generate_registers(self.registers.values()));
+        let mut registers = self.registers.values().collect::<Vec<_>>();
+        registers.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+
+        body.extend(Self::generate_registers(registers.iter().copied()));
         body.extend(Self::generate_base_addr(self.base_addr, &self.ident));
 
         let entitlement_idents = self
@@ -264,7 +267,7 @@ impl ToTokens for Peripheral {
             .collect::<Vec<_>>();
 
         body.extend(Self::generate_reset(
-            self.registers.values(),
+            registers.iter().copied(),
             &entitlement_idents,
             &entitlement_paths,
             &entitlement_generic_tys,

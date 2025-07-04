@@ -265,8 +265,11 @@ impl Field {
 
     fn generate_variant_enum(access: &Access) -> Option<TokenStream> {
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
+            let mut variants = variants.values().collect::<Vec<_>>();
+            variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+
             let variant_idents = variants
-                .values()
+                .iter()
                 .map(|variant| {
                     syn::Ident::new(
                         &inflector::cases::pascalcase::to_pascal_case(
@@ -277,11 +280,11 @@ impl Field {
                 })
                 .collect::<Vec<_>>();
             let variant_bits = variants
-                .values()
+                .iter()
                 .map(|variant| variant.bits)
                 .collect::<Vec<_>>();
 
-            let is_variant_idents = variants.values().map(|variant| {
+            let is_variant_idents = variants.iter().map(|variant| {
                 format_ident!(
                     "is_{}",
                     inflector::cases::snakecase::to_snake_case(variant.ident.to_string().as_str())
@@ -416,7 +419,9 @@ impl Field {
         if let Access::ReadWrite { read: _, write } = &field.access {
             if let Numericity::Enumerated { variants } = &write.numericity {
                 let ident = &field.ident;
-                let variants = variants.values().map(|variant| variant.type_name());
+                let mut variants = variants.values().collect::<Vec<_>>();
+                variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+                let variants = variants.iter().map(|variant| variant.type_name());
                 return Some(quote! {
                     #(
                         impl ::proto_hal::stasis::PartialState<super::UnsafeWriter> for #variants {
