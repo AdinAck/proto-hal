@@ -401,6 +401,13 @@ impl Field {
 
     fn generate_trait_impls(field: &Field) -> TokenStream {
         let mut out = quote! {
+            impl ::proto_hal::stasis::Conjure for Dynamic {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
+            }
             impl ::proto_hal::stasis::Position<Field> for Dynamic {}
             impl ::proto_hal::stasis::Outgoing<Field> for Dynamic {}
         };

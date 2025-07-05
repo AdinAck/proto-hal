@@ -88,6 +88,12 @@ impl Variant {
             pub struct #ident {
                 _sealed: (),
             }
+
+            impl #ident {
+                pub fn into_dynamic(self) -> Dynamic {
+                    unsafe { <Dynamic as ::proto_hal::stasis::Conjure>::conjure() }
+                }
+            }
         }
     }
 
