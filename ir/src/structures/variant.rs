@@ -61,7 +61,7 @@ impl Variant {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.module_name().clone().to_string());
 
-        let reserved = ["variant", "generic", "preserve"];
+        let reserved = ["variant", "generic", "preserve", "dynamic"]; // note: waiting for const type inference
 
         if reserved.contains(&self.module_name().to_string().as_str()) {
             diagnostics.insert(

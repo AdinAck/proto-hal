@@ -231,7 +231,7 @@ impl Field {
 
 // codegen
 impl Field {
-    fn generate_states(access: &Access) -> Option<TokenStream> {
+    fn generate_states(access: &Access) -> TokenStream {
         // NOTE: if a field is resolvable and has split schemas,
         // the schema that represents the resolvable aspect of the
         // field must be from read access, as the value the field
@@ -240,14 +240,22 @@ impl Field {
         // NOTE: states can only be generated for the resolvable component(s)
         // of a field (since the definition of resolvability is that the state
         // it holds is statically known)
+
+        // all fields have a dynamic state
+        let mut out = quote! {
+            pub struct Dynamic {
+                _sealed: (),
+            }
+        };
+
         if let Access::Read(read) | Access::ReadWrite { read, write: _ } = access {
             if let Numericity::Enumerated { variants } = &read.numericity {
                 let variants = variants.values();
-                return Some(quote! { #(#variants)* });
+                out.extend(quote! { #(#variants)* });
             }
         }
 
-        None
+        out
     }
 
     fn generate_layout_consts(offset: u32, width: u32) -> TokenStream {
