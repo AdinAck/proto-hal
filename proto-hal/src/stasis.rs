@@ -100,22 +100,34 @@ pub struct Unresolved;
 /// this impl is needed.
 unsafe impl Entitled<Self> for Unresolved {}
 
-/// Indicates a type-state *may* carry state information for transition builders.
-/// This trait also provides the interface for states to emplace themselves with a writer.
-pub trait PartialState<Writer> {
-    fn set(w: &mut Writer);
-
+pub trait Conjure {
     /// # Safety
-    /// TODO: link to conjure docs.
+    /// Produce a value where the invariants of the value's existence
+    /// are upheld by the user.
     unsafe fn conjure() -> Self;
 }
 
-impl<Writer> PartialState<Writer> for Unresolved {
-    fn set(#[expect(unused)] w: &mut Writer) {
-        // do nothing
-    }
+pub trait Emplace<Writer> {
+    fn set(w: &mut Writer);
+}
 
+pub trait Position<T> {}
+pub trait Outgoing<T>: Position<T> {}
+pub trait Incoming<T>: Position<T> {
+    type Raw;
+    const RAW: Self::Raw;
+}
+
+impl Conjure for Unresolved {
     unsafe fn conjure() -> Self {
         Self
     }
 }
+
+impl<Writer> Emplace<Writer> for Unresolved {
+    fn set(#[expect(unused)] w: &mut Writer) {
+        // do nothing
+    }
+}
+
+impl<T> Position<T> for Unresolved {}

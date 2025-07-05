@@ -35,6 +35,10 @@ impl Hal {
         self
     }
 
+    pub fn render_raw(&self) -> String {
+        self.to_token_stream().to_string()
+    }
+
     pub fn render(&self) -> syn::Result<String> {
         Ok(prettyplease::unparse(&syn::parse_file(
             self.to_token_stream().to_string().as_str(),

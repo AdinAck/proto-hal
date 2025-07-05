@@ -439,7 +439,6 @@ impl Register {
         let accessors = fields.filter_map(|field| match &field.access {
             Access::Read(read) | Access::ReadWrite { read, write: _ } => {
                 let ident = field.module_name();
-                let marker_ty = field.type_name();
 
                 let (entitlement_generics, entitlement_args, entitlement_where) = if field.entitlements.is_empty() {
                     (None, None, None)
@@ -462,7 +461,7 @@ impl Register {
                         Some(quote! {
                             where
                                 #(
-                                    #ident::#marker_ty: ::proto_hal::stasis::Entitled<#entitlement_tys>,
+                                    #ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
                                 )*
                         })
                     )
@@ -520,7 +519,6 @@ impl Register {
         let accessors = fields.filter_map(|field| match &field.access {
             Access::Write(write) | Access::ReadWrite { read: _, write } => {
                 let ident = field.module_name();
-                let marker_ty = field.type_name();
 
                 let (entitlement_generics, entitlement_args, entitlement_where) = if field.entitlements.is_empty() {
                     (None, None, None)
@@ -543,7 +541,7 @@ impl Register {
                         Some(quote! {
                             where
                                 #(
-                                    #ident::#marker_ty: ::proto_hal::stasis::Entitled<#entitlement_tys>,
+                                    #ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
                                 )*
                         })
                     )
@@ -624,7 +622,7 @@ impl Register {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
                         #(
-                            #field_idents: unsafe { <#field_idents::Reset as ::proto_hal::stasis::PartialState<UnsafeWriter>>::conjure() },
+                            #field_idents: unsafe { <#field_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
                         )*
                     }
                 }
@@ -644,7 +642,7 @@ impl Register {
             pub struct States<#(#states,)*>
             where
                 #(
-                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    #states: ::proto_hal::stasis::Position<#field_idents::Field>,
                 )*
             {
                 #(
@@ -655,7 +653,8 @@ impl Register {
             impl<#(#states,)*> States<#(#states,)*>
             where
                 #(
-                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    #states: ::proto_hal::stasis::Position<#field_idents::Field> +
+                    ::proto_hal::stasis::Conjure,
                 )*
             {
                 /// # Safety
@@ -680,6 +679,10 @@ impl Register {
         let field_tys = fields
             .clone()
             .map(|field| field.type_name())
+            .collect::<Vec<_>>();
+        let field_module_idents = fields
+            .clone()
+            .map(|field| field.module_name())
             .collect::<Vec<_>>();
 
         let mut body = quote! {};
@@ -708,7 +711,7 @@ impl Register {
                 pub struct #builder_ident<#(#field_tys,)*>
                 where
                     #(
-                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
                     )*
                 {
                     _p: ::core::marker::PhantomData<(#(#field_tys,)*)>,
@@ -717,7 +720,7 @@ impl Register {
                 impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
                 where
                     #(
-                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
                     )*
                 {
                     /// # Safety
@@ -729,7 +732,14 @@ impl Register {
                     #[allow(clippy::type_complexity)]
                     pub fn generic<_NewState>(self) -> TransitionBuilder<#(#prev_field_tys,)* _NewState, #(#next_field_tys,)*>
                     where
-                        _NewState: #field_module_ident::State,
+                        #(
+                            #prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        )*
+                        _NewState: ::proto_hal::stasis::Incoming<#field_module_ident::Field> +
+                        ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        #(
+                            #next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        )*
                     {
                         unsafe { TransitionBuilder::conjure() }
                     }
@@ -740,7 +750,12 @@ impl Register {
                     /// This is useful when entitled states must be provided to the builder but need not be
                     /// transitioned.
                     #[allow(clippy::type_complexity)]
-                    pub fn preserve(self) -> TransitionBuilder<#(#field_tys,)*> {
+                    pub fn preserve(self) -> TransitionBuilder<#(#field_tys,)*>
+                    where
+                        #(
+                            #field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        )*
+                    {
                         unsafe { TransitionBuilder::conjure() }
                     }
                 }
@@ -754,7 +769,16 @@ impl Register {
             {
                 body2.extend(quote! {
                     #[allow(clippy::type_complexity)]
-                    pub fn #accessor(self) -> TransitionBuilder<#(#prev_field_tys,)* #field_module_ident::#ty, #(#next_field_tys,)*> {
+                    pub fn #accessor(self) -> TransitionBuilder<#(#prev_field_tys,)* #field_module_ident::#ty, #(#next_field_tys,)*>
+                    where
+                        #(
+                            #prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        )*
+                        #field_module_ident::#ty: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        #(
+                            #next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        )*
+                    {
                         self.generic()
                     }
                 });
@@ -764,7 +788,7 @@ impl Register {
                 impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
                 where
                     #(
-                        #field_tys: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
                     )*
                 {
                     #body2
@@ -783,7 +807,10 @@ impl Register {
             .filter(|field| field.is_resolvable())
             .collect::<Vec<_>>();
 
-        let field_module_idents = resolvable_fields.iter().map(|field| field.module_name());
+        let field_module_idents = resolvable_fields
+            .iter()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
         let states = resolvable_fields
             .iter()
             .map(|field| field.type_name())
@@ -809,7 +836,7 @@ impl Register {
                 #[allow(clippy::type_complexity)]
                 pub fn #field_module_ident<_OldState>(self, #[expect(unused_variables)] state: _OldState) -> #builder_ident<#(#prev_states,)* _OldState, #(#next_states,)*>
                 where
-                    _OldState: #field_module_ident::State,
+                    _OldState: ::proto_hal::stasis::Outgoing<#field_module_ident::Field>,
                 {
                     unsafe { #builder_ident::conjure() }
                 }
@@ -822,7 +849,7 @@ impl Register {
             pub struct TransitionBuilder<#(#states,)*>
             where
                 #(
-                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    #states: ::proto_hal::stasis::Position<#field_module_idents::Field>,
                 )*
             {
                 _p: core::marker::PhantomData<(#(#states,)*)>,
@@ -854,7 +881,8 @@ impl Register {
             impl<#(#states,)*> TransitionBuilder<#(#states,)*>
             where
                 #(
-                    #states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    #states: ::proto_hal::stasis::Emplace<UnsafeWriter> +
+                    ::proto_hal::stasis::Position<#field_module_idents::Field>,
                 )*
             {
                 /// # Safety
@@ -925,25 +953,24 @@ impl Register {
     }
 
     fn generate_transition_gate<'a>(
-        fields: impl Iterator<Item = &'a Field>,
+        fields: impl Iterator<Item = &'a Field> + Clone,
         entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
     ) -> TokenStream {
+        let fields = fields.filter(|field| field.is_resolvable());
         let new_states = fields
-            .filter_map(|field| {
-                if field.is_resolvable() {
-                    Some(field.type_name())
-                } else {
-                    None
-                }
-            })
+            .clone()
+            .map(|field| field.type_name())
             .collect::<Vec<_>>();
+        let field_idents = fields.map(|field| field.module_name());
 
         quote! {
             #[allow(clippy::type_complexity)]
             pub fn transition<#(#new_states,)*>(f: impl FnOnce(EmptyTransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*>
             where
                 #(
-                    #new_states: ::proto_hal::stasis::PartialState<UnsafeWriter>,
+                    #new_states: ::proto_hal::stasis::Emplace<UnsafeWriter> +
+                    ::proto_hal::stasis::Position<#field_idents::Field> +
+                    ::proto_hal::stasis::Conjure,
                 )*
                 #(
                     #entitlement_bounds,

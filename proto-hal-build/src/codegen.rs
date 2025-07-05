@@ -44,8 +44,10 @@ pub fn validate(source: impl FnOnce() -> Result<Hal, Diagnostics>) {
             );
         }
         Err(e) => {
+            fs::write("/tmp/erroneous-hal.rs", hal.render_raw()).unwrap();
+
             println!(
-                "{}: Codegen failed: {e}.\n{}",
+                "{}: Codegen failed: {e}.\n{}\nErroneous codegen written to /tmp/erroneous-hal.rs",
                 "error".red().bold(),
                 "This is probably a bug, please submit an issue: https://github.com/adinack/proto-hal/issues".bold(),
             );

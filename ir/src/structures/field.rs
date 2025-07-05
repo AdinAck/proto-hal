@@ -399,39 +399,23 @@ impl Field {
         }
     }
 
-    fn generate_state_trait(access: &Access) -> Option<TokenStream> {
-        if let Access::ReadWrite { read, write: _ } = access {
-            if let Numericity::Enumerated { variants: _ } = &read.numericity {
-                Some(quote! {
-                    pub trait State: ::proto_hal::stasis::PartialState<super::UnsafeWriter> {
-                        const RAW: ReadVariant;
-                    }
-                })
-            } else {
-                // TODO: eventually numeric states can implement the State trait with some struct Value<const N: u32>
-                None
-            }
-        } else {
-            None
-        }
-    }
+    fn generate_trait_impls(field: &Field) -> TokenStream {
+        let mut out = quote! {
+            impl ::proto_hal::stasis::Position<Field> for Dynamic {}
+            impl ::proto_hal::stasis::Outgoing<Field> for Dynamic {}
+        };
 
-    fn generate_state_impls(field: &Field) -> Option<TokenStream> {
         if !field.is_resolvable() {
-            None?
+            return out;
         }
 
         if let Access::ReadWrite { read: _, write } = &field.access {
             if let Numericity::Enumerated { variants } = &write.numericity {
                 let ident = &field.ident;
                 let variants = variants.values().map(|variant| variant.type_name());
-                return Some(quote! {
+                out.extend(quote! {
                     #(
-                        impl ::proto_hal::stasis::PartialState<super::UnsafeWriter> for #variants {
-                            fn set(w: &mut super::UnsafeWriter) {
-                                w.#ident().variant(Self::RAW);
-                            }
-
+                        impl ::proto_hal::stasis::Conjure for #variants {
                             unsafe fn conjure() -> Self {
                                 Self {
                                     _sealed: (),
@@ -439,34 +423,42 @@ impl Field {
                             }
                         }
 
-                        impl State for #variants {
-                            const RAW: ReadVariant = ReadVariant::#variants;
+                        impl ::proto_hal::stasis::Emplace<super::UnsafeWriter> for #variants {
+                            fn set(w: &mut super::UnsafeWriter) {
+                                w.#ident().variant(<Self as ::proto_hal::stasis::Incoming<Field>>::RAW);
+                            }
+                        }
+
+                        impl ::proto_hal::stasis::Position<Field> for #variants {}
+                        impl ::proto_hal::stasis::Outgoing<Field> for #variants {}
+                        impl ::proto_hal::stasis::Incoming<Field> for #variants {
+                            type Raw = ReadVariant;
+                            const RAW: Self::Raw = Self::Raw::#variants;
                         }
                     )*
                 });
             }
         }
 
-        None
+        out
     }
 
-    fn maybe_generate_marker_ty(
-        entitlements: &Entitlements,
-        ty_name: &Ident,
-    ) -> Option<TokenStream> {
-        if entitlements.is_empty() {
-            None
-        } else {
+    fn maybe_generate_marker_ty(entitlements: &Entitlements) -> TokenStream {
+        let mut out = quote! {
+            pub struct Field;
+        };
+
+        if !entitlements.is_empty() {
             let entitlement_paths = entitlements.iter().map(|entitlement| entitlement.render());
 
-            Some(quote! {
-                pub struct #ty_name;
-
+            out.extend(quote! {
                 #(
-                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #ty_name {}
+                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for Field {}
                 )*
-            })
+            });
         }
+
+        out
     }
 }
 
@@ -485,12 +477,8 @@ impl ToTokens for Field {
             body.extend(Self::generate_reset(reset));
         }
         body.extend(Self::generate_variant_enum(&self.access));
-        body.extend(Self::generate_state_trait(&self.access));
-        body.extend(Self::generate_state_impls(self));
-        body.extend(Self::maybe_generate_marker_ty(
-            &self.entitlements,
-            &self.type_name(),
-        ));
+        body.extend(Self::generate_trait_impls(self));
+        body.extend(Self::maybe_generate_marker_ty(&self.entitlements));
 
         let docs = &self.docs;
 
