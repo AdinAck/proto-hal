@@ -157,13 +157,7 @@ impl Peripheral {
         entitlement_generic_tys: &Vec<Ident>,
     ) -> TokenStream {
         let register_idents = registers
-            .filter_map(|register| {
-                if register.is_resolvable() {
-                    Some(register.module_name())
-                } else {
-                    None
-                }
-            })
+            .map(|register| register.module_name())
             .collect::<Vec<_>>();
 
         quote! {

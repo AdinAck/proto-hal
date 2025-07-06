@@ -70,9 +70,11 @@ mod tests {
 
             let rcc::ahb1enr::States { cordicen, .. } =
                 rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
-            let cordic = p.cordic.unmask(cordicen);
+            let mut cordic = p.cordic.unmask(cordicen);
 
-            cordic::wdata::write(|w| w.arg(&cordic.csr.argsize, 0xdeadbeefu32));
+            cordic::wdata::write(|w| {
+                w.arg(&mut cordic.wdata.arg, &cordic.csr.argsize, 0xdeadbeefu32)
+            });
 
             assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
         }
@@ -87,7 +89,7 @@ mod tests {
 
             let rcc::ahb1enr::States { cordicen, .. } =
                 rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
-            let cordic = p.cordic.unmask(cordicen);
+            let mut cordic = p.cordic.unmask(cordicen);
 
             let cordic::csr::States { ressize, nres, .. } = cordic::csr::transition(|reg| {
                 reg.ressize(cordic.csr.ressize)
@@ -96,8 +98,14 @@ mod tests {
                     .two()
             });
 
-            assert_eq!(cordic::rdata::read().res0(&ressize), 0xbeef);
-            assert_eq!(cordic::rdata::read().res1(&ressize, &nres), 0xdead);
+            assert_eq!(
+                cordic::rdata::read().res0(&mut cordic.rdata.res0, &ressize),
+                0xbeef
+            );
+            assert_eq!(
+                cordic::rdata::read().res1(&mut cordic.rdata.res1, &ressize, &nres),
+                0xdead
+            );
         }
     }
 }

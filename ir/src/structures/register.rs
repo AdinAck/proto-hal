@@ -434,8 +434,6 @@ impl Register {
     fn maybe_generate_reader<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> Option<TokenStream> {
-        let fields = fields.filter(|field| !field.is_resolvable());
-
         let accessors = fields.filter_map(|field| match &field.access {
             Access::Read(read) | Access::ReadWrite { read, write: _ } => {
                 let ident = field.module_name();
@@ -470,7 +468,7 @@ impl Register {
                 Some(match &read.numericity {
                     Numericity::Enumerated { variants: _ } => {
                         quote! {
-                            pub fn #ident #entitlement_generics (&self #entitlement_args) -> #ident::ReadVariant
+                            pub fn #ident #entitlement_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> #ident::ReadVariant
                             #entitlement_where
                             {
                                 self.r.#ident()
@@ -479,7 +477,7 @@ impl Register {
                     },
                     Numericity::Numeric => {
                         quote! {
-                            pub fn #ident #entitlement_generics (&self #entitlement_args) -> u32
+                            pub fn #ident #entitlement_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> u32
                             #entitlement_where
                             {
                                 self.r.#ident()
@@ -514,8 +512,6 @@ impl Register {
     fn maybe_generate_writer<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> Option<TokenStream> {
-        let fields = fields.filter(|field| !field.is_resolvable());
-
         let accessors = fields.filter_map(|field| match &field.access {
             Access::Write(write) | Access::ReadWrite { read: _, write } => {
                 let ident = field.module_name();
@@ -553,7 +549,7 @@ impl Register {
 
                         // TODO: this should be improved, reduce duplicate code
                         quote! {
-                            pub fn #ident #entitlement_generics (&mut self #entitlement_args) -> #refined_writer_ident<Self, impl FnOnce(&mut Self, u32)>
+                            pub fn #ident #entitlement_generics (&mut self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> #refined_writer_ident<Self, impl FnOnce(&mut Self, u32)>
                             #entitlement_where
                             {
                                 let mask = (u32::MAX >> (32 - #ident::WIDTH)) << #ident::OFFSET;
@@ -564,7 +560,7 @@ impl Register {
                     },
                     Numericity::Numeric => {
                         quote! {
-                            pub fn #ident #entitlement_generics (&mut self #entitlement_args, value: impl Into<u32>) -> &mut Self
+                            pub fn #ident #entitlement_generics (&mut self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args, value: impl Into<u32>) -> &mut Self
                             #entitlement_where
                             {
                                 let mask = (u32::MAX >> (32 - #ident::WIDTH)) << #ident::OFFSET;
@@ -604,9 +600,7 @@ impl Register {
     }
 
     fn generate_reset<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
-        let field_idents = fields
-            .filter_map(|field| field.reset.as_ref().and(Some(field.module_name())))
-            .collect::<Vec<_>>();
+        let field_idents = fields.map(|field| field.module_name()).collect::<Vec<_>>();
 
         quote! {
             pub struct Reset {
@@ -996,8 +990,8 @@ impl ToTokens for Register {
         body.extend(Self::generate_unsafe_interface(self.fields.values()));
         body.extend(Self::maybe_generate_reader(self.fields.values()));
         body.extend(Self::maybe_generate_writer(self.fields.values()));
+        body.extend(Self::generate_reset(self.fields.values()));
         if self.is_resolvable() {
-            body.extend(Self::generate_reset(self.fields.values()));
             body.extend(Self::generate_states_struct(self.fields.values()));
             body.extend(Self::generate_field_transition_builders(
                 self.fields.values(),

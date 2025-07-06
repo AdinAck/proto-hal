@@ -265,9 +265,15 @@ impl Field {
         }
     }
 
-    fn generate_reset(reset: &Ident) -> TokenStream {
-        quote! {
-            pub type Reset = #reset;
+    fn generate_reset(reset: &Option<Ident>) -> TokenStream {
+        if let Some(reset) = reset {
+            quote! {
+                pub type Reset = #reset;
+            }
+        } else {
+            quote! {
+                pub type Reset = Dynamic;
+            }
         }
     }
 
@@ -480,9 +486,7 @@ impl ToTokens for Field {
             self.offset as u32,
             self.width as u32,
         ));
-        if let Some(reset) = &self.reset {
-            body.extend(Self::generate_reset(reset));
-        }
+        body.extend(Self::generate_reset(&self.reset));
         body.extend(Self::generate_variant_enum(&self.access));
         body.extend(Self::generate_trait_impls(self));
         body.extend(Self::maybe_generate_marker_ty(&self.entitlements));
