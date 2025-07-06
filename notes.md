@@ -60,11 +60,11 @@ pub trait Position<T> {}
 ```
 
 ```rust
-pub trait Incoming<T> {}
+pub trait Outgoing<T> {}
 ```
 
 ```rust
-pub trait Outgoing<T> {
+pub trait Incoming<T> {
     type Raw;
     const RAW: Self::Raw;
 }
