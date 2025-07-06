@@ -72,7 +72,7 @@ mod tests {
                 rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
             let mut cordic = p.cordic.unmask(cordicen);
 
-            cordic::wdata::write(|w| {
+            cordic::wdata::write_from_zero(|w| {
                 w.arg(&mut cordic.wdata.arg, &cordic.csr.argsize, 0xdeadbeefu32)
             });
 
@@ -105,6 +105,38 @@ mod tests {
             assert_eq!(
                 cordic::rdata::read().res1(&mut cordic.rdata.res1, &ressize, &nres),
                 0xdead
+            );
+        }
+
+        #[test]
+        fn dynamic() {
+            let _lock = LOCK.lock().unwrap();
+
+            unsafe { MOCK_CORDIC[0] = 0 };
+
+            let p = unsafe { crate::peripherals() };
+
+            let rcc::ahb1enr::States { cordicen, .. } =
+                rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
+            let cordic = p.cordic.unmask(cordicen);
+
+            let mut func = cordic.csr.func.into_dynamic();
+
+            cordic::csr::modify(|_, w| w.func(&mut func).sqrt());
+
+            assert_eq!(
+                unsafe { MOCK_CORDIC[0] },
+                0b1001,
+                "dynamic state write failed"
+            );
+
+            let cordic::csr::States { func: _cos, .. } = cordic::csr::transition(|reg| {
+                reg.func(func).cos().scale(cordic.csr.scale).preserve()
+            });
+
+            assert!(
+                unsafe { cordic::csr::read_untracked().func().is_cos() },
+                "resolution of dynamic state failed to apply"
             );
         }
     }

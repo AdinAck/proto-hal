@@ -245,6 +245,7 @@ impl Register {
                 });
 
                 Some(quote! {
+                    #[derive(Clone, Copy)]
                     pub struct UnsafeReader {
                         value: u32
                     }
@@ -407,13 +408,15 @@ impl Register {
                 ///
                 /// Invoking this function will render statically tracked operations unsound if the operation's
                 /// invariances are violated by the effects of the invocation.
-                pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) {
+                pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) -> UnsafeReader {
                     let reader = unsafe { read_untracked() };
                     let mut writer = UnsafeWriter { value: reader.value };
 
                     f(reader, &mut writer);
 
                     unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+
+                    reader
                 }
             });
 
@@ -510,9 +513,9 @@ impl Register {
     }
 
     fn maybe_generate_writer<'a>(
-        fields: impl Iterator<Item = &'a Field> + Clone,
+        mut fields: impl Iterator<Item = &'a Field> + Clone,
     ) -> Option<TokenStream> {
-        let accessors = fields.filter_map(|field| match &field.access {
+        let accessors = fields.clone().filter_map(|field| match &field.access {
             Access::Write(write) | Access::ReadWrite { read: _, write } => {
                 let ident = field.module_name();
 
@@ -579,7 +582,7 @@ impl Register {
             None?
         }
 
-        Some(quote! {
+        let mut out = quote! {
             pub struct Writer {
                 value: u32
             }
@@ -588,15 +591,53 @@ impl Register {
                 #(#accessors)*
             }
 
-            pub fn write(f: impl FnOnce(&mut Writer) -> &mut Writer) {
-                unsafe { write_from_zero_untracked(|w| {
-                    let mut writer = Writer { value: 0 };
-                    f(&mut writer);
-                    w.value = writer.value;
-                    w
-                })};
+            pub fn write_from_zero(f: impl FnOnce(&mut Writer) -> &mut Writer) {
+                unsafe {
+                    write_from_zero_untracked(|w| {
+                        let mut writer = Writer { value: 0 };
+                        f(&mut writer);
+                        w.value = writer.value;
+                        w
+                    })
+                };
             }
-        })
+        };
+
+        if fields.clone().any(|field| field.is_resolvable()) {
+            out.extend(quote! {
+                pub fn write_from_reset(f: impl FnOnce(&mut Writer) -> &mut Writer) {
+                    unsafe {
+                        write_from_reset_untracked(|w| {
+                            let mut writer = Writer { value: w.value };
+                            f(&mut writer);
+                            w.value = writer.value;
+                            w
+                        })
+                    };
+                }
+            });
+        }
+
+        if fields.any(|field| field.access.is_read()) {
+            out.extend(quote! {
+                pub fn modify(f: impl FnOnce(Reader, &mut Writer) -> &mut Writer) -> Reader {
+                    Reader {
+                        r: unsafe {
+                            modify_untracked(|r, w| {
+                                let mut writer = Writer { value: r.value };
+                                let reader = Reader { r };
+
+                                f(reader, &mut writer);
+                                w.value = writer.value;
+                                w
+                            })
+                        },
+                    }
+                }
+            });
+        }
+
+        Some(out)
     }
 
     fn generate_reset<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
