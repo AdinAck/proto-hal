@@ -77,3 +77,89 @@ pub trait Incoming<T> {
     const RAW: Self::Raw;
 }
 ```
+
+# Interness
+
+Some fields accept values which do nothing. This is useful for "set" or "clear" registers (registers
+designed for setting or clearing specific fields without touching the other fields).
+This noop variant is **inert**. Encapsulating this quality in the `Variant` ir struct
+will enable useful functionality later...
+
+# The Ultimate Writer
+
+Currently, proto-hal MMIO access is facilitated by the following structures:
+1. UnsafeReader
+1. UnsafeWriter
+1. Reader
+1. Writer
+1. TransitionBuilder<...>
+
+The unsafe reader/writers expose all fields by borrowing the appropriate `Dynamic`s.
+Naturally, reading or writing from any field without proto-hal's type-enforced
+guarantees may be unsound, so these operations are `unsafe`.
+
+The normal reader/writers expose fields which *are not* statically tracked, this includes:
+1. Unresolvable fields, which *can not* be statically tracked.
+1. Resolvable fields that are not entitled to and are currently dynamic.
+
+> Note: For now, only fields which are not entitled to can become dynamic, because
+entitlements are enforced in the type system. It may be possible that dynamic entitlement enforcement can be implemented, but I haven't thought of a sound way to do that yet.
+
+The transition builder exposes resolvable fields to have their state transitioned statically.
+
+The distinction between these access types expresses that different fields within the same
+register have different access qualities. For instance, in a register with read-only fields, and write-only fields, the reader and writer only exposes the appropriate fields and fills
+the invalid fields with dummy values (probably 0).
+
+But what if all fields can be written to, but only some values induce action? What if
+those fields are superpositioned with other fields with different schemas?
+
+What if you wanted to transition states *and* write to unresolvable fields at the same time?
+
+I realized that I needed a design that was fully generalized. Rather than handling a constant
+number of field read/write qualities, it needed to arbitrarily extend to any future
+constraints.
+
+---
+
+Consider: What if there was a single writer type, and no transition builder. The writer
+fully expresses the fields with generics (like the transition builder) but unlike the
+transition builder, expresses unresolvable fields as well.
+
+But how does the writer constrain what field values/states may be written/transitioned?
+This will be achieved via the gate functions. The writer type is the same, but the bounds
+applied by the gate determine what actions the writer permits.
+
+Registers with readable and writable fields expose `modify`:
+
+```rust
+let some::reg::States { foo, .. } = some::reg::modify(|r, w| {
+    w
+        .foo(foo).baz()
+        .bar(&mut bar, r.bar() + 1)
+});
+```
+> An example of performing a state transition and reading/writing to an unresolvable field
+> simultaneously.
+>
+> `foo` is a resolvable enumerated field. `bar` is an unresolvable numeric field.
+> The generics in `States` are still only for resolvable fields.
+
+Registers with writable fields expose `write`:
+
+```rust
+let some::reg::States { foo, .. } = some::reg::write(|w| {
+    w
+        .foo(foo).baz()
+        .bar(&mut bar, 0xdeadbeef)
+});
+```
+> An example of performing a state transition and writing to an unresolvable field
+> simultaneously. Since unspecified fields have inert values, a read need not be performed
+> and this "blind write" is sound.
+>
+> Unlike the previous example, `write` requires fields without inert values to be specified.
+>
+> `foo` is a resolvable enumerated field. `bar` is an unresolvable numeric field.
+> All other fields have at least one inert write variant.
+> The generics in `States` are still only for resolvable fields.

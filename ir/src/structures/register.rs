@@ -153,71 +153,227 @@ impl Register {
         }
     }
 
-    fn generate_refined_writers<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
-        let mut writers = quote! {};
+    fn generate_refined_writers<'a>(
+        fields: impl Iterator<Item = &'a Field>,
+    ) -> Option<TokenStream> {
+        let fields = fields
+            .filter(|field| field.access.is_write())
+            .collect::<Vec<_>>();
 
-        for field in fields {
-            if let Access::Write(write)
-            | Access::ReadWrite(
-                ReadWrite::Symmetrical(write) | ReadWrite::Asymmetrical { write, .. },
-            ) = &field.access
-            {
-                let Numericity::Enumerated { variants } = &write.numericity else {
-                    continue;
-                };
+        let field_idents = fields
+            .iter()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
 
-                let field_ident = field.module_name();
-                let writer_ident = field.writer_ident();
+        let field_tys = fields
+            .iter()
+            .map(|field| field.type_name())
+            .collect::<Vec<_>>();
 
-                let variant_tys = variants
-                    .values()
-                    .map(|variant| variant.type_name())
-                    .collect::<Vec<_>>();
-
-                let accessors = variants
-                    .values()
-                    .map(|variant| variant.module_name())
-                    .collect::<Vec<_>>();
-
-                writers.extend(quote! {
-                    #[doc(hidden)]
-                    pub struct #writer_ident<'a, W, F>
-                    where
-                        F: FnOnce(&mut W, u32),
-                    {
-                        w: &'a mut W,
-                        f: F,
-                    }
-
-                    impl<'a, W, F> #writer_ident<'a, W, F>
-                    where
-                        F: FnOnce(&mut W, u32),
-                    {
-                        /// # Safety
-                        /// If the usage of this function violates any invariances of the
-                        /// corresponding field, any logic dependent on that field will
-                        /// be rendered unsound.
-                        pub unsafe fn bits(self, bits: u32) -> &'a mut W {
-                            (self.f)(self.w, bits);
-
-                            self.w
-                        }
-
-                        pub fn variant(self, variant: #field_ident::WriteVariant) -> &'a mut W {
-                            unsafe { self.bits(variant as _) }
-                        }
-
-                        #(
-                            pub fn #accessors(self) -> &'a mut W {
-                                self.variant(#field_ident::WriteVariant::#variant_tys)
-                            }
-                        )*
-                    }
-                });
-            };
+        // unresolvable numeric fields don't use a refined writer
+        if fields.iter().all(|field| {
+            !field.is_resolvable()
+                && matches!(
+                    field
+                        .access
+                        .get_write()
+                        .expect("all fields should be writable by this point")
+                        .numericity,
+                    Numericity::Numeric
+                )
+        }) {
+            None?
         }
 
-        writers
+        let mut writers = quote! {};
+
+        for (i, field) in fields.iter().enumerate() {
+            let field_ident = field.module_name();
+            let field_ty = field.type_name();
+            let refined_writer_ident = format_ident!("{}Writer", field.type_name());
+
+            let prev_field_idents = field_idents.get(..i).unwrap();
+            let next_field_idents = field_idents.get(i + 1..).unwrap();
+            let prev_field_tys = field_tys.get(..i).unwrap();
+            let next_field_tys = field_tys.get(i + 1..).unwrap();
+
+            let unused = fields.iter().map(|f| {
+                if f.module_name() == field.module_name()
+                    && !f.is_resolvable()
+                    && matches!(
+                        f.access
+                            .get_write()
+                            .expect("field should be writable by this point")
+                            .numericity,
+                        Numericity::Enumerated { .. }
+                    )
+                {
+                    Some(quote! { #[expect(unused)] })
+                } else {
+                    None
+                }
+            });
+
+            writers.extend(quote! {
+                #[allow(clippy::type_complexity)]
+                #[doc(hidden)]
+                pub struct #refined_writer_ident<#(#field_tys,)*>
+                where
+                    #(#field_tys: ::proto_hal::stasis::Position<#field_idents::Field>,)*
+                {
+                    #(#unused #field_idents: #field_tys,)*
+                }
+            });
+
+            let mut static_accessors = quote! {};
+            let mut dynamic_accessors = quote! {};
+
+            if field.is_resolvable() {
+                static_accessors.extend(quote! {
+                    #[allow(clippy::type_complexity)]
+                    pub fn generic<_NewState>(self) -> Writer<#(#prev_field_tys,)* _NewState, #(#next_field_tys,)*>
+                    where
+                        #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                        _NewState: ::proto_hal::stasis::Incoming<#field_ident::Field> +
+                        ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                    {
+                        Writer {
+                            #(#prev_field_idents: self.#prev_field_idents,)*
+                            #field_ident: unsafe { _NewState::conjure() },
+                            #(#next_field_idents: self.#next_field_idents,)*
+                        }
+                    }
+
+                    /// Preserve the state being added to the builder. In other words, **do not** perform a transition
+                    /// on the state inhabited by the specified field.
+                    ///
+                    /// This is useful when entitled states must be provided to the builder but need not be
+                    /// transitioned.
+                    #[allow(clippy::type_complexity)]
+                    pub fn preserve(self) -> Writer<#(#field_tys,)*>
+                    where
+                        #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                        #field_ty: ::proto_hal::stasis::Incoming<#field_ident::Field> +
+                        ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                        #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                    {
+                        Writer {
+                            #(#field_idents: self.#field_idents,)*
+                        }
+                    }
+                });
+            }
+
+            match &field
+                .access
+                .get_write()
+                .expect("all fields should be writable by this point")
+                .numericity
+            {
+                Numericity::Numeric => {
+                    dynamic_accessors.extend(quote! {
+                        #[allow(clippy::type_complexity)]
+                        pub fn value(self, value: impl Into<#field_ident::Numeric>) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*>
+                        where
+                            #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                            #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                        {
+                            Writer {
+                                #(#prev_field_idents: self.#prev_field_idents,)*
+                                #field_ident: value.into(),
+                                #(#next_field_idents: self.#next_field_idents,)*
+                            }
+                        }
+                    });
+
+                    if field.is_resolvable() {
+                        static_accessors.extend(quote! {
+                            pub fn value<const N: u32>(self) -> Writer<#(#prev_field_tys,)* #field_ident::Value<N>, #(#next_field_tys,)*>
+                            where
+                                #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                                #field_ident::Value<N>: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                                #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                            {
+                                self.generic()
+                            }
+                        })
+                    }
+                }
+                Numericity::Enumerated { variants } => {
+                    dynamic_accessors.extend(quote! {
+                        #[allow(clippy::type_complexity)]
+                        pub fn variant(self, variant: #field_ident::WriteVariant) -> Writer<#(#prev_field_tys,)* #field_ident::WriteVariant, #(#next_field_tys,)*>
+                        where
+                            #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                            #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                        {
+                            Writer {
+                                #(#prev_field_idents: self.#prev_field_idents,)*
+                                #field_ident: variant,
+                                #(#next_field_idents: self.#next_field_idents,)*
+                            }
+                        }
+                    });
+
+                    for (ty, accessor) in variants
+                        .values()
+                        .map(|variant| (variant.type_name(), variant.module_name()))
+                    {
+                        dynamic_accessors.extend(quote! {
+                            #[allow(clippy::type_complexity)]
+                            pub fn #accessor(self) -> Writer<#(#prev_field_tys,)* #field_ident::WriteVariant, #(#next_field_tys,)*>
+                            where
+                                #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                                #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                            {
+                                self.variant(#field_ident::WriteVariant::#ty)
+                            }
+                        });
+
+                        if field.is_resolvable() {
+                            static_accessors.extend(quote! {
+                                #[allow(clippy::type_complexity)]
+                                pub fn #accessor(self) -> Writer<#(#prev_field_tys,)* #field_ident::#ty, #(#next_field_tys,)*>
+                                where
+                                    #(#prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                                    #field_ident::#ty: ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                                    #(#next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,)*
+                                {
+                                    self.generic()
+                                }
+                            });
+                        }
+                    }
+                }
+            };
+
+            if !dynamic_accessors.is_empty() {
+                writers.extend(quote! {
+                    impl<#(#prev_field_tys,)* #(#next_field_tys,)*> #refined_writer_ident<#(#prev_field_tys,)* &mut #field_ident::Dynamic, #(#next_field_tys,)*>
+                    where
+                        #(#prev_field_tys: ::proto_hal::stasis::Position<#prev_field_idents::Field>,)*
+                        #(#next_field_tys: ::proto_hal::stasis::Position<#next_field_idents::Field>,)*
+                    {
+                        #dynamic_accessors
+                    }
+                });
+            }
+
+            if !static_accessors.is_empty() {
+                writers.extend(quote! {
+                    impl<#(#field_tys,)*> #refined_writer_ident<#(#field_tys,)*>
+                    where
+                        #(#field_tys: ::proto_hal::stasis::Position<#field_idents::Field>,)*
+                        #field_ty: ::proto_hal::stasis::Outgoing<#field_ident::Field>,
+                    {
+                        #static_accessors
+                    }
+                });
+            }
+        }
+
+        Some(writers)
     }
 
     fn generate_unsafe_interface<'a>(
@@ -303,87 +459,60 @@ impl Register {
         }
 
         fn write<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
-            if fields.clone().any(|field| field.access.is_write()) {
-                let enumerated_fields = fields.clone().filter(|field| match &field.access {
-                    Access::Write(write)
-                    | Access::ReadWrite(
-                        ReadWrite::Symmetrical(write) | ReadWrite::Asymmetrical { write, .. },
-                    ) => {
-                        matches!(write.numericity, Numericity::Enumerated { variants: _ })
-                    }
-                    _ => false,
-                });
+            if !fields.clone().any(|field| field.access.is_write()) {
+                None?
+            }
 
-                let numeric_field_idents = fields
-                    .filter_map(|field| match &field.access {
-                        Access::Write(write)
-                        | Access::ReadWrite(
-                            ReadWrite::Symmetrical(write) | ReadWrite::Asymmetrical { write, .. },
-                        ) => {
-                            if matches!(write.numericity, Numericity::Numeric) {
-                                Some(field.module_name())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
-
-                let enumerated_field_idents = enumerated_fields
-                    .clone()
-                    .map(|field| field.module_name())
-                    .collect::<Vec<_>>();
-                let refined_writer_idents = enumerated_fields
-                    .map(|field| field.writer_ident())
-                    .collect::<Vec<_>>();
-
-                Some(quote! {
-                    pub struct UnsafeWriter {
-                        value: u32
-                    }
-
-                    impl UnsafeWriter {
-                        /// View the raw bits pending to be written to the register.
-                        pub fn bits(&self) -> u32 {
-                            self.value
-                        }
-
-                        #(
-                            pub fn #enumerated_field_idents(&mut self) -> #refined_writer_idents<Self, impl FnOnce(&mut Self, u32)> {
-                                let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
-
-                                #refined_writer_idents { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #enumerated_field_idents::OFFSET) }
-                            }
-                        )*
-
-                        #(
-                            pub fn #numeric_field_idents(&mut self, value: impl Into<u32>) -> &mut Self {
-                                let mask = (u32::MAX >> (32 - #numeric_field_idents::WIDTH)) << #numeric_field_idents::OFFSET;
-                                self.value = (self.value & !mask) | (value.into() << #numeric_field_idents::OFFSET);
-
-                                self
-                            }
-                        )*
-                    }
-
-                    /// Write to fields of the register with a default value of 0, ignoring any implicative effects.
-                    ///
-                    /// # Safety
-                    ///
-                    /// Invoking this function will render statically tracked operations unsound if the operation's
-                    /// invariances are violated by the effects of the invocation.
-                    pub unsafe fn write_from_zero_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
-                        let mut writer = UnsafeWriter { value: 0 };
-
-                        f(&mut writer);
-
-                        unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+            let field_idents = fields
+                .filter_map(|field| {
+                    if field.access.is_write() {
+                        Some(field.module_name())
+                    } else {
+                        None
                     }
                 })
-            } else {
-                None
-            }
+                .collect::<Vec<_>>();
+
+            Some(quote! {
+                pub struct UnsafeWriter {
+                    value: u32
+                }
+
+                impl UnsafeWriter {
+                    /// View the raw bits pending to be written to the register.
+                    pub fn bits(&self) -> u32 {
+                        self.value
+                    }
+
+                    /// Place a direct bit value into the writer.
+                    pub fn set_bits(&mut self, bits: u32) {
+                        self.value = bits;
+                    }
+
+                    #(
+                        pub fn #field_idents(&mut self, value: impl Into<u32>) -> &mut Self {
+                            let mask = (u32::MAX >> (32 - #field_idents::WIDTH)) << #field_idents::OFFSET;
+                            self.value = (self.value & !mask) | (value.into() << #field_idents::OFFSET);
+
+                            self
+                        }
+                    )*
+                }
+
+                /// Write to fields of the register with a default value of 0, ignoring any implicative effects.
+                ///
+                /// # Safety
+                ///
+                /// Invoking this function will render statically tracked operations unsound if the operation's
+                /// invariances are violated by the effects of the invocation.
+                pub unsafe fn write_from_zero_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
+                    let mut writer = UnsafeWriter { value: 0 };
+
+                    f(&mut writer);
+
+                    unsafe { ::core::ptr::write_volatile((super::base_addr() + OFFSET) as *mut u32, writer.value) };
+                }
+            })
         }
 
         fn modify<'a>(mut fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
@@ -408,8 +537,7 @@ impl Register {
                     pub unsafe fn write_from_reset_untracked(f: impl FnOnce(&mut UnsafeWriter) -> &mut UnsafeWriter) {
                         unsafe {
                             write_from_zero_untracked(|w| {
-                                ResetTransitionBuilder::new().finish(w);
-                                f(w)
+                                f(<ResetWriter as ::proto_hal::stasis::Conjure>::conjure().finish(w))
                             })
                         }
                     }
@@ -529,130 +657,338 @@ impl Register {
     }
 
     fn maybe_generate_writer<'a>(
-        mut fields: impl Iterator<Item = &'a Field> + Clone,
+        fields: impl Iterator<Item = &'a Field> + Clone,
+        entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
     ) -> Option<TokenStream> {
-        let accessors = fields.clone().filter_map(|field| match &field.access {
-            Access::Write(write)
-            | Access::ReadWrite(ReadWrite::Symmetrical(write) | ReadWrite::Asymmetrical { write, .. }) => {
-                let ident = field.module_name();
+        let fields = fields
+            .filter(|field| field.access.is_write())
+            .collect::<Vec<_>>();
 
-                let (entitlement_generics, entitlement_args, entitlement_where) = if field.entitlements.is_empty() {
-                    (None, None, None)
-                } else {
-                    let entitlement_tys = field.entitlements.iter().map(|entitlement| entitlement.variant()).collect::<Vec<_>>();
-                    let entitlement_idents = field.entitlements.iter().map(|entitlement|
-                        Ident::new(
-                            inflector::cases::snakecase::to_snake_case(
-                                entitlement.variant().to_string().as_str()).as_str(),
-                            Span::call_site()
-                        ));
-
-                    (
-                        Some(quote! {
-                            <#(#entitlement_tys),*>
-                        }),
-                        Some(quote! {
-                            , #(#[expect(unused)] #entitlement_idents: &#entitlement_tys),*
-                        }),
-                        Some(quote! {
-                            where
-                                #(
-                                    #ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
-                                )*
-                        })
-                    )
-                };
-
-                Some(match &write.numericity {
-                    Numericity::Enumerated { variants: _ } => {
-                        let refined_writer_ident = field.writer_ident();
-
-                        // TODO: this should be improved, reduce duplicate code
-                        quote! {
-                            pub fn #ident #entitlement_generics (&mut self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> #refined_writer_ident<Self, impl FnOnce(&mut Self, u32)>
-                            #entitlement_where
-                            {
-                                let mask = (u32::MAX >> (32 - #ident::WIDTH)) << #ident::OFFSET;
-
-                                #refined_writer_ident { w: self, f: move |w, value| w.value = (w.value & !mask) | (value << #ident::OFFSET) }
-                            }
-                        }
-                    },
-                    Numericity::Numeric => {
-                        quote! {
-                            pub fn #ident #entitlement_generics (&mut self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args, value: impl Into<u32>) -> &mut Self
-                            #entitlement_where
-                            {
-                                let mask = (u32::MAX >> (32 - #ident::WIDTH)) << #ident::OFFSET;
-                                self.value = (self.value & !mask) | (value.into() << #ident::OFFSET);
-
-                                self
-                            }
-                        }
-                    },
-                })
-            }
-            _ => None,
-        }).collect::<Vec<_>>();
-
-        if accessors.is_empty() {
+        if fields.is_empty() {
             None?
         }
 
-        let mut out = quote! {
-            pub struct Writer {
-                value: u32
-            }
+        let entitlement_bounds = entitlement_bounds.collect::<Vec<_>>();
 
-            impl Writer {
-                #(#accessors)*
-            }
+        let field_idents = fields
+            .iter()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
+        let field_tys = fields
+            .iter()
+            .map(|field| field.type_name())
+            .collect::<Vec<_>>();
 
-            pub fn write_from_zero(f: impl FnOnce(&mut Writer) -> &mut Writer) {
-                unsafe {
-                    write_from_zero_untracked(|w| {
-                        let mut writer = Writer { value: 0 };
-                        f(&mut writer);
-                        w.value = writer.value;
-                        w
-                    })
+        let unresolved = fields
+            .iter()
+            .map(|_| {
+                let path: Path = parse_quote! {
+                    ::proto_hal::stasis::Unresolved
                 };
+                path
+            })
+            .collect::<Vec<_>>();
+
+        let mut accessors = quote! {};
+
+        for (i, field) in fields.iter().enumerate() {
+            let field_ident = field.module_name();
+            let refined_writer_ident = format_ident!("{}Writer", field.type_name());
+
+            let prev_fields = fields.get(..i).unwrap();
+            let next_fields = fields.get(i + 1..).unwrap();
+
+            let overlapping = |lhs: &Field, rhs: &Field| {
+                lhs.offset + lhs.width > rhs.offset && lhs.offset < rhs.offset + rhs.width
+            };
+
+            let prev_field_tys = prev_fields.iter().map(|other| {
+                if overlapping(field, other) {
+                    quote! { ::proto_hal::stasis::Unavailable }
+                } else {
+                    other.type_name().to_token_stream()
+                }
+            });
+
+            let next_field_tys = next_fields.iter().map(|other| {
+                if overlapping(field, other) {
+                    quote! { ::proto_hal::stasis::Unavailable }
+                } else {
+                    other.type_name().to_token_stream()
+                }
+            });
+
+            let struct_entries = prev_fields.iter().chain(next_fields).map(|other| {
+                let ident = other.module_name();
+                if overlapping(field, other) {
+                    quote! { #ident: ::proto_hal::stasis::Unavailable }
+                } else {
+                    quote! { #ident: self.#ident }
+                }
+            });
+
+            let (entitlement_generics, entitlement_args, entitlement_where) = if field
+                .entitlements
+                .is_empty()
+            {
+                (None, None, None)
+            } else {
+                let entitlement_tys = field
+                    .entitlements
+                    .iter()
+                    .map(|entitlement| entitlement.variant())
+                    .collect::<Vec<_>>();
+                let entitlement_idents = field.entitlements.iter().map(|entitlement| {
+                    Ident::new(
+                        inflector::cases::snakecase::to_snake_case(
+                            entitlement.variant().to_string().as_str(),
+                        )
+                        .as_str(),
+                        Span::call_site(),
+                    )
+                });
+
+                (
+                    Some(quote! {
+                        #(#entitlement_tys),*
+                    }),
+                    Some(quote! {
+                        , #(#[expect(unused)] #entitlement_idents: &#entitlement_tys),*
+                    }),
+                    Some(quote! {
+                        #(
+                            #field_ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
+                        )*
+                    }),
+                )
+            };
+
+            accessors.extend(match (
+                field.is_resolvable(),
+                &field
+                    .access
+                    .get_write()
+                    .expect("fields at this point must be writable")
+                    .numericity,
+            ) {
+                (true, _) => quote! {
+                    #[allow(clippy::type_complexity)]
+                    pub fn #field_ident<_OldState, #entitlement_generics>(self #entitlement_args, state: _OldState) -> #refined_writer_ident<#(#prev_field_tys,)* _OldState, #(#next_field_tys,)*>
+                    where
+                        _OldState: ::proto_hal::stasis::Position<#field_ident::Field>,
+                        #entitlement_where
+                    {
+                        #refined_writer_ident {
+                            #field_ident: state,
+                            #(#struct_entries,)*
+                        }
+                    }
+                },
+                (false, Numericity::Numeric) => {
+                    quote! {
+                        pub fn #field_ident <#entitlement_generics> (self, #[expect(unused)] instance: &mut #field_ident::Dynamic #entitlement_args, value: impl Into<#field_ident::Numeric>) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*>
+                        where
+                            #entitlement_where
+                        {
+                            Writer {
+                                #field_ident: value.into(),
+                                #(#struct_entries,)*
+                            }
+                        }
+                    }
+                },
+                (false, Numericity::Enumerated { .. }) => {
+                    quote! {
+                        pub fn #field_ident <#entitlement_generics> (self, instance: &mut #field_ident::Dynamic #entitlement_args) -> #refined_writer_ident<#(#prev_field_tys,)* &mut #field_ident::Dynamic, #(#next_field_tys,)*>
+                        #entitlement_where
+                        {
+                            #refined_writer_ident {
+                                #field_ident: instance,
+                                #(#struct_entries,)*
+                            }
+                        }
+                    }
+                },
+            });
+        }
+
+        let (inert_tys, inert_values) = fields
+            .iter()
+            .map(|field| {
+                if let Some(inert_ident) = field.access.get_write().and_then(|write| {
+                    if let Numericity::Enumerated { variants } = &write.numericity {
+                        variants.values().find_map(|variant| {
+                            if variant.inert {
+                                Some(variant.type_name())
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                }) {
+                    let field_ident = field.module_name();
+                    (
+                        quote! { #field_ident::WriteVariant },
+                        quote! { #field_ident::WriteVariant::#inert_ident },
+                    )
+                } else {
+                    (
+                        quote! { ::proto_hal::stasis::Unresolved },
+                        quote! { ::proto_hal::stasis::Unresolved },
+                    )
+                }
+            })
+            .collect::<(Vec<_>, Vec<_>)>();
+
+        let reset_tys = fields
+            .iter()
+            .map(|field| {
+                if field.is_resolvable() {
+                    let ident = field.module_name();
+                    quote! { #ident::Reset }
+                } else {
+                    quote! { ::proto_hal::stasis::Unresolved }
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut out = quote! {
+            #[allow(clippy::type_complexity)]
+            #[doc(hidden)]
+            pub struct Writer<#(#field_tys,)*>
+            where
+                #(
+                    #field_tys: ::proto_hal::stasis::Position<#field_idents::Field> +
+                    ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                )*
+            {
+                #(
+                    #field_idents: #field_tys,
+                )*
+            }
+
+            type EmptyWriter = Writer<#(#unresolved,)*>;
+            type InertWriter = Writer<#(#inert_tys,)*>;
+            type ResetWriter = Writer<#(#reset_tys,)*>;
+
+            #[allow(clippy::new_without_default)]
+            impl EmptyWriter {
+                pub fn empty() -> Self {
+                    Self {
+                        #(#field_idents: #unresolved,)*
+                    }
+                }
+            }
+
+            #[allow(clippy::new_without_default)]
+            impl InertWriter {
+                pub fn inert() -> Self {
+                    Self {
+                        #(#field_idents: #inert_values,)*
+                    }
+                }
+            }
+
+            impl ::proto_hal::stasis::Conjure for ResetWriter {
+                unsafe fn conjure() -> Self {
+                    unsafe {
+                        Self {
+                            #(#field_idents: #reset_tys::conjure(),)*
+                        }
+                    }
+                }
+            }
+
+            impl<#(#field_tys,)*> Writer<#(#field_tys,)*>
+            where
+                #(
+                    #field_tys: ::proto_hal::stasis::Position<#field_idents::Field> +
+                    ::proto_hal::stasis::Emplace<UnsafeWriter>,
+                )*
+            {
+                #accessors
+
+                fn finish(self, w: &mut UnsafeWriter) -> &mut UnsafeWriter
+                where
+                    #(
+                        #entitlement_bounds,
+                    )*
+                {
+                    #(self.#field_idents.set(w);)*
+
+                    w
+                }
             }
         };
 
-        if fields.clone().any(|field| field.is_resolvable()) {
-            out.extend(quote! {
-                pub fn write_from_reset(f: impl FnOnce(&mut Writer) -> &mut Writer) {
-                    unsafe {
-                        write_from_reset_untracked(|w| {
-                            let mut writer = Writer { value: w.value };
-                            f(&mut writer);
-                            w.value = writer.value;
-                            w
-                        })
-                    };
+        // gates
+
+        let resolvable_field_tys = fields
+            .iter()
+            .filter_map(|field| {
+                if field.is_resolvable() {
+                    Some(field.type_name())
+                } else {
+                    None
                 }
-            });
+            })
+            .collect::<Vec<_>>();
+
+        let (states_return, states_conjure) = if fields.iter().any(|field| field.is_resolvable()) {
+            (
+                Some(quote! { -> States<#(#resolvable_field_tys,)*> }),
+                Some(quote! { unsafe { States::conjure() } }),
+            )
+        } else {
+            (None, None)
+        };
+
+        if fields.iter().any(|field| field.access.is_read()) {
+            out.extend(quote! {
+                #[allow(clippy::type_complexity)]
+                pub fn modify<#(#field_tys,)*>(gate: impl FnOnce(Reader, EmptyWriter) -> Writer<#(#field_tys,)*>) #states_return
+                where
+                    #(
+                        #field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter> +
+                        ::proto_hal::stasis::Position<#field_idents::Field>,
+                    )*
+                    #(
+                        #resolvable_field_tys: ::proto_hal::stasis::Conjure,
+                    )*
+                    #(
+                        #entitlement_bounds,
+                    )*
+                {
+                    unsafe { modify_untracked(|r, w| gate(Reader { r }, Writer::empty()).finish(w)) };
+
+                    #states_conjure
+                }
+            })
         }
 
-        if fields.any(|field| field.access.is_read()) {
-            out.extend(quote! {
-                pub fn modify(f: impl FnOnce(Reader, &mut Writer) -> &mut Writer) -> Reader {
-                    Reader {
-                        r: unsafe {
-                            modify_untracked(|r, w| {
-                                let mut writer = Writer { value: r.value };
-                                let reader = Reader { r };
+        out.extend(quote! {
+            #[allow(clippy::type_complexity)]
+            pub fn write<#(#field_tys,)*>(gate: impl FnOnce(InertWriter) -> Writer<#(#field_tys,)*>) #states_return
+            where
+                #(
+                    #field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter> +
+                    ::proto_hal::stasis::Position<#field_idents::Field> +
+                    ::proto_hal::stasis::Corporeal,
+                )*
+                #(
+                    #resolvable_field_tys: ::proto_hal::stasis::Conjure,
+                )*
+                #(
+                    #entitlement_bounds,
+                )*
+            {
+                unsafe { write_from_zero_untracked(|w| gate(Writer::inert()).finish(w)) };
 
-                                f(reader, &mut writer);
-                                w.value = writer.value;
-                                w
-                            })
-                        },
-                    }
-                }
-            });
-        }
+                #states_conjure
+            }
+        });
 
         Some(out)
     }
@@ -682,7 +1018,9 @@ impl Register {
         }
     }
 
-    fn generate_states_struct<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> TokenStream {
+    fn generate_states_struct<'a>(
+        fields: impl Iterator<Item = &'a Field> + Clone,
+    ) -> Option<TokenStream> {
         let fields = fields.filter(|field| field.is_resolvable());
         let field_idents = fields
             .clone()
@@ -690,7 +1028,11 @@ impl Register {
             .collect::<Vec<_>>();
         let states = fields.map(|field| field.type_name()).collect::<Vec<_>>();
 
-        quote! {
+        if states.is_empty() {
+            None?
+        }
+
+        Some(quote! {
             pub struct States<#(#states,)*>
             where
                 #(
@@ -721,257 +1063,7 @@ impl Register {
                     }
                 }
             }
-        }
-    }
-
-    fn generate_field_transition_builders<'a>(
-        fields: impl Iterator<Item = &'a Field> + Clone,
-    ) -> TokenStream {
-        let fields = fields.filter(|field| field.is_resolvable() && field.access.is_write());
-        let field_tys = fields
-            .clone()
-            .map(|field| field.type_name())
-            .collect::<Vec<_>>();
-        let field_module_idents = fields
-            .clone()
-            .map(|field| field.module_name())
-            .collect::<Vec<_>>();
-
-        let mut body = quote! {};
-
-        for (i, field) in fields.enumerate() {
-            let field_module_ident = field.module_name();
-            let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
-
-            let prev_field_tys = field_tys.get(..i).unwrap();
-            let next_field_tys = field_tys.get(i + 1..).unwrap();
-
-            body.extend(quote! {
-                #[allow(clippy::type_complexity)]
-                #[doc(hidden)]
-                pub struct #builder_ident<#(#field_tys,)*>
-                where
-                    #(
-                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
-                    )*
-                {
-                    _p: ::core::marker::PhantomData<(#(#field_tys,)*)>,
-                }
-
-                impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
-                where
-                    #(
-                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
-                    )*
-                {
-                    /// # Safety
-                    /// TODO: link to conjure docs.
-                    pub unsafe fn conjure() -> Self {
-                        unsafe { ::core::mem::transmute(()) }
-                    }
-
-                    #[allow(clippy::type_complexity)]
-                    pub fn generic<_NewState>(self) -> TransitionBuilder<#(#prev_field_tys,)* _NewState, #(#next_field_tys,)*>
-                    where
-                        #(
-                            #prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                        )*
-                        _NewState: ::proto_hal::stasis::Incoming<#field_module_ident::Field> +
-                        ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                        #(
-                            #next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                        )*
-                    {
-                        unsafe { TransitionBuilder::conjure() }
-                    }
-
-                    /// Preserve the state being added to the builder. In other words, **do not** perform a transition
-                    /// on the state inhabited by the specified field.
-                    ///
-                    /// This is useful when entitled states must be provided to the builder but need not be
-                    /// transitioned.
-                    #[allow(clippy::type_complexity)]
-                    pub fn preserve(self) -> TransitionBuilder<#(#field_tys,)*>
-                    where
-                        #(
-                            #field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                        )*
-                    {
-                        unsafe { TransitionBuilder::conjure() }
-                    }
-                }
-            });
-
-            let mut body2 = quote! {};
-
-            match &field.access {
-                Access::Read(read)
-                | Access::ReadWrite(
-                    ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. },
-                ) => match &read.numericity {
-                    Numericity::Numeric => {
-                        body2.extend(quote! {
-                            pub fn value<const N: u32>(self) -> TransitionBuilder<#(#prev_field_tys,)* #field_module_ident::Value<N>, #(#next_field_tys,)*>
-                            where
-                                #(
-                                    #prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                )*
-                                #field_module_ident::Value<N>: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                #(
-                                    #next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                )*
-                            {
-                                self.generic()
-                            }
-                        });
-                    }
-                    Numericity::Enumerated { variants } => {
-                        for (ty, accessor) in variants
-                            .values()
-                            .map(|variant| (variant.type_name(), variant.module_name()))
-                        {
-                            body2.extend(quote! {
-                                    #[allow(clippy::type_complexity)]
-                                    pub fn #accessor(self) -> TransitionBuilder<#(#prev_field_tys,)* #field_module_ident::#ty, #(#next_field_tys,)*>
-                                    where
-                                        #(
-                                            #prev_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                        )*
-                                        #field_module_ident::#ty: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                        #(
-                                            #next_field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter>,
-                                        )*
-                                    {
-                                        self.generic()
-                                    }
-                                });
-                        }
-                    }
-                },
-                _ => unreachable!(),
-            };
-
-            body.extend(quote! {
-                impl<#(#field_tys,)*> #builder_ident<#(#field_tys,)*>
-                where
-                    #(
-                        #field_tys: ::proto_hal::stasis::Position<#field_module_idents::Field>,
-                    )*
-                {
-                    #body2
-                }
-            });
-        }
-
-        body
-    }
-
-    fn generate_transition_builder<'a>(
-        fields: impl Iterator<Item = &'a Field> + Clone,
-        entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
-    ) -> TokenStream {
-        let resolvable_fields = fields
-            .filter(|field| field.is_resolvable())
-            .collect::<Vec<_>>();
-
-        let field_module_idents = resolvable_fields
-            .iter()
-            .map(|field| field.module_name())
-            .collect::<Vec<_>>();
-        let states = resolvable_fields
-            .iter()
-            .map(|field| field.type_name())
-            .collect::<Vec<_>>();
-
-        let unresolved = states.iter().map(|_| {
-            let path: Path = parse_quote! {
-                ::proto_hal::stasis::Unresolved
-            };
-            path
-        });
-
-        let mut methods = quote! {};
-
-        for (i, field) in resolvable_fields.iter().enumerate() {
-            let field_module_ident = field.module_name();
-            let builder_ident = format_ident!("{}TransitionBuilder", field.type_name());
-
-            let prev_states = states.get(..i).unwrap();
-            let next_states = states.get(i + 1..).unwrap();
-
-            methods.extend(quote! {
-                #[allow(clippy::type_complexity)]
-                pub fn #field_module_ident<_OldState>(self, #[expect(unused_variables)] state: _OldState) -> #builder_ident<#(#prev_states,)* _OldState, #(#next_states,)*>
-                where
-                    _OldState: ::proto_hal::stasis::Outgoing<#field_module_ident::Field>,
-                {
-                    unsafe { #builder_ident::conjure() }
-                }
-            })
-        }
-
-        quote! {
-            #[allow(clippy::type_complexity)]
-            #[doc(hidden)]
-            pub struct TransitionBuilder<#(#states,)*>
-            where
-                #(
-                    #states: ::proto_hal::stasis::Position<#field_module_idents::Field>,
-                )*
-            {
-                _p: core::marker::PhantomData<(#(#states,)*)>,
-            }
-
-            type EmptyTransitionBuilder = TransitionBuilder<#(#unresolved,)*>;
-            type ResetTransitionBuilder = TransitionBuilder<
-                #(
-                    #field_module_idents::Reset,
-                )*
-            >;
-
-            impl ResetTransitionBuilder {
-                unsafe fn new() -> Self {
-                    Self {
-                        _p: ::core::marker::PhantomData,
-                    }
-                }
-            }
-
-            impl EmptyTransitionBuilder {
-                fn new() -> Self {
-                    Self {
-                        _p: ::core::marker::PhantomData,
-                    }
-                }
-            }
-
-            impl<#(#states,)*> TransitionBuilder<#(#states,)*>
-            where
-                #(
-                    #states: ::proto_hal::stasis::Emplace<UnsafeWriter> +
-                    ::proto_hal::stasis::Position<#field_module_idents::Field>,
-                )*
-            {
-                /// # Safety
-                /// TODO: link to conjure docs.
-                pub unsafe fn conjure() -> Self {
-                    unsafe { ::core::mem::transmute(()) }
-                }
-
-                fn finish(self, w: &mut UnsafeWriter)
-                where
-                    #(
-                        #entitlement_bounds,
-                    )*
-                {
-                    #(
-                        #states::set(w);
-                    )*;
-                }
-
-                #methods
-            }
-        }
+        })
     }
 
     fn create_entitlement_bounds<'a>(fields: impl Iterator<Item = &'a Field>) -> Vec<TokenStream> {
@@ -1022,37 +1114,6 @@ impl Register {
             })
             .collect()
     }
-
-    fn generate_transition_gate<'a>(
-        fields: impl Iterator<Item = &'a Field> + Clone,
-        entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
-    ) -> TokenStream {
-        let fields = fields.filter(|field| field.is_resolvable());
-        let new_states = fields
-            .clone()
-            .map(|field| field.type_name())
-            .collect::<Vec<_>>();
-        let field_idents = fields.map(|field| field.module_name());
-
-        quote! {
-            #[allow(clippy::type_complexity)]
-            pub fn transition<#(#new_states,)*>(f: impl FnOnce(EmptyTransitionBuilder) -> TransitionBuilder<#(#new_states,)*>) -> States<#(#new_states,)*>
-            where
-                #(
-                    #new_states: ::proto_hal::stasis::Emplace<UnsafeWriter> +
-                    ::proto_hal::stasis::Position<#field_idents::Field> +
-                    ::proto_hal::stasis::Conjure,
-                )*
-                #(
-                    #entitlement_bounds,
-                )*
-            {
-                unsafe { modify_untracked(|_, w| { f(EmptyTransitionBuilder::new()).finish(w); w }) };
-
-                unsafe { States::conjure() }
-            }
-        }
-    }
 }
 
 impl ToTokens for Register {
@@ -1063,28 +1124,18 @@ impl ToTokens for Register {
 
         body.extend(Self::generate_fields(self.fields.values()));
         body.extend(Self::generate_layout_consts(self.offset));
-        body.extend(Self::generate_refined_writers(self.fields.values()));
         body.extend(Self::generate_unsafe_interface(self.fields.values()));
+        body.extend(Self::generate_refined_writers(self.fields.values()));
         body.extend(Self::maybe_generate_reader(self.fields.values()));
-        body.extend(Self::maybe_generate_writer(self.fields.values()));
+
+        let entitlement_bounds = Self::create_entitlement_bounds(self.fields.values());
+
+        body.extend(Self::maybe_generate_writer(
+            self.fields.values(),
+            entitlement_bounds.iter(),
+        ));
         body.extend(Self::generate_reset(self.fields.values()));
-        if self.is_resolvable() {
-            body.extend(Self::generate_states_struct(self.fields.values()));
-            body.extend(Self::generate_field_transition_builders(
-                self.fields.values(),
-            ));
-
-            let entitlement_bounds = Self::create_entitlement_bounds(self.fields.values());
-
-            body.extend(Self::generate_transition_builder(
-                self.fields.values(),
-                entitlement_bounds.iter(),
-            ));
-            body.extend(Self::generate_transition_gate(
-                self.fields.values(),
-                entitlement_bounds.iter(),
-            ));
-        }
+        body.extend(Self::generate_states_struct(self.fields.values()));
 
         let docs = &self.docs;
         tokens.extend(quote! {

@@ -112,18 +112,25 @@ impl Field {
         )
     }
 
-    pub fn writer_ident(&self) -> Ident {
-        format_ident!("{}Writer", self.type_name())
-    }
-
     pub fn is_resolvable(&self) -> bool {
         self.resolvable().is_some()
     }
 
     pub fn resolvable(&self) -> Option<&AccessProperties> {
         // TODO: external resolving effects
+
         match &self.access {
-            Access::ReadWrite(ReadWrite::Symmetrical(access)) => Some(access),
+            Access::ReadWrite(ReadWrite::Symmetrical(access)) => {
+                if let Numericity::Enumerated { variants } = &access.numericity {
+                    if variants.values().find(|variant| variant.inert).is_some() {
+                        None
+                    } else {
+                        Some(access)
+                    }
+                } else {
+                    Some(access)
+                }
+            }
             _ => None,
         }
     }
@@ -253,6 +260,16 @@ impl Field {
             }
         }
 
+        let reserved = ["reset", "_new_state", "_old_state"];
+
+        if reserved.contains(&self.module_name().to_string().as_str()) {
+            diagnostics.insert(
+                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
+                    .notes([format!("reserved field keywords are: {reserved:?}")])
+                    .with_context(new_context.clone()),
+            );
+        }
+
         diagnostics
     }
 }
@@ -269,7 +286,6 @@ impl Field {
         // of a field (since the definition of resolvability is that the state
         // it holds is statically known)
 
-        // all fields have a dynamic state
         let mut out = quote! {};
 
         if let Some(access) = self.resolvable() {
@@ -304,6 +320,7 @@ impl Field {
             }
             impl ::proto_hal::stasis::Position<Field> for Dynamic {}
             impl ::proto_hal::stasis::Outgoing<Field> for Dynamic {}
+            impl ::proto_hal::stasis::Position<Field> for &mut Dynamic {}
         }
     }
 
@@ -339,11 +356,12 @@ impl Field {
                 }
 
                 impl<const N: u32> ::proto_hal::stasis::Emplace<super::UnsafeWriter> for Value<N> {
-                    fn set(w: &mut super::UnsafeWriter) {
+                    fn set(&self, w: &mut super::UnsafeWriter) {
                         w.#ident(N);
                     }
                 }
 
+                impl<const N: u32> ::proto_hal::stasis::Corporeal for Value<N> {}
                 impl<const N: u32> ::proto_hal::stasis::Position<Field> for Value<N> {}
                 impl<const N: u32> ::proto_hal::stasis::Outgoing<Field> for Value<N> {}
                 impl<const N: u32> ::proto_hal::stasis::Incoming<Field> for Value<N> {
@@ -373,32 +391,23 @@ impl Field {
         }
     }
 
-    fn generate_variant_enum(access: &Access) -> Option<TokenStream> {
+    fn generate_repr(field_ident: &Ident, access: &Access) -> Option<TokenStream> {
         let variant_enum = |ident, variants: &HashMap<Ident, Variant>| {
             let variant_idents = variants
                 .values()
-                .map(|variant| {
-                    syn::Ident::new(
-                        &inflector::cases::pascalcase::to_pascal_case(
-                            variant.ident.to_string().as_str(),
-                        ),
-                        Span::call_site(),
-                    )
-                })
+                .map(|variant| variant.type_name())
                 .collect::<Vec<_>>();
             let variant_bits = variants
                 .values()
                 .map(|variant| variant.bits)
                 .collect::<Vec<_>>();
 
-            let is_variant_idents = variants.values().map(|variant| {
-                format_ident!(
-                    "is_{}",
-                    inflector::cases::snakecase::to_snake_case(variant.ident.to_string().as_str())
-                )
-            });
+            let is_variant_idents = variants
+                .values()
+                .map(|variant| format_ident!("is_{}", variant.module_name()));
 
-            quote! {
+            let mut out = quote! {
+                #[derive(Clone, Copy)]
                 #[repr(u32)]
                 pub enum #ident {
                     #(
@@ -426,10 +435,25 @@ impl Field {
                         }
                     )*
                 }
+
+                impl ::proto_hal::stasis::Position<Field> for #ident {}
+                impl ::proto_hal::stasis::Corporeal for #ident {}
+            };
+
+            if access.is_write() {
+                out.extend(quote! {
+                    impl ::proto_hal::stasis::Emplace<super::UnsafeWriter> for #ident {
+                        fn set(&self, w: &mut super::UnsafeWriter) {
+                            w.#field_ident(*self as u32);
+                        }
+                    }
+                });
             }
+
+            out
         };
 
-        match access {
+        let mut out = match access {
             Access::Read(read) => {
                 if let Numericity::Enumerated { variants } = &read.numericity {
                     let variant_enum =
@@ -499,7 +523,44 @@ impl Field {
                     })
                 }
             },
+        };
+
+        if let Access::Write(write)
+        | Access::ReadWrite(
+            ReadWrite::Symmetrical(write) | ReadWrite::Asymmetrical { write, .. },
+        ) = access
+        {
+            if let Numericity::Numeric = &write.numericity {
+                out.get_or_insert_default().extend(quote! {
+                    pub struct Numeric(u32);
+
+                    impl ::core::ops::Deref for Numeric {
+                        type Target = u32;
+
+                        fn deref(&self) -> &Self::Target {
+                            &self.0
+                        }
+                    }
+
+                    impl ::core::convert::From<u32> for Numeric {
+                        fn from(value: u32) -> Self {
+                            Self(value)
+                        }
+                    }
+
+                    impl ::proto_hal::stasis::Emplace<super::UnsafeWriter> for Numeric {
+                        fn set(&self, w: &mut super::UnsafeWriter) {
+                            w.#field_ident(**self);
+                        }
+                    }
+
+                    impl ::proto_hal::stasis::Position<Field> for Numeric {}
+                    impl ::proto_hal::stasis::Corporeal for Numeric {}
+                });
+            }
         }
+
+        out
     }
 
     fn generate_trait_impls(&self) -> Option<TokenStream> {
@@ -518,11 +579,12 @@ impl Field {
                         }
 
                         impl ::proto_hal::stasis::Emplace<super::UnsafeWriter> for #variants {
-                            fn set(w: &mut super::UnsafeWriter) {
-                                w.#ident().variant(<Self as ::proto_hal::stasis::Incoming<Field>>::RAW);
+                            fn set(&self, w: &mut super::UnsafeWriter) {
+                                w.#ident(<Self as ::proto_hal::stasis::Incoming<Field>>::RAW as u32);
                             }
                         }
 
+                        impl ::proto_hal::stasis::Corporeal for #variants {}
                         impl ::proto_hal::stasis::Position<Field> for #variants {}
                         impl ::proto_hal::stasis::Outgoing<Field> for #variants {}
                         impl ::proto_hal::stasis::Incoming<Field> for #variants {
@@ -572,7 +634,7 @@ impl ToTokens for Field {
         body.extend(Self::generate_dynamic());
         body.extend(self.generate_value());
         body.extend(Self::generate_reset(&self.reset));
-        body.extend(Self::generate_variant_enum(&self.access));
+        body.extend(Self::generate_repr(&self.ident, &self.access));
         body.extend(Self::generate_trait_impls(self));
         body.extend(Self::generate_marker_ty(&self.entitlements));
 

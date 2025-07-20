@@ -13,6 +13,7 @@ use super::entitlement::Entitlement;
 pub struct Variant {
     pub ident: Ident,
     pub bits: u32,
+    pub inert: bool,
     pub entitlements: Entitlements,
     pub docs: Vec<String>,
 }
@@ -22,8 +23,16 @@ impl Variant {
         Self {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             bits,
+            inert: false,
             entitlements: Entitlements::new(),
             docs: Vec::new(),
+        }
+    }
+
+    pub fn inert(self) -> Self {
+        Self {
+            inert: true,
+            ..self
         }
     }
 

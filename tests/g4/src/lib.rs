@@ -32,11 +32,11 @@ mod tests {
             let p = unsafe { crate::peripherals() };
 
             let rcc::ahb1enr::States { cordicen, .. } =
-                rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
+                rcc::ahb1enr::modify(|_, w| w.cordicen(p.rcc.ahb1enr.cordicen).enabled());
             let cordic = p.cordic.unmask(cordicen);
 
-            cordic::csr::transition(|reg| {
-                reg.func(cordic.csr.func)
+            cordic::csr::modify(|_, w| {
+                w.func(cordic.csr.func)
                     .sqrt()
                     .scale(cordic.csr.scale)
                     .preserve()
@@ -64,10 +64,10 @@ mod tests {
             let p = unsafe { crate::peripherals() };
 
             let rcc::ahb1enr::States { cordicen, .. } =
-                rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
+                rcc::ahb1enr::modify(|_, w| w.cordicen(p.rcc.ahb1enr.cordicen).enabled());
             let mut cordic = p.cordic.unmask(cordicen);
 
-            cordic::wdata::write_from_zero(|w| {
+            cordic::wdata::write(|w| {
                 w.arg(&mut cordic.wdata.arg, &cordic.csr.argsize, 0xdeadbeefu32)
             });
 
@@ -83,11 +83,11 @@ mod tests {
             let p = unsafe { crate::peripherals() };
 
             let rcc::ahb1enr::States { cordicen, .. } =
-                rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
+                rcc::ahb1enr::modify(|_, w| w.cordicen(p.rcc.ahb1enr.cordicen).enabled());
             let mut cordic = p.cordic.unmask(cordicen);
 
-            let cordic::csr::States { ressize, nres, .. } = cordic::csr::transition(|reg| {
-                reg.ressize(cordic.csr.ressize)
+            let cordic::csr::States { ressize, nres, .. } = cordic::csr::modify(|_, w| {
+                w.ressize(cordic.csr.ressize)
                     .q15()
                     .nres(cordic.csr.nres)
                     .two()
@@ -100,38 +100,6 @@ mod tests {
             assert_eq!(
                 cordic::rdata::read().res1(&mut cordic.rdata.res1, &ressize, &nres),
                 0xdead
-            );
-        }
-
-        #[test]
-        fn dynamic() {
-            let _lock = LOCK.lock().unwrap();
-
-            unsafe { MOCK_CORDIC[0] = 0 };
-
-            let p = unsafe { crate::peripherals() };
-
-            let rcc::ahb1enr::States { cordicen, .. } =
-                rcc::ahb1enr::transition(|reg| reg.cordicen(p.rcc.ahb1enr.cordicen).enabled());
-            let cordic = p.cordic.unmask(cordicen);
-
-            let mut func = cordic.csr.func.into_dynamic();
-
-            cordic::csr::modify(|_, w| w.func(&mut func).sqrt());
-
-            assert_eq!(
-                unsafe { MOCK_CORDIC[0] },
-                0b1001,
-                "dynamic state write failed"
-            );
-
-            let cordic::csr::States { func: _cos, .. } = cordic::csr::transition(|reg| {
-                reg.func(func).cos().scale(cordic.csr.scale).preserve()
-            });
-
-            assert!(
-                unsafe { cordic::csr::read_untracked().func().is_cos() },
-                "resolution of dynamic state failed to apply"
             );
         }
     }
@@ -154,13 +122,32 @@ mod tests {
             let p = unsafe { crate::peripherals() };
 
             let rcc::ahb1enr::States { crcen, .. } =
-                rcc::ahb1enr::transition(|reg| reg.crcen(p.rcc.ahb1enr.crcen).enabled());
+                rcc::ahb1enr::modify(|_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
             let crc = p.crc.unmask(crcen);
 
             let crc::idr::States { idr } =
-                crc::idr::transition(|reg| reg.idr(crc.idr.idr).value::<0xdeadbeef>());
+                crc::idr::write(|w| w.idr(crc.idr.idr).value::<0xdeadbeef>());
 
             assert_eq!(idr.value(), unsafe { MOCK_CRC[1] });
+        }
+
+        #[test]
+        fn inert() {
+            let _lock = LOCK.lock().unwrap();
+
+            let p = unsafe { crate::peripherals() };
+
+            let rcc::ahb1enr::States { crcen, .. } =
+                rcc::ahb1enr::modify(|_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
+            let crc = p.crc.unmask(crcen);
+
+            // "rst" need not be specified because it has an inert variant
+            crc::cr::write(|w| {
+                w.polysize(crc.cr.polysize)
+                    .preserve()
+                    .rev_in(crc.cr.rev_in)
+                    .preserve()
+            });
         }
     }
 }

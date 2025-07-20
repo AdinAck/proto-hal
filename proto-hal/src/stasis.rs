@@ -108,12 +108,15 @@ pub trait Conjure {
 }
 
 pub trait Emplace<Writer> {
-    fn set(w: &mut Writer);
+    fn set(&self, w: &mut Writer);
 }
+
+// Effectively "!Unresolved".
+pub trait Corporeal {}
 
 pub trait Position<T> {}
 pub trait Outgoing<T>: Position<T> {}
-pub trait Incoming<T>: Position<T> {
+pub trait Incoming<T>: Position<T> + Corporeal + Conjure {
     type Raw;
     const RAW: Self::Raw;
 }
@@ -125,9 +128,24 @@ impl Conjure for Unresolved {
 }
 
 impl<Writer> Emplace<Writer> for Unresolved {
-    fn set(#[expect(unused)] w: &mut Writer) {
+    fn set(&self, #[expect(unused)] w: &mut Writer) {
         // do nothing
     }
 }
 
 impl<T> Position<T> for Unresolved {}
+
+impl Conjure for Unavailable {
+    unsafe fn conjure() -> Self {
+        Self
+    }
+}
+
+impl<Writer> Emplace<Writer> for Unavailable {
+    fn set(&self, #[expect(unused)] w: &mut Writer) {
+        // do nothing
+    }
+}
+
+impl Corporeal for Unavailable {}
+impl<T> Position<T> for Unavailable {}
