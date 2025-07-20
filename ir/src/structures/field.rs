@@ -122,7 +122,7 @@ impl Field {
         match &self.access {
             Access::ReadWrite(ReadWrite::Symmetrical(access)) => {
                 if let Numericity::Enumerated { variants } = &access.numericity {
-                    if variants.values().find(|variant| variant.inert).is_some() {
+                    if variants.values().any(|variant| variant.inert) {
                         None
                     } else {
                         Some(access)
