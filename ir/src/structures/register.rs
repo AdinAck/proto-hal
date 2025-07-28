@@ -604,33 +604,6 @@ impl Register {
             Access::Read(read) | Access::ReadWrite(ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. }) => {
                 let ident = field.module_name();
 
-                let (entitlement_generics, entitlement_args, entitlement_where) = if field.entitlements.is_empty() {
-                    (None, None, None)
-                } else {
-                    let entitlement_tys = field.entitlements.iter().map(|entitlement| entitlement.variant()).collect::<Vec<_>>();
-                    let entitlement_idents = field.entitlements.iter().map(|entitlement|
-                        Ident::new(
-                            inflector::cases::snakecase::to_snake_case(
-                                entitlement.variant().to_string().as_str()).as_str(),
-                            Span::call_site()
-                        ));
-
-                    (
-                        Some(quote! {
-                            <#(#entitlement_tys),*>
-                        }),
-                        Some(quote! {
-                            , #(#[expect(unused)] #entitlement_idents: &#entitlement_tys),*
-                        }),
-                        Some(quote! {
-                            where
-                                #(
-                                    #ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
-                                )*
-                        })
-                    )
-                };
-
                 Some(match &read.numericity {
                     Numericity::Enumerated { variants: _ } => {
                         quote! {
@@ -746,42 +719,6 @@ impl Register {
                 }
             });
 
-            let (entitlement_generics, entitlement_args, entitlement_where) = if field
-                .entitlements
-                .is_empty()
-            {
-                (None, None, None)
-            } else {
-                let entitlement_tys = field
-                    .entitlements
-                    .iter()
-                    .map(|entitlement| entitlement.variant())
-                    .collect::<Vec<_>>();
-                let entitlement_idents = field.entitlements.iter().map(|entitlement| {
-                    Ident::new(
-                        inflector::cases::snakecase::to_snake_case(
-                            entitlement.variant().to_string().as_str(),
-                        )
-                        .as_str(),
-                        Span::call_site(),
-                    )
-                });
-
-                (
-                    Some(quote! {
-                        #(#entitlement_tys),*
-                    }),
-                    Some(quote! {
-                        , #(#[expect(unused)] #entitlement_idents: &#entitlement_tys),*
-                    }),
-                    Some(quote! {
-                        #(
-                            #field_ident::Field: ::proto_hal::stasis::Entitled<#entitlement_tys>,
-                        )*
-                    }),
-                )
-            };
-
             accessors.extend(match (
                 field.is_resolvable(),
                 &field
@@ -792,10 +729,9 @@ impl Register {
             ) {
                 (true, _) => quote! {
                     #[allow(clippy::type_complexity)]
-                    pub fn #field_ident<_OldState, #entitlement_generics>(self #entitlement_args, state: _OldState) -> #refined_writer_ident<#(#prev_field_tys,)* _OldState, #(#next_field_tys,)*>
+                    pub fn #field_ident<_OldState>(self, state: _OldState) -> #refined_writer_ident<#(#prev_field_tys,)* _OldState, #(#next_field_tys,)*>
                     where
                         _OldState: ::proto_hal::stasis::Position<#field_ident::Field>,
-                        #entitlement_where
                     {
                         #refined_writer_ident {
                             #field_ident: state,
