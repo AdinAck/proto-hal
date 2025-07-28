@@ -895,6 +895,10 @@ impl Register {
 
         if fields.iter().any(|field| field.access.is_read()) {
             out.extend(quote! {
+                /// Perform a read-modify-write transaction on this register.
+                ///
+                /// This function requires a critical section to ensure the read-modify-write
+                /// sequence is uncontested by other execution contexts.
                 #[allow(clippy::type_complexity)]
                 pub fn modify<#(#field_tys,)*>(cs: ::proto_hal::critical_section::CriticalSection<'_>, gate: impl FnOnce(Reader, EmptyWriter) -> Writer<#(#field_tys,)*>) #states_return
                 where
