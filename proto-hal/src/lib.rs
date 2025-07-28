@@ -10,6 +10,8 @@ pub mod ir_utils;
 pub mod prelude;
 pub mod stasis;
 
+pub use critical_section;
+
 /// Types that encapsulate a resource that can be configured to be
 /// in a "reset" state implement this trait.
 pub trait IntoReset {

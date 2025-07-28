@@ -12,6 +12,7 @@ defmt = ["dep:defmt"]
 
 [dependencies]
 arbitrary-int = "1.2.7"
+critical-section = "1.2.0"
 defmt = { version = "0.3.10", optional = true }
 
 [dev-dependencies]

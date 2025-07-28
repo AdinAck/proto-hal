@@ -571,7 +571,7 @@ impl Register {
                 ///
                 /// Invoking this function will render statically tracked operations unsound if the operation's
                 /// invariances are violated by the effects of the invocation.
-                pub unsafe fn modify_untracked(f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) -> UnsafeReader {
+                pub unsafe fn modify_untracked(#[expect(unused)] cs: ::proto_hal::critical_section::CriticalSection<'_>, f: impl FnOnce(UnsafeReader, &mut UnsafeWriter) -> &mut UnsafeWriter) -> UnsafeReader {
                     let reader = unsafe { read_untracked() };
                     let mut writer = UnsafeWriter { value: reader.value };
 
@@ -896,7 +896,7 @@ impl Register {
         if fields.iter().any(|field| field.access.is_read()) {
             out.extend(quote! {
                 #[allow(clippy::type_complexity)]
-                pub fn modify<#(#field_tys,)*>(gate: impl FnOnce(Reader, EmptyWriter) -> Writer<#(#field_tys,)*>) #states_return
+                pub fn modify<#(#field_tys,)*>(cs: ::proto_hal::critical_section::CriticalSection<'_>, gate: impl FnOnce(Reader, EmptyWriter) -> Writer<#(#field_tys,)*>) #states_return
                 where
                     #(
                         #field_tys: ::proto_hal::stasis::Emplace<UnsafeWriter> +
@@ -909,7 +909,7 @@ impl Register {
                         #entitlement_bounds,
                     )*
                 {
-                    unsafe { modify_untracked(|r, w| gate(Reader { r }, Writer::empty()).finish(w)) };
+                    unsafe { modify_untracked(cs, |r, w| gate(Reader { r }, Writer::empty()).finish(w)) };
 
                     #states_conjure
                 }
