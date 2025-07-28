@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use colored::Colorize;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
-use syn::Ident;
+use syn::{Ident, Path};
 
 use crate::{
     access::{Access, AccessProperties, ReadWrite},
@@ -305,19 +305,30 @@ impl Field {
         }
     }
 
-    fn generate_dynamic() -> TokenStream {
+    fn generate_dynamic(
+        entitlement_idents: &Vec<Ident>,
+        entitlement_paths: &Vec<Path>,
+    ) -> TokenStream {
         quote! {
             pub struct Dynamic {
+                #(
+                    #[expect(unused)] #entitlement_idents: ::proto_hal::stasis::Entitlement<#entitlement_paths>,
+                )*
+
                 _sealed: (),
             }
 
             impl ::proto_hal::stasis::Conjure for Dynamic {
                 unsafe fn conjure() -> Self {
                     Self {
+                        #(
+                            #entitlement_idents: unsafe { <::proto_hal::stasis::Entitlement<#entitlement_paths> as ::proto_hal::stasis::Conjure>::conjure() },
+                        )*
                         _sealed: (),
                     }
                 }
             }
+
             impl ::proto_hal::stasis::Position<Field> for Dynamic {}
             impl ::proto_hal::stasis::Outgoing<Field> for Dynamic {}
             impl ::proto_hal::stasis::Position<Field> for &mut Dynamic {}
@@ -374,8 +385,14 @@ impl Field {
         }
     }
 
-    fn generate_reset(reset: &Option<Reset>) -> TokenStream {
-        if let Some(reset) = reset {
+    fn generate_reset(&self) -> TokenStream {
+        if !self.entitlements.is_empty() {
+            return quote! {
+                pub type Reset = Unavailable;
+            };
+        }
+
+        if let Some(reset) = &self.reset {
             let reset = match reset {
                 Reset::Variant(ident) => quote! { #ident },
                 Reset::Value(value) => quote! { Value<#value> },
@@ -629,6 +646,34 @@ impl Field {
 
         out
     }
+
+    fn generate_unavailable(
+        entitlement_idents: &Vec<Ident>,
+        entitlement_paths: &Vec<Path>,
+    ) -> TokenStream {
+        quote! {
+            pub struct Unavailable {
+                _sealed: (),
+            }
+
+            impl ::proto_hal::stasis::Conjure for Unavailable {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
+            }
+
+            impl Unavailable {
+                pub fn unmask(self, #(#entitlement_idents: impl Into<::proto_hal::stasis::Entitlement<#entitlement_paths>>),*) -> Dynamic {
+                    Dynamic {
+                        #(#entitlement_idents: #entitlement_idents.into(),)*
+                        _sealed: (),
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl ToTokens for Field {
@@ -642,12 +687,36 @@ impl ToTokens for Field {
             self.offset as u32,
             self.width as u32,
         ));
-        body.extend(Self::generate_dynamic());
         body.extend(self.generate_value());
-        body.extend(Self::generate_reset(&self.reset));
+        body.extend(self.generate_reset());
         body.extend(Self::generate_repr(&self.ident, &self.access));
         body.extend(Self::generate_trait_impls(self));
         body.extend(Self::generate_marker_ty(&self.entitlements));
+
+        let mut entitlements = self.entitlements.iter().collect::<Vec<_>>();
+        entitlements.sort_by(|lhs, rhs| lhs.field().cmp(rhs.field()));
+
+        let entitlement_idents = entitlements
+            .iter()
+            .enumerate()
+            .map(|(i, ..)| format_ident!("entitlement_{i}"))
+            .collect::<Vec<_>>();
+        let entitlement_paths = entitlements
+            .iter()
+            .map(|entitlement| entitlement.render())
+            .collect::<Vec<_>>();
+
+        body.extend(Self::generate_dynamic(
+            &entitlement_idents,
+            &entitlement_paths,
+        ));
+
+        if !self.entitlements.is_empty() {
+            body.extend(Self::generate_unavailable(
+                &entitlement_idents,
+                &entitlement_paths,
+            ));
+        }
 
         let docs = &self.docs;
 

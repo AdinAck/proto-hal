@@ -607,18 +607,14 @@ impl Register {
                 Some(match &read.numericity {
                     Numericity::Enumerated { variants: _ } => {
                         quote! {
-                            pub fn #ident #entitlement_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> #ident::ReadVariant
-                            #entitlement_where
-                            {
+                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic) -> #ident::ReadVariant {
                                 self.r.#ident()
                             }
                         }
                     },
                     Numericity::Numeric => {
                         quote! {
-                            pub fn #ident #entitlement_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlement_args) -> u32
-                            #entitlement_where
-                            {
+                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic) -> u32 {
                                 self.r.#ident()
                             }
                         }
@@ -742,10 +738,7 @@ impl Register {
                 (false, Numericity::Numeric) => {
                     quote! {
                         #[allow(clippy::type_complexity)]
-                        pub fn #field_ident <#entitlement_generics> (self, #[expect(unused)] instance: &mut #field_ident::Dynamic #entitlement_args, value: impl Into<#field_ident::Numeric>) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*>
-                        where
-                            #entitlement_where
-                        {
+                        pub fn #field_ident(self, #[expect(unused)] instance: &mut #field_ident::Dynamic, value: impl Into<#field_ident::Numeric>) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*> {
                             Writer {
                                 #field_ident: value.into(),
                                 #(#struct_entries,)*
@@ -756,9 +749,7 @@ impl Register {
                 (false, Numericity::Enumerated { .. }) => {
                     quote! {
                         #[allow(clippy::type_complexity)]
-                        pub fn #field_ident <#entitlement_generics> (self, instance: &mut #field_ident::Dynamic #entitlement_args) -> #refined_writer_ident<#(#prev_field_tys,)* &mut #field_ident::Dynamic, #(#next_field_tys,)*>
-                        #entitlement_where
-                        {
+                        pub fn #field_ident(self, instance: &mut #field_ident::Dynamic) -> #refined_writer_ident<#(#prev_field_tys,)* &mut #field_ident::Dynamic, #(#next_field_tys,)*> {
                             #refined_writer_ident {
                                 #field_ident: instance,
                                 #(#struct_entries,)*

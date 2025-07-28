@@ -15,6 +15,8 @@ mod tests {
     }
 
     mod cordic {
+        use proto_hal::stasis::Freeze;
+
         use crate::{cordic, rcc};
 
         use super::LOCK;
@@ -65,11 +67,11 @@ mod tests {
 
             let rcc::ahb1enr::States { cordicen, .. } =
                 rcc::ahb1enr::modify(|_, w| w.cordicen(p.rcc.ahb1enr.cordicen).enabled());
-            let mut cordic = p.cordic.unmask(cordicen);
+            let cordic = p.cordic.unmask(cordicen);
 
-            cordic::wdata::write(|w| {
-                w.arg(&mut cordic.wdata.arg, &cordic.csr.argsize, 0xdeadbeefu32)
-            });
+            let mut arg = cordic.wdata.arg.unmask(cordic.csr.argsize);
+
+            cordic::wdata::write(|w| w.arg(&mut arg, 0xdeadbeefu32));
 
             assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
         }
@@ -84,23 +86,22 @@ mod tests {
 
             let rcc::ahb1enr::States { cordicen, .. } =
                 rcc::ahb1enr::modify(|_, w| w.cordicen(p.rcc.ahb1enr.cordicen).enabled());
-            let mut cordic = p.cordic.unmask(cordicen);
+            let cordic = p.cordic.unmask(cordicen);
 
-            let cordic::csr::States { ressize, nres, .. } = cordic::csr::modify(|_, w| {
-                w.ressize(cordic.csr.ressize)
-                    .q15()
-                    .nres(cordic.csr.nres)
-                    .two()
-            });
+            let cordic::csr::States { ressize, .. } =
+                cordic::csr::modify(|_, w| w.ressize(cordic.csr.ressize).q15());
 
-            assert_eq!(
-                cordic::rdata::read().res0(&mut cordic.rdata.res0, &ressize),
-                0xbeef
+            // multiple fields are entitled to these states, so the state must be explicitly frozen.
+            let (_, [res0_nres_ent, res1_nres_ent]) = cordic.csr.nres.freeze();
+            let (_, [res0_ressize_ent, res1_ressize_ent]) = ressize.freeze();
+
+            let (mut res0, mut res1) = (
+                cordic.rdata.res0.unmask(res0_nres_ent, res0_ressize_ent),
+                cordic.rdata.res1.unmask(res1_nres_ent, res1_ressize_ent),
             );
-            assert_eq!(
-                cordic::rdata::read().res1(&mut cordic.rdata.res1, &ressize, &nres),
-                0xdead
-            );
+
+            assert_eq!(cordic::rdata::read().res0(&mut res0), 0xbeef);
+            assert_eq!(cordic::rdata::read().res1(&mut res1), 0xdead);
         }
     }
 

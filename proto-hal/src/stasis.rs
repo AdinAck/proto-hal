@@ -31,6 +31,15 @@ where
     }
 }
 
+impl<P> Conjure for Entitlement<P>
+where
+    P: Freeze,
+{
+    unsafe fn conjure() -> Self {
+        Self { _p: PhantomData }
+    }
+}
+
 /// A struct to hold stateful types where
 /// the state is frozen.
 pub struct Frozen<Resource, const ENTITLEMENTS: usize>
