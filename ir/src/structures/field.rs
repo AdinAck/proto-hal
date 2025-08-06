@@ -160,6 +160,7 @@ impl Field {
                     let mut sorted_variants = variants.values().collect::<Vec<_>>();
                     sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
 
+                    // validate variant adjacency
                     for window in sorted_variants.windows(2) {
                         let lhs = window[0];
                         let rhs = window[1];
@@ -173,6 +174,36 @@ impl Field {
                                 ))
                                 .with_context(new_context.clone()),
                             );
+                        }
+                    }
+
+                    for variant in sorted_variants {
+                        for entitlement in &variant.entitlements {
+                            if new_context
+                                .path()
+                                .iter()
+                                .zip(
+                                    entitlement
+                                        .render()
+                                        .segments
+                                        .iter()
+                                        .skip(1) // skip "crate"
+                                        .map(|segment| &segment.ident),
+                                )
+                                .take(2) // only check peripheral and register
+                                .any(|(lhs, rhs)| lhs != &rhs.to_string())
+                            {
+                                diagnostics.insert(
+                                    Diagnostic::error(
+                                        "entangled variants must reside within the same register"
+                                            .to_string(),
+                                    )
+                                    .notes([format!("erroneous entitlement: \"{entitlement}\"")])
+                                    .with_context(
+                                        new_context.clone().and(variant.ident.to_string()),
+                                    ),
+                                );
+                            }
                         }
                     }
                 }

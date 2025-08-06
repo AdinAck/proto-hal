@@ -12,8 +12,10 @@ pub enum Kind {
     Error,
 }
 
+#[ters]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Context {
+    #[get]
     path: Vec<String>,
 }
 

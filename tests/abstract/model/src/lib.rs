@@ -1,6 +1,7 @@
 use proto_hal_build::ir::{
-    access::Access,
+    access::{Access, AccessProperties},
     structures::{
+        entitlement::Entitlement,
         field::{Field, Numericity},
         hal::Hal,
         peripheral::Peripheral,
@@ -15,19 +16,45 @@ pub fn generate() -> Result<Hal, Diagnostics> {
         Peripheral::new(
             "foo",
             0,
-            [Register::new(
-                "foo0",
-                0,
-                [Field::new(
-                    "a",
+            [
+                Register::new(
+                    "foo0",
                     0,
+                    [Field::new(
+                        "a",
+                        0,
+                        4,
+                        Access::read_write(Numericity::enumerated(
+                            (0..6).map(|i| Variant::new(format!("V{i}"), i)),
+                        )),
+                    )
+                    .reset("V3")],
+                ),
+                Register::new(
+                    "foo1",
                     4,
-                    Access::read_write(Numericity::enumerated(
-                        (0..6).map(|i| Variant::new(format!("V{i}"), i)),
-                    )),
-                )
-                .reset("V3")],
-            )],
+                    [
+                        Field::new(
+                            "write_requires_v5",
+                            0,
+                            1,
+                            Access::Write(
+                                AccessProperties::enumerated([Variant::new("Noop", 0)])
+                                    .entitlements([Entitlement::to("foo::foo0::a::V5")]),
+                            ),
+                        ),
+                        Field::new(
+                            "read_requires_v5",
+                            1,
+                            1,
+                            Access::Read(
+                                AccessProperties::numeric()
+                                    .entitlements([Entitlement::to("foo::foo0::a::V5")]),
+                            ),
+                        ),
+                    ],
+                ),
+            ],
         ),
         Peripheral::new(
             "bar",

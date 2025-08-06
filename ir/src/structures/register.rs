@@ -604,17 +604,40 @@ impl Register {
             Access::Read(read) | Access::ReadWrite(ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. }) => {
                 let ident = field.module_name();
 
+                let entitlements =
+                    if !read.entitlements.is_empty() {
+                        let entitlement_args =
+                            read
+                                .entitlements
+                                .iter()
+                                .enumerate()
+                                .map(|(i, entitlement)| {
+                                    let ident = format_ident!("entitlement_{i}");
+                                    let ty = entitlement.render();
+
+                                    quote! {
+                                        #[expect(unused)] #ident: &#ty
+                                    }
+                                });
+
+                        Some(quote! {
+                            , #(#entitlement_args,)*
+                        })
+                    } else {
+                        None
+                    };
+
                 Some(match &read.numericity {
                     Numericity::Enumerated { variants: _ } => {
                         quote! {
-                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic) -> #ident::ReadVariant {
+                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlements) -> #ident::ReadVariant {
                                 self.r.#ident()
                             }
                         }
                     },
                     Numericity::Numeric => {
                         quote! {
-                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic) -> u32 {
+                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlements) -> u32 {
                                 self.r.#ident()
                             }
                         }
@@ -715,17 +738,41 @@ impl Register {
                 }
             });
 
+            let write = field
+                .access
+                .get_write()
+                .expect("fields at this point must be writable");
+
+            let entitlements = if !write.entitlements.is_empty() {
+                let entitlement_args =
+                    write
+                        .entitlements
+                        .iter()
+                        .enumerate()
+                        .map(|(i, entitlement)| {
+                            let ident = format_ident!("entitlement_{i}");
+                            let ty = entitlement.render();
+
+                            quote! {
+                                #[expect(unused)] #ident: &#ty
+                            }
+                        });
+
+                Some(quote! {
+                    , #(#entitlement_args,)*
+                })
+            } else {
+                None
+            };
+
             accessors.extend(match (
                 field.is_resolvable(),
-                &field
-                    .access
-                    .get_write()
-                    .expect("fields at this point must be writable")
+                &write
                     .numericity,
             ) {
                 (true, _) => quote! {
                     #[allow(clippy::type_complexity)]
-                    pub fn #field_ident<_OldState>(self, state: _OldState) -> #refined_writer_ident<#(#prev_field_tys,)* _OldState, #(#next_field_tys,)*>
+                    pub fn #field_ident<_OldState>(self, state: _OldState #entitlements) -> #refined_writer_ident<#(#prev_field_tys,)* _OldState, #(#next_field_tys,)*>
                     where
                         _OldState: ::proto_hal::stasis::Position<#field_ident::Field>,
                     {
@@ -738,7 +785,7 @@ impl Register {
                 (false, Numericity::Numeric) => {
                     quote! {
                         #[allow(clippy::type_complexity)]
-                        pub fn #field_ident(self, #[expect(unused)] instance: &mut #field_ident::Dynamic, value: impl Into<#field_ident::Numeric>) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*> {
+                        pub fn #field_ident(self, #[expect(unused)] instance: &mut #field_ident::Dynamic, value: impl Into<#field_ident::Numeric> #entitlements) -> Writer<#(#prev_field_tys,)* #field_ident::Numeric, #(#next_field_tys,)*> {
                             Writer {
                                 #field_ident: value.into(),
                                 #(#struct_entries,)*
@@ -748,8 +795,8 @@ impl Register {
                 },
                 (false, Numericity::Enumerated { .. }) => {
                     quote! {
-                        #[allow(clippy::type_complexity)]
-                        pub fn #field_ident(self, instance: &mut #field_ident::Dynamic) -> #refined_writer_ident<#(#prev_field_tys,)* &mut #field_ident::Dynamic, #(#next_field_tys,)*> {
+                        #[allow(clippy::type_complexity, clippy::needless_lifetimes)]
+                        pub fn #field_ident<'a>(self, instance: &'a mut #field_ident::Dynamic #entitlements) -> #refined_writer_ident<#(#prev_field_tys,)* &'a mut #field_ident::Dynamic, #(#next_field_tys,)*> {
                             #refined_writer_ident {
                                 #field_ident: instance,
                                 #(#struct_entries,)*

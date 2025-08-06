@@ -1,12 +1,35 @@
 use std::collections::HashSet;
 
-use crate::structures::{entitlement::Entitlement, field::Numericity};
+use crate::structures::{entitlement::Entitlement, field::Numericity, variant::Variant};
 
 #[derive(Debug, Clone)]
 pub struct AccessProperties {
     pub numericity: Numericity,
     pub entitlements: HashSet<Entitlement>,
     pub effects: (),
+}
+
+impl AccessProperties {
+    pub fn enumerated(variants: impl IntoIterator<Item = Variant>) -> Self {
+        Self {
+            numericity: Numericity::enumerated(variants),
+            entitlements: HashSet::new(),
+            effects: (),
+        }
+    }
+
+    pub fn numeric() -> Self {
+        Self {
+            numericity: Numericity::Numeric,
+            entitlements: HashSet::new(),
+            effects: (),
+        }
+    }
+
+    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
+        self.entitlements.extend(entitlements);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
