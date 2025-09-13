@@ -18,5 +18,4 @@ pub fn generate() -> Field {
             ]),
         ])),
     )
-    .reset("Disabled")
 }

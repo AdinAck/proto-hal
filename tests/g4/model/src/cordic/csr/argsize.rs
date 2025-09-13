@@ -16,6 +16,5 @@ pub fn generate() -> Field {
             Variant::new("Q15", 1).docs(["1 sign bit, 15 fractional bits."]),
         ])),
     )
-    .reset("Q31")
     .docs(["The value format used for arguments."])
 }

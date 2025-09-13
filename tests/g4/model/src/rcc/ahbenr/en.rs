@@ -16,5 +16,4 @@ pub fn generate(ident: impl AsRef<str>, offset: u8) -> Field {
             Variant::new("Enabled", 1),
         ])),
     )
-    .reset("Disabled")
 }

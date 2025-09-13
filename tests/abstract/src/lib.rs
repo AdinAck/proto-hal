@@ -12,7 +12,7 @@ mod tests {
             let p = unsafe { crate::peripherals() };
 
             assert_eq!(
-                TypeId::of::<crate::foo::foo0::a::Reset>(),
+                TypeId::of::<crate::foo::foo0::a::V3>(),
                 p.foo.foo0.a.type_id(),
             );
         }
@@ -80,18 +80,11 @@ mod tests {
     }
 
     mod fields {
-        use core::any::TypeId;
-
         use crate::foo::foo0::a;
 
         #[test]
         fn offset() {
             assert_eq!(a::OFFSET, 0);
-        }
-
-        #[test]
-        fn reset() {
-            assert_eq!(TypeId::of::<a::Reset>(), TypeId::of::<a::V3>());
         }
     }
 

@@ -18,5 +18,4 @@ pub fn generate() -> Field {
             Variant::new("Word", 3),
         ])),
     )
-    .reset("NoEffect")
 }

@@ -10,6 +10,12 @@ pub fn generate() -> Register {
     Register::new(
         "idr",
         4,
-        [Field::new("idr", 0, 32, Access::read_write(Numericity::Numeric)).reset(0)],
+        [Field::new(
+            "idr",
+            0,
+            32,
+            Access::read_write(Numericity::Numeric),
+        )],
     )
+    .reset(0)
 }

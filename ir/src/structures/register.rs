@@ -18,6 +18,7 @@ pub struct Register {
     pub ident: Ident,
     pub offset: u32,
     pub fields: HashMap<Ident, Field>,
+    pub reset: Option<u32>,
     pub docs: Vec<String>,
 }
 
@@ -33,8 +34,15 @@ impl Register {
             fields: HashMap::from_iter(
                 fields.into_iter().map(|field| (field.module_name(), field)),
             ),
+            reset: None,
             docs: Vec::new(),
         }
+    }
+
+    pub fn reset(mut self, reset: u32) -> Self {
+        self.reset = Some(reset);
+
+        self
     }
 
     #[expect(unused)]
@@ -125,6 +133,24 @@ impl Register {
                     "field [{}] exceeds register width.",
                     field.module_name().to_string().bold()
                 ))
+                .with_context(new_context.clone()),
+            );
+        }
+
+        if self.is_resolvable() && self.reset.is_none() {
+            diagnostics.insert(
+                Diagnostic::error(
+                    "a reset value must be specified for registers containing resolvable fields",
+                )
+                .notes([format!(
+                    "resolvable fields: {}",
+                    fields
+                        .iter()
+                        .filter(|field| field.is_resolvable())
+                        .map(|field| field.module_name().to_string().bold().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )])
                 .with_context(new_context.clone()),
             );
         }
@@ -378,6 +404,7 @@ impl Register {
 
     fn generate_unsafe_interface<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
+        reset: Option<u32>,
     ) -> TokenStream {
         fn read<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_read()) {
@@ -534,7 +561,10 @@ impl Register {
             })
         }
 
-        fn modify<'a>(mut fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
+        fn modify<'a>(
+            fields: impl Iterator<Item = &'a Field> + Clone,
+            reset: Option<u32>,
+        ) -> Option<TokenStream> {
             if !fields
                 .clone()
                 .any(|field| field.access.is_read() && field.access.is_write())
@@ -544,7 +574,7 @@ impl Register {
 
             let mut out = quote! {};
 
-            if fields.any(|field| field.reset.is_some() && field.entitlements.is_empty()) {
+            if reset.is_some() {
                 out.extend(quote! {
                     /// Write to fields of the register with a default hardware reset value, ignoring any implicative
                     /// effects.
@@ -588,7 +618,7 @@ impl Register {
 
         let read = read(fields.clone());
         let write = write(fields.clone());
-        let modify = modify(fields);
+        let modify = modify(fields, reset);
 
         quote! {
             #read
@@ -670,6 +700,7 @@ impl Register {
     fn maybe_generate_writer<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
         entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
+        reset: Option<u32>,
     ) -> Option<TokenStream> {
         let fields = fields
             .filter(|field| field.access.is_write())
@@ -837,18 +868,6 @@ impl Register {
             })
             .collect::<(Vec<_>, Vec<_>)>();
 
-        let reset_tys = fields
-            .iter()
-            .map(|field| {
-                if field.is_resolvable() {
-                    let ident = field.module_name();
-                    quote! { #ident::Reset }
-                } else {
-                    quote! { ::proto_hal::stasis::Unresolved }
-                }
-            })
-            .collect::<Vec<_>>();
-
         let mut out = quote! {
             #[allow(clippy::type_complexity)]
             #[doc(hidden)]
@@ -908,10 +927,20 @@ impl Register {
         };
 
         // reset writer
-        if fields
-            .iter()
-            .any(|field| field.reset.is_some() && field.entitlements.is_empty())
-        {
+        if reset.is_some() {
+            let reset_tys = fields
+                .iter()
+                .map(|field| {
+                    if field.is_resolvable() {
+                        let ident = field.module_name();
+                        let reset_ty = field.reset_ty(reset);
+
+                        quote! { #ident::#reset_ty }
+                    } else {
+                        quote! { ::proto_hal::stasis::Unresolved }
+                    }
+                })
+                .collect::<Vec<_>>();
             out.extend(quote! {
                 type ResetWriter = Writer<#(#reset_tys,)*>;
 
@@ -1039,13 +1068,22 @@ impl Register {
         Some(out)
     }
 
-    fn generate_reset<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
-        let field_idents = fields.map(|field| field.module_name()).collect::<Vec<_>>();
+    fn generate_reset<'a>(
+        fields: impl Iterator<Item = &'a Field> + Clone,
+        reset: Option<u32>,
+    ) -> TokenStream {
+        let field_idents = fields
+            .clone()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
+        let reset_tys = fields
+            .map(|field| field.reset_ty(reset))
+            .collect::<Vec<_>>();
 
         quote! {
             pub struct Reset {
                 #(
-                    pub #field_idents: #field_idents::Reset,
+                    pub #field_idents: #field_idents::#reset_tys,
                 )*
             }
 
@@ -1056,7 +1094,7 @@ impl Register {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
                         #(
-                            #field_idents: unsafe { <#field_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
+                            #field_idents: unsafe { <#field_idents::#reset_tys as ::proto_hal::stasis::Conjure>::conjure() },
                         )*
                     }
                 }
@@ -1171,7 +1209,10 @@ impl ToTokens for Register {
 
         body.extend(Self::generate_fields(self.fields.values()));
         body.extend(Self::generate_layout_consts(self.offset));
-        body.extend(Self::generate_unsafe_interface(self.fields.values()));
+        body.extend(Self::generate_unsafe_interface(
+            self.fields.values(),
+            self.reset,
+        ));
         body.extend(Self::generate_refined_writers(self.fields.values()));
         body.extend(Self::maybe_generate_reader(self.fields.values()));
 
@@ -1180,8 +1221,9 @@ impl ToTokens for Register {
         body.extend(Self::maybe_generate_writer(
             self.fields.values(),
             entitlement_bounds.iter(),
+            self.reset,
         ));
-        body.extend(Self::generate_reset(self.fields.values()));
+        body.extend(Self::generate_reset(self.fields.values(), self.reset));
         body.extend(Self::generate_states_struct(self.fields.values()));
 
         let docs = &self.docs;

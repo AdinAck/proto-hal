@@ -16,5 +16,4 @@ pub fn generate() -> Field {
             Variant::new("Reversed", 1),
         ])),
     )
-    .reset("NoEffect")
 }

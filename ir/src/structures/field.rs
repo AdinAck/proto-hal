@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use colored::Colorize;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
-use syn::{Ident, Path};
+use syn::{Ident, Path, Type, parse_quote};
 
 use crate::{
     access::{Access, AccessProperties, HardwareAccess, ReadWrite},
@@ -32,33 +32,11 @@ impl Numericity {
 }
 
 #[derive(Debug, Clone)]
-pub enum Reset {
-    Variant(Ident),
-    Value(u32),
-}
-
-impl From<&str> for Reset {
-    fn from(ident: &str) -> Self {
-        Self::Variant(Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(ident).as_str(),
-            Span::call_site(),
-        ))
-    }
-}
-
-impl From<u32> for Reset {
-    fn from(value: u32) -> Self {
-        Self::Value(value)
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct Field {
     pub ident: Ident,
     pub offset: u8,
     pub width: u8,
     pub access: Access,
-    pub reset: Option<Reset>,
     pub entitlements: Entitlements,
     pub hardware_access: Option<HardwareAccess>,
     pub docs: Vec<String>,
@@ -71,17 +49,10 @@ impl Field {
             offset,
             width,
             access,
-            reset: None,
             entitlements: Entitlements::new(),
             hardware_access: None,
             docs: Vec::new(),
         }
-    }
-
-    pub fn reset(mut self, reset: impl Into<Reset>) -> Self {
-        self.reset = Some(reset.into());
-
-        self
     }
 
     pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
@@ -155,6 +126,39 @@ impl Field {
                 Some(read)
             }
             _ => None,
+        }
+    }
+
+    pub(crate) fn reset_ty(&self, register_reset: Option<u32>) -> Type {
+        if !self.entitlements.is_empty() {
+            return parse_quote! { Unavailable };
+        }
+
+        let Some(read) = self.access.get_read() else {
+            return parse_quote! { Dynamic };
+        };
+
+        if !self.is_resolvable() {
+            return parse_quote! { Dynamic };
+        }
+
+        let register_reset =
+            register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
+
+        let mask = u32::MAX >> (32 - self.width);
+        let reset = (register_reset >> self.offset) & mask;
+
+        match &read.numericity {
+            Numericity::Numeric => parse_quote! { Value::<#reset> },
+            Numericity::Enumerated { variants } => {
+                let ty = variants
+                    .values()
+                    .find(|variant| variant.bits == reset)
+                    .expect("exactly one variant must correspond to the reset value")
+                    .type_name();
+
+                parse_quote! { #ty }
+            }
         }
     }
 
@@ -308,68 +312,6 @@ impl Field {
             }
         }
 
-        if let Some(access) = self.resolvable() {
-            if let Some(reset) = &self.reset {
-                // TODO: resets for resolvable fields with inequal read/write schemas
-                match reset {
-                    Reset::Variant(ident) => match &access.numericity {
-                        Numericity::Numeric => {
-                            diagnostics.insert(
-                                Diagnostic::error(
-                                    "provided reset is enumerated but field is numeric",
-                                )
-                                .with_context(new_context.clone()),
-                            );
-                        }
-                        Numericity::Enumerated { variants } => {
-                            if !variants.contains_key(ident) {
-                                diagnostics.insert(
-                                    Diagnostic::error(format!(
-                                        "provided reset \"{ident}\" does not exist"
-                                    ))
-                                    .with_context(new_context.clone()),
-                                );
-                            }
-                        }
-                    },
-                    Reset::Value(value) => match &access.numericity {
-                        Numericity::Numeric => {
-                            if *value > u32::MAX >> (32 - self.width) {
-                                diagnostics.insert(
-                                    Diagnostic::error(format!(
-                                        "provided reset value ({value}) exceeds field width"
-                                    ))
-                                    .with_context(new_context.clone()),
-                                );
-                            }
-                        }
-                        Numericity::Enumerated { variants } => {
-                            if !variants.values().any(|variant| variant.bits.eq(value)) {
-                                diagnostics.insert(
-                                    Diagnostic::error(format!(
-                                        "provided reset value ({value}) does not correspond to any variants of this field"
-                                    )).with_context(new_context.clone())
-                                );
-                            }
-                        }
-                    },
-                }
-            } else {
-                diagnostics.insert(
-                    Diagnostic::error("resolvable fields require a reset state to be specified")
-                        .with_context(new_context.clone()),
-                );
-            }
-        } else {
-            // TODO: check for resolving effects
-            if self.reset.is_some() {
-                diagnostics.insert(
-                    Diagnostic::warning("provided reset unused because the field is unresolvable")
-                        .with_context(new_context.clone()),
-                );
-            }
-        }
-
         let reserved = ["reset", "_new_state", "_old_state"];
 
         if reserved.contains(&self.module_name().to_string().as_str()) {
@@ -492,43 +434,6 @@ impl Field {
             })
         } else {
             None
-        }
-    }
-
-    fn generate_reset(&self) -> TokenStream {
-        if !self.entitlements.is_empty() {
-            return quote! {
-                pub type Reset = Unavailable;
-            };
-        }
-
-        if let Some(reset) = &self.reset {
-            let reset = match reset {
-                Reset::Variant(ident) => quote! { #ident },
-                Reset::Value(value) => {
-                    if let Some(access) = self.resolvable()
-                        && let Numericity::Enumerated { variants } = &access.numericity
-                    {
-                        let variant = variants
-                            .values()
-                            .find(|variant| variant.bits == *value)
-                            .expect("exactly one variant must correspond to the reset value");
-                        let ident = variant.type_name();
-
-                        quote! { #ident }
-                    } else {
-                        quote! { Value<#value> }
-                    }
-                }
-            };
-
-            quote! {
-                pub type Reset = #reset;
-            }
-        } else {
-            quote! {
-                pub type Reset = Dynamic;
-            }
         }
     }
 
@@ -834,7 +739,6 @@ impl ToTokens for Field {
             self.width as u32,
         ));
         body.extend(self.generate_value());
-        body.extend(self.generate_reset());
         body.extend(Self::generate_repr(&self.ident, &self.access));
         body.extend(Self::generate_trait_impls(self));
         body.extend(Self::generate_marker_ty(&self.entitlements));

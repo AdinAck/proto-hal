@@ -18,5 +18,4 @@ pub fn generate() -> Field {
                 .docs(["Two reads are needed on the [`rdata`](super::super::rdata) register."]),
         ])),
     )
-    .reset("One")
 }

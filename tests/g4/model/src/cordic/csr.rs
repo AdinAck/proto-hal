@@ -30,4 +30,5 @@ pub fn generate() -> Register {
             rrdy::generate(),
         ],
     )
+    .reset(0x50)
 }

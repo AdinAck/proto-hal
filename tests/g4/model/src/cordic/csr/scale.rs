@@ -15,5 +15,4 @@ pub fn generate() -> Field {
         3,
         Access::read_write(Numericity::enumerated(variants)),
     )
-    .reset("N0")
 }

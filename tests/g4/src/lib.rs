@@ -154,4 +154,20 @@ mod tests {
             });
         }
     }
+
+    mod rcc {
+        use core::any::{Any, TypeId};
+
+        use crate::rcc;
+
+        #[test]
+        fn reset() {
+            let p = unsafe { crate::peripherals() };
+
+            assert_eq!(
+                p.rcc.ahb1enr.flashen.type_id(),
+                TypeId::of::<rcc::ahb1enr::flashen::Enabled>()
+            );
+        }
+    }
 }

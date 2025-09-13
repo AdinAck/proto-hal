@@ -51,5 +51,4 @@ pub fn generate() -> Field {
         4,
         Access::read_write(Numericity::enumerated(variants)),
     )
-    .reset("cos")
 }

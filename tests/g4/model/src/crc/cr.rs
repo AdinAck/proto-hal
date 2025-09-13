@@ -16,4 +16,5 @@ pub fn generate() -> Register {
             rev_out::generate(),
         ],
     )
+    .reset(0)
 }

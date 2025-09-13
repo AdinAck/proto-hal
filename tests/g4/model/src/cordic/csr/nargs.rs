@@ -18,5 +18,4 @@ pub fn generate() -> Field {
                 .docs(["Two writes are needed to the [`wdata`](super::super::wdata) register."]),
         ])),
     )
-    .reset("One")
 }

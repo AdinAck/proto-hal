@@ -15,5 +15,5 @@ pub fn generate() -> Field {
             Variant::new("Disabled", 0).docs(["No DMA read requests are generated."]),
             Variant::new("Enabled", 1).docs(["Requests are generated on the DMA read channel whenever the [`rrdy`](super::rrdy) flag is set."]),
         ])),
-    ).reset("Disabled")
+    )
 }
