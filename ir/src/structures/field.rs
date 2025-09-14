@@ -1,13 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use colored::Colorize;
+use inflector::Inflector;
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, format_ident, quote};
-use syn::{Ident, Path, Type, parse_quote};
+use quote::{format_ident, quote};
+use syn::{Generics, Ident, Index, Path, Type, parse_quote};
 
 use crate::{
     access::{Access, AccessProperties, HardwareAccess, ReadWrite},
-    structures::entitlement::{Entitlement, Entitlements},
+    structures::{
+        entitlement::{Entitlement, Entitlements},
+        hal::Hal,
+    },
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -32,6 +36,12 @@ impl Numericity {
 }
 
 #[derive(Debug, Clone)]
+pub enum Dimensionality {
+    Single,
+    Array { idents: HashMap<String, u8> },
+}
+
+#[derive(Debug, Clone)]
 pub struct Field {
     pub ident: Ident,
     pub offset: u8,
@@ -39,6 +49,7 @@ pub struct Field {
     pub access: Access,
     pub entitlements: Entitlements,
     pub hardware_access: Option<HardwareAccess>,
+    pub dimensionality: Dimensionality,
     pub docs: Vec<String>,
 }
 
@@ -51,6 +62,7 @@ impl Field {
             access,
             entitlements: Entitlements::new(),
             hardware_access: None,
+            dimensionality: Dimensionality::Single,
             docs: Vec::new(),
         }
     }
@@ -63,6 +75,15 @@ impl Field {
     pub fn hardware_access(self, access: HardwareAccess) -> Self {
         Self {
             hardware_access: Some(access),
+            ..self
+        }
+    }
+
+    pub fn array(self, count: u8, idents: impl Fn(u8) -> String + 'static) -> Self {
+        Self {
+            dimensionality: Dimensionality::Array {
+                idents: (0..count).map(|i| ((idents)(i), i)).collect(),
+            },
             ..self
         }
     }
@@ -85,11 +106,37 @@ impl Field {
         )
     }
 
+    pub fn idents(&self) -> Vec<Ident> {
+        match &self.dimensionality {
+            Dimensionality::Single => vec![Ident::new(
+                self.ident.to_string().to_lowercase().as_str(),
+                Span::call_site(),
+            )],
+            Dimensionality::Array { idents } => idents
+                .keys()
+                .map(|ident| Ident::new(ident.to_lowercase().as_str(), Span::call_site()))
+                .collect(),
+        }
+    }
+
     pub fn type_name(&self) -> Ident {
         Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
+            self.ident.to_string().to_pascal_case().as_str(),
             Span::call_site(),
         )
+    }
+
+    pub fn type_names(&self) -> Vec<Ident> {
+        match &self.dimensionality {
+            Dimensionality::Single => vec![Ident::new(
+                self.ident.to_string().to_pascal_case().as_str(),
+                Span::call_site(),
+            )],
+            Dimensionality::Array { idents } => idents
+                .keys()
+                .map(|ident| Ident::new(ident.to_pascal_case().as_str(), Span::call_site()))
+                .collect(),
+        }
     }
 
     pub fn is_resolvable(&self) -> bool {
@@ -129,17 +176,27 @@ impl Field {
         }
     }
 
-    pub(crate) fn reset_ty(&self, register_reset: Option<u32>) -> Type {
+    fn distribute<T>(&self, single: T, array: impl Fn(u8) -> T) -> Vec<T> {
+        match &self.dimensionality {
+            Dimensionality::Single => vec![single],
+            Dimensionality::Array { idents } => idents.values().copied().map(array).collect(),
+        }
+    }
+
+    pub(crate) fn reset_tys(&self, register_reset: Option<u32>) -> Vec<Type> {
         if !self.entitlements.is_empty() {
-            return parse_quote! { Unavailable };
+            return self.distribute(
+                parse_quote! { Unavailable },
+                |i| parse_quote! { Unavailable::<#i> },
+            );
         }
 
         let Some(read) = self.access.get_read() else {
-            return parse_quote! { Dynamic };
+            return self.distribute(parse_quote! { Dynamic }, |i| parse_quote! { Dynamic::<#i> });
         };
 
         if !self.is_resolvable() {
-            return parse_quote! { Dynamic };
+            return self.distribute(parse_quote! { Dynamic }, |i| parse_quote! { Dynamic::<#i> });
         }
 
         let register_reset =
@@ -149,7 +206,10 @@ impl Field {
         let reset = (register_reset >> self.offset) & mask;
 
         match &read.numericity {
-            Numericity::Numeric => parse_quote! { Value::<#reset> },
+            Numericity::Numeric => self.distribute(
+                parse_quote! { Value::<#reset> },
+                |i| parse_quote! { Value::<#i, #reset> },
+            ),
             Numericity::Enumerated { variants } => {
                 let ty = variants
                     .values()
@@ -157,7 +217,7 @@ impl Field {
                     .expect("exactly one variant must correspond to the reset value")
                     .type_name();
 
-                parse_quote! { #ty }
+                self.distribute(parse_quote! { #ty }, |i| parse_quote! { #ty::<#i> })
             }
         }
     }
@@ -312,11 +372,11 @@ impl Field {
             }
         }
 
-        let reserved = ["reset", "_new_state", "_old_state"];
+        let reserved = ["Reset", "_NewState", "_OldState"];
 
-        if reserved.contains(&self.module_name().to_string().as_str()) {
+        if reserved.contains(&self.type_name().to_string().as_str()) {
             diagnostics.insert(
-                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
+                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.type_name()))
                     .notes([format!("reserved field keywords are: {reserved:?}")])
                     .with_context(new_context.clone()),
             );
@@ -328,7 +388,7 @@ impl Field {
 
 // codegen
 impl Field {
-    fn generate_states(&self) -> TokenStream {
+    fn generate_states(&self, hal: &Hal) -> TokenStream {
         // NOTE: if a field is resolvable and has split schemas,
         // the schema that represents the resolvable aspect of the
         // field must be from read access, as the value the field
@@ -344,7 +404,7 @@ impl Field {
             && let Numericity::Enumerated { variants } = &access.numericity
         {
             let variants = variants.values();
-            out.extend(quote! { #(#variants)* });
+            variants.for_each(|variant| out.extend(variant.generate(self, hal)));
         }
 
         out
@@ -360,9 +420,18 @@ impl Field {
     fn generate_dynamic(
         entitlement_idents: &Vec<Ident>,
         entitlement_paths: &Vec<Path>,
+        dimensionality: &Dimensionality,
     ) -> TokenStream {
+        let generics: Generics = match dimensionality {
+            Dimensionality::Single => parse_quote! { <> },
+            Dimensionality::Array { .. } => {
+                parse_quote! { <Index: ::proto_hal::stasis::Index<Field>> }
+            }
+        };
+        let (impl_generics, ty_generics, ..) = generics.split_for_impl();
+
         quote! {
-            pub struct Dynamic {
+            pub struct Dynamic #impl_generics {
                 #(
                     #[expect(unused)] #entitlement_idents: ::proto_hal::stasis::Entitlement<#entitlement_paths>,
                 )*
@@ -370,7 +439,7 @@ impl Field {
                 _sealed: (),
             }
 
-            impl ::proto_hal::stasis::Conjure for Dynamic {
+            impl #impl_generics ::proto_hal::stasis::Conjure for Dynamic #ty_generics {
                 unsafe fn conjure() -> Self {
                     Self {
                         #(
@@ -381,9 +450,9 @@ impl Field {
                 }
             }
 
-            impl ::proto_hal::stasis::Position<Field> for Dynamic {}
-            impl ::proto_hal::stasis::Outgoing<Field> for Dynamic {}
-            impl ::proto_hal::stasis::Position<Field> for &mut Dynamic {}
+            impl #impl_generics ::proto_hal::stasis::Position<Field> for Dynamic #ty_generics {}
+            impl #impl_generics ::proto_hal::stasis::Outgoing<Field> for Dynamic #ty_generics {}
+            impl #impl_generics ::proto_hal::stasis::Position<Field> for &mut Dynamic #ty_generics {}
         }
     }
 
@@ -394,23 +463,30 @@ impl Field {
             };
 
             let ident = self.module_name();
+            let generics: Generics = match self.dimensionality {
+                Dimensionality::Single => parse_quote! { <const V: u32> },
+                Dimensionality::Array { .. } => {
+                    parse_quote! { <Index: ::proto_hal::stasis::Index<Field>, const V: u32> }
+                }
+            };
+            let (impl_generics, ty_generics, ..) = generics.split_for_impl();
 
             Some(quote! {
-                pub struct Value<const N: u32> {
+                pub struct Value #impl_generics {
                     _sealed: (),
                 }
 
-                impl<const N: u32> Value<N> {
+                impl #impl_generics Value # ty_generics {
                     pub fn into_dynamic(self) -> Dynamic {
                         unsafe { <Dynamic as ::proto_hal::stasis::Conjure>::conjure() }
                     }
 
                     pub fn value(&self) -> u32 {
-                        N
+                        V
                     }
                 }
 
-                impl<const N: u32> ::proto_hal::stasis::Conjure for Value<N> {
+                impl #impl_generics ::proto_hal::stasis::Conjure for Value #ty_generics {
                     unsafe fn conjure() -> Self {
                         Self {
                             _sealed: (),
@@ -418,18 +494,18 @@ impl Field {
                     }
                 }
 
-                impl<const N: u32> ::proto_hal::stasis::Emplace<super::UnsafeWriter> for Value<N> {
+                impl #impl_generics ::proto_hal::stasis::Emplace<super::UnsafeWriter> for Value #ty_generics {
                     fn set(&self, w: &mut super::UnsafeWriter) {
-                        w.#ident(N);
+                        w.#ident(V);
                     }
                 }
 
-                impl<const N: u32> ::proto_hal::stasis::Corporeal for Value<N> {}
-                impl<const N: u32> ::proto_hal::stasis::Position<Field> for Value<N> {}
-                impl<const N: u32> ::proto_hal::stasis::Outgoing<Field> for Value<N> {}
-                impl<const N: u32> ::proto_hal::stasis::Incoming<Field> for Value<N> {
+                impl #impl_generics ::proto_hal::stasis::Corporeal for Value #ty_generics {}
+                impl #impl_generics ::proto_hal::stasis::Position<Field> for Value #ty_generics {}
+                impl #impl_generics ::proto_hal::stasis::Outgoing<Field> for Value #ty_generics {}
+                impl #impl_generics ::proto_hal::stasis::Incoming<Field> for Value #ty_generics {
                     type Raw = u32;
-                    const RAW: Self::Raw = N;
+                    const RAW: Self::Raw = V;
                 }
             })
         } else {
@@ -725,15 +801,39 @@ impl Field {
             }
         }
     }
+
+    fn generate_indicies(&self) -> Option<TokenStream> {
+        match &self.dimensionality {
+            Dimensionality::Single => None,
+            Dimensionality::Array { idents } => {
+                let (idents, indicies) = idents
+                    .iter()
+                    .map(|(ident, &i)| (ident, Index::from(i as usize)))
+                    .collect::<(Vec<_>, Vec<_>)>();
+
+                Some(quote! {
+                    #(
+                        pub struct #idents {
+                            _sealed: (),
+                        }
+                        impl ::proto_hal::stasis::Index<Field> for #idents {
+                            const INDEX: u32 = #indicies;
+                        }
+                    )*
+                })
+            }
+        }
+    }
 }
 
-impl ToTokens for Field {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+// output
+impl Field {
+    pub fn generate(&self, hal: &Hal) -> TokenStream {
         let ident = &self.ident;
 
         let mut body = quote! {};
 
-        body.extend(self.generate_states());
+        body.extend(self.generate_states(hal));
         body.extend(Self::generate_layout_consts(
             self.offset as u32,
             self.width as u32,
@@ -742,6 +842,7 @@ impl ToTokens for Field {
         body.extend(Self::generate_repr(&self.ident, &self.access));
         body.extend(Self::generate_trait_impls(self));
         body.extend(Self::generate_marker_ty(&self.entitlements));
+        body.extend(self.generate_indicies());
 
         let mut entitlements = self.entitlements.iter().collect::<Vec<_>>();
         entitlements.sort_by(|lhs, rhs| lhs.field().cmp(rhs.field()));
@@ -759,6 +860,7 @@ impl ToTokens for Field {
         body.extend(Self::generate_dynamic(
             &entitlement_idents,
             &entitlement_paths,
+            &self.dimensionality,
         ));
 
         if !self.entitlements.is_empty() {
@@ -770,14 +872,13 @@ impl ToTokens for Field {
 
         let docs = &self.docs;
 
-        // final module
-        tokens.extend(quote! {
+        parse_quote! {
             #(
                 #[doc = #docs]
             )*
             pub mod #ident {
                 #body
             }
-        });
+        }
     }
 }

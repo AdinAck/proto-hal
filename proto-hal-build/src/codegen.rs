@@ -70,7 +70,7 @@ pub fn validate(source: impl FnOnce() -> (Hal, Diagnostics)) {
             fs::write("/tmp/erroneous-hal.rs", hal.render_raw()).unwrap();
 
             println!(
-                "{}: Codegen failed: {e}.\n{}\nErroneous codegen written to /tmp/erroneous-hal.rs",
+                "{}: Codegen failed: {e}\n{}\nErroneous codegen written to /tmp/erroneous-hal.rs",
                 "error".red().bold(),
                 "This is probably a bug, please submit an issue: https://github.com/adinack/proto-hal/issues".bold(),
             );

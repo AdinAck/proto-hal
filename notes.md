@@ -188,3 +188,12 @@ This kind of feels bad... also, could this not be represented by two superpositi
 Does that mean if someone where to do so it would be unsound?
 
 For now, conditional readability with any kind of writability will be forbidden.
+
+# Arrays
+
+TODO:
+- ~~New trait in stasis to constrain index types.~~
+- ~~Make structs for each element based on provided ident factory.~~
+- Variant needs to look up peripheral, register, field from entitlement to correctly format the path.
+- New validation step that ensures peripheral array idents don't collide with other peripherals.
+- New validation step that ensures field array idents don't collide with field variant names.

@@ -7,7 +7,7 @@ use syn::{Ident, Path, parse_quote};
 
 use crate::{
     access::{Access, ReadWrite},
-    structures::field::Numericity,
+    structures::{field::Numericity, hal::Hal},
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -165,12 +165,12 @@ impl Register {
 
 // codegen
 impl Register {
-    fn generate_fields<'a>(fields: impl Iterator<Item = &'a Field>) -> TokenStream {
-        quote! {
-            #(
-                #fields
-            )*
-        }
+    fn generate_fields(&self, hal: &Hal) -> TokenStream {
+        self.fields.values().fold(quote! {}, |mut acc, field| {
+            acc.extend(field.generate(hal).to_token_stream());
+
+            acc
+        })
     }
 
     fn generate_layout_consts(offset: u32) -> TokenStream {
@@ -714,11 +714,11 @@ impl Register {
 
         let field_idents = fields
             .iter()
-            .map(|field| field.module_name())
+            .flat_map(|field| field.idents())
             .collect::<Vec<_>>();
         let field_tys = fields
             .iter()
-            .map(|field| field.type_name())
+            .flat_map(|field| field.type_names())
             .collect::<Vec<_>>();
 
         let unresolved = fields
@@ -930,14 +930,14 @@ impl Register {
         if reset.is_some() {
             let reset_tys = fields
                 .iter()
-                .map(|field| {
+                .flat_map(|field| {
                     if field.is_resolvable() {
                         let ident = field.module_name();
-                        let reset_ty = field.reset_ty(reset);
+                        let reset_ty = field.reset_tys(reset);
 
-                        quote! { #ident::#reset_ty }
+                        reset_ty.iter().map(|ty| quote! { #ident::#ty }).collect()
                     } else {
-                        quote! { ::proto_hal::stasis::Unresolved }
+                        vec![quote! { ::proto_hal::stasis::Unresolved }]
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1074,10 +1074,10 @@ impl Register {
     ) -> TokenStream {
         let field_idents = fields
             .clone()
-            .map(|field| field.module_name())
+            .flat_map(|field| field.idents())
             .collect::<Vec<_>>();
         let reset_tys = fields
-            .map(|field| field.reset_ty(reset))
+            .flat_map(|field| field.reset_tys(reset))
             .collect::<Vec<_>>();
 
         quote! {
@@ -1201,13 +1201,14 @@ impl Register {
     }
 }
 
-impl ToTokens for Register {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+// output
+impl Register {
+    pub fn generate(&self, hal: &Hal) -> TokenStream {
         let mut body = quote! {};
 
         let module_name = self.module_name();
 
-        body.extend(Self::generate_fields(self.fields.values()));
+        body.extend(self.generate_fields(hal));
         body.extend(Self::generate_layout_consts(self.offset));
         body.extend(Self::generate_unsafe_interface(
             self.fields.values(),
@@ -1227,11 +1228,12 @@ impl ToTokens for Register {
         body.extend(Self::generate_states_struct(self.fields.values()));
 
         let docs = &self.docs;
-        tokens.extend(quote! {
+
+        quote! {
             #(#[doc = #docs])*
             pub mod #module_name {
                 #body
             }
-        });
+        }
     }
 }

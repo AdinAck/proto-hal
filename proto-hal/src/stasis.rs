@@ -178,3 +178,7 @@ impl<Writer> Emplace<Writer> for Unavailable {
 
 impl Corporeal for Unavailable {}
 impl<T> Position<T> for Unavailable {}
+
+pub trait Index<T> {
+    const INDEX: u32;
+}

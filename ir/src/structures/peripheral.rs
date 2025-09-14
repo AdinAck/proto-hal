@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, format_ident, quote};
+use quote::{format_ident, quote};
 use syn::{Ident, Path};
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    structures::hal::Hal,
+    utils::diagnostic::{Context, Diagnostic, Diagnostics},
+};
 
 use super::{entitlement::Entitlement, register::Register};
 
@@ -110,12 +113,14 @@ impl Peripheral {
 
 // codegen
 impl Peripheral {
-    fn generate_registers<'a>(registers: impl Iterator<Item = &'a Register>) -> TokenStream {
-        quote! {
-            #(
-                #registers
-            )*
-        }
+    fn generate_registers(&self, hal: &Hal) -> TokenStream {
+        self.registers
+            .values()
+            .fold(quote! {}, |mut acc, register| {
+                acc.extend(register.generate(hal));
+
+                acc
+            })
     }
 
     fn generate_base_addr(base_addr: u32, ident: &Ident) -> TokenStream {
@@ -223,13 +228,14 @@ impl Peripheral {
     }
 }
 
-impl ToTokens for Peripheral {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+// output
+impl Peripheral {
+    pub fn generate(&self, hal: &Hal) -> TokenStream {
         let mut body = quote! {};
 
         let ident = self.module_name();
 
-        body.extend(Self::generate_registers(self.registers.values()));
+        body.extend(self.generate_registers(hal));
         body.extend(Self::generate_base_addr(self.base_addr, &self.ident));
 
         let entitlement_idents = self
@@ -260,12 +266,12 @@ impl ToTokens for Peripheral {
 
         let docs = &self.docs;
 
-        tokens.extend(quote! {
+        quote! {
             #(#[doc = #docs])*
             #[allow(clippy::module_inception)]
             pub mod #ident {
                 #body
             }
-        });
+        }
     }
 }

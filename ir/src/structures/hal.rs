@@ -6,7 +6,12 @@ use quote::{ToTokens, quote};
 use syn::Ident;
 
 use crate::{
-    structures::interrupts::{Interrupt, Interrupts},
+    structures::{
+        field::{Dimensionality, Field},
+        interrupts::{Interrupt, Interrupts},
+        register::Register,
+        variant::Variant,
+    },
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -39,10 +44,25 @@ impl Hal {
         self.to_token_stream().to_string()
     }
 
-    pub fn render(&self) -> syn::Result<String> {
-        Ok(prettyplease::unparse(&syn::parse_file(
-            self.to_token_stream().to_string().as_str(),
-        )?))
+    pub fn render(&self) -> Result<String, String> {
+        let content = self.to_token_stream().to_string();
+        let parsed = syn::parse_file(content.as_str());
+
+        match parsed {
+            Ok(file) => Ok(prettyplease::unparse(&file)),
+            Err(e) => {
+                let start = e.span().start().column;
+                let end = e.span().end().column;
+
+                const PADDING: usize = 50;
+
+                let lhs = &content[start - PADDING..start];
+                let err = &content[start..end].red();
+                let rhs = &content[end..end + PADDING];
+
+                Err(format!("{}:\n{lhs}{err}{rhs}", e))
+            }
+        }
     }
 }
 
@@ -199,16 +219,43 @@ impl Hal {
 
         diagnostics
     }
+
+    pub(crate) fn look_up(
+        &self,
+        entitlement: &Entitlement,
+    ) -> Option<(&Peripheral, &Register, &Field, &Variant)> {
+        let peripheral = self.peripherals.get(entitlement.peripheral())?;
+        let register = peripheral.registers.get(entitlement.register())?;
+        let field = register.fields.get(entitlement.field()).or_else(|| {
+            register.fields.values().find(|field| {
+                if let Dimensionality::Array { idents } = &field.dimensionality {
+                    idents.contains_key(&entitlement.field().to_string())
+                } else {
+                    false
+                }
+            })
+        })?;
+
+        let Numericity::Enumerated { variants } = &field.resolvable()?.numericity else {
+            None?
+        };
+
+        let variant = variants.get(entitlement.variant())?;
+
+        Some((peripheral, register, field, variant))
+    }
 }
 
 // codegen
 impl Hal {
-    fn generate_peripherals<'a>(peripherals: impl Iterator<Item = &'a Peripheral>) -> TokenStream {
-        quote! {
-            #(
-                #peripherals
-            )*
-        }
+    fn generate_peripherals(&self) -> TokenStream {
+        self.peripherals
+            .values()
+            .fold(quote! {}, |mut acc, peripheral| {
+                acc.extend(peripheral.generate(self));
+
+                acc
+            })
     }
 
     fn generate_peripherals_struct<'a>(
@@ -274,7 +321,7 @@ impl Hal {
 
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(Self::generate_peripherals(self.peripherals.values()));
+        tokens.extend(self.generate_peripherals());
         tokens.extend(Self::generate_peripherals_struct(self.peripherals.values()));
         self.interrupts.to_tokens(tokens);
     }

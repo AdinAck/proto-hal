@@ -1,9 +1,13 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote};
-use syn::Ident;
+use quote::quote;
+use syn::{Generics, Ident, parse_quote};
 
 use crate::{
-    structures::entitlement::Entitlements,
+    structures::{
+        entitlement::Entitlements,
+        field::{self, Dimensionality, Field},
+        hal::Hal,
+    },
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -88,17 +92,24 @@ impl Variant {
 impl Variant {
     pub fn generate_state<'a>(
         ident: &Ident,
+        field_dimensionality: &field::Dimensionality,
         docs: impl Iterator<Item = &'a String>,
     ) -> TokenStream {
+        let generics: Generics = match field_dimensionality {
+            Dimensionality::Single => parse_quote! { <> },
+            Dimensionality::Array { .. } => parse_quote! { <const F: usize> },
+        };
+        let (impl_generics, ty_generics, ..) = generics.split_for_impl();
+
         quote! {
             #(
                 #[doc = #docs]
             )*
-            pub struct #ident {
+            pub struct #ident #impl_generics {
                 _sealed: (),
             }
 
-            impl #ident {
+            impl #impl_generics #ident #ty_generics {
                 pub fn into_dynamic(self) -> Dynamic {
                     unsafe { <Dynamic as ::proto_hal::stasis::Conjure>::conjure() }
                 }
@@ -106,17 +117,46 @@ impl Variant {
         }
     }
 
-    pub fn generate_entitlement_impls(ident: &Ident, entitlements: &Entitlements) -> TokenStream {
+    pub fn generate_entitlement_impls(
+        ident: &Ident,
+        entitlements: &Entitlements,
+        field_dimensionality: &field::Dimensionality,
+        hal: &Hal,
+    ) -> TokenStream {
         if entitlements.is_empty() {
             // any T satisfies this state's entitlement requirements
 
+            let (impl_generics, ty_generics) = match field_dimensionality {
+                Dimensionality::Single => (quote! { <T> }, None),
+                Dimensionality::Array { .. } => {
+                    (quote! { <T, const F: usize> }, Some(quote! { <F> }))
+                }
+            };
+
             quote! {
-                unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #ident {}
+                unsafe impl #impl_generics ::proto_hal::stasis::Entitled<T> for #ident #ty_generics {}
             }
         } else {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
-            let entitlement_paths = entitlements.iter().map(|entitlement| entitlement.render());
+            let entitlement_paths = entitlements.iter().map(|entitlement| {
+                let (p, r, f, v) = hal.look_up(entitlement).expect("entitlements must exist");
+
+                match &f.dimensionality {
+                    Dimensionality::Single => entitlement.render(),
+                    Dimensionality::Array { idents } => {
+                        let p_ident = p.module_name();
+                        let r_ident = r.module_name();
+                        let f_ident = f.module_name();
+                        let v_ident = v.type_name();
+                        let index = idents[&entitlement.field().to_string()];
+
+                        parse_quote! {
+                            crate::#p_ident::#r_ident::#f_ident::#v_ident::<#index>
+                        }
+                    }
+                }
+            });
 
             quote! {
                 #(
@@ -133,15 +173,29 @@ impl Variant {
     }
 }
 
-impl ToTokens for Variant {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+// output
+impl Variant {
+    pub fn generate(&self, parent: &Field, hal: &Hal) -> TokenStream {
+        let mut tokens = quote! {};
+
         let ident = Ident::new(
             &inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()),
             Span::call_site(),
         );
 
-        tokens.extend(Self::generate_state(&ident, self.docs.iter()));
-        tokens.extend(Self::generate_entitlement_impls(&ident, &self.entitlements));
+        tokens.extend(Self::generate_state(
+            &ident,
+            &parent.dimensionality,
+            self.docs.iter(),
+        ));
+        tokens.extend(Self::generate_entitlement_impls(
+            &ident,
+            &self.entitlements,
+            &parent.dimensionality,
+            hal,
+        ));
         tokens.extend(Self::generate_freeze_impl(&ident));
+
+        tokens
     }
 }
