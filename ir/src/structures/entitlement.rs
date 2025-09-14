@@ -4,6 +4,8 @@ use proc_macro2::Span;
 use syn::{Ident, Path, parse_quote};
 use ters::ters;
 
+use crate::structures::{field::Dimensionality, hal::Hal};
+
 #[ters]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Entitlement {
@@ -29,13 +31,30 @@ impl Entitlement {
         }
     }
 
-    pub fn render(&self) -> Path {
-        let peripheral = self.peripheral();
-        let register = self.register();
-        let field = self.field();
-        let variant = self.variant();
-        parse_quote! {
-            crate::#peripheral::#register::#field::#variant
+    pub fn render(&self, hal: &Hal) -> Path {
+        let (p, r, f, v) = hal.look_up(self).expect("entitlements must exist");
+
+        match &f.dimensionality {
+            Dimensionality::Single => {
+                let peripheral = self.peripheral();
+                let register = self.register();
+                let field = self.field();
+                let variant = self.variant();
+                parse_quote! {
+                    crate::#peripheral::#register::#field::#variant
+                }
+            }
+            Dimensionality::Array { idents } => {
+                let p_ident = p.module_name();
+                let r_ident = r.module_name();
+                let f_ident = f.module_name();
+                let v_ident = v.type_name();
+                let index = idents[&self.field()];
+
+                parse_quote! {
+                    crate::#p_ident::#r_ident::#f_ident::#v_ident::<#index>
+                }
+            }
         }
     }
 }

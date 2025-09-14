@@ -139,24 +139,9 @@ impl Variant {
         } else {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
-            let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let (p, r, f, v) = hal.look_up(entitlement).expect("entitlements must exist");
-
-                match &f.dimensionality {
-                    Dimensionality::Single => entitlement.render(),
-                    Dimensionality::Array { idents } => {
-                        let p_ident = p.module_name();
-                        let r_ident = r.module_name();
-                        let f_ident = f.module_name();
-                        let v_ident = v.type_name();
-                        let index = idents[&entitlement.field().to_string()];
-
-                        parse_quote! {
-                            crate::#p_ident::#r_ident::#f_ident::#v_ident::<#index>
-                        }
-                    }
-                }
-            });
+            let entitlement_paths = entitlements
+                .iter()
+                .map(|entitlement| entitlement.render(hal));
 
             quote! {
                 #(

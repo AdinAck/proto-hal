@@ -90,7 +90,7 @@ impl Hal {
         }
 
         for peripheral in self.peripherals.values() {
-            diagnostics.extend(peripheral.validate(&Context::new()));
+            diagnostics.extend(peripheral.validate(&Context::new(), self));
         }
 
         // collect all entitlements
@@ -229,7 +229,7 @@ impl Hal {
         let field = register.fields.get(entitlement.field()).or_else(|| {
             register.fields.values().find(|field| {
                 if let Dimensionality::Array { idents } = &field.dimensionality {
-                    idents.contains_key(&entitlement.field().to_string())
+                    idents.contains_key(&entitlement.field())
                 } else {
                     false
                 }

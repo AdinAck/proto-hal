@@ -7,6 +7,6 @@ use proto_hal_build::ir::{
 };
 
 pub fn generate() -> Field {
-    Field::new("res", 0, 32, Access::read(Numericity::Numeric))
+    Field::new("resq31", 0, 32, Access::read(Numericity::Numeric))
         .entitlements([Entitlement::to("cordic::csr::ressize::Q31")])
 }

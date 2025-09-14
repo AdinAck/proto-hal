@@ -7,7 +7,10 @@ use syn::{Ident, Path, parse_quote};
 
 use crate::{
     access::{Access, ReadWrite},
-    structures::{field::Numericity, hal::Hal},
+    structures::{
+        field::{Dimensionality, Numericity},
+        hal::Hal,
+    },
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -70,7 +73,7 @@ impl Register {
         self.fields.values().any(|field| field.is_resolvable())
     }
 
-    pub fn validate(&self, context: &Context) -> Diagnostics {
+    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.module_name().to_string());
 
@@ -156,7 +159,7 @@ impl Register {
         }
 
         for field in fields {
-            diagnostics.extend(field.validate(&new_context));
+            diagnostics.extend(field.validate(&new_context, hal));
         }
 
         diagnostics
@@ -629,6 +632,7 @@ impl Register {
 
     fn maybe_generate_reader<'a>(
         fields: impl Iterator<Item = &'a Field> + Clone,
+        hal: &Hal,
     ) -> Option<TokenStream> {
         let accessors = fields.filter_map(|field| match &field.access {
             Access::Read(read) | Access::ReadWrite(ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. }) => {
@@ -643,7 +647,7 @@ impl Register {
                                 .enumerate()
                                 .map(|(i, entitlement)| {
                                     let ident = format_ident!("entitlement_{i}");
-                                    let ty = entitlement.render();
+                                    let ty = entitlement.render(hal);
 
                                     quote! {
                                         #[expect(unused)] #ident: &#ty
@@ -701,6 +705,7 @@ impl Register {
         fields: impl Iterator<Item = &'a Field> + Clone,
         entitlement_bounds: impl Iterator<Item = &'a TokenStream>,
         reset: Option<u32>,
+        hal: &Hal,
     ) -> Option<TokenStream> {
         let fields = fields
             .filter(|field| field.access.is_write())
@@ -782,7 +787,7 @@ impl Register {
                         .enumerate()
                         .map(|(i, entitlement)| {
                             let ident = format_ident!("entitlement_{i}");
-                            let ty = entitlement.render();
+                            let ty = entitlement.render(hal);
 
                             quote! {
                                 #[expect(unused)] #ident: &#ty
@@ -933,7 +938,7 @@ impl Register {
                 .flat_map(|field| {
                     if field.is_resolvable() {
                         let ident = field.module_name();
-                        let reset_ty = field.reset_tys(reset);
+                        let reset_ty = field.reset_tys(reset, parse_quote! { #ident });
 
                         reset_ty.iter().map(|ty| quote! { #ident::#ty }).collect()
                     } else {
@@ -1076,14 +1081,26 @@ impl Register {
             .clone()
             .flat_map(|field| field.idents())
             .collect::<Vec<_>>();
+        let field_modules = fields
+            .clone()
+            .flat_map(|field| match &field.dimensionality {
+                Dimensionality::Single => vec![field.module_name()],
+                Dimensionality::Array { idents } => {
+                    idents.iter().map(|_| field.module_name()).collect()
+                }
+            })
+            .collect::<Vec<_>>();
         let reset_tys = fields
-            .flat_map(|field| field.reset_tys(reset))
+            .flat_map(|field| {
+                let module = field.module_name();
+                field.reset_tys(reset, parse_quote! { #module })
+            })
             .collect::<Vec<_>>();
 
         quote! {
             pub struct Reset {
                 #(
-                    pub #field_idents: #field_idents::#reset_tys,
+                    pub #field_idents: #field_modules::#reset_tys,
                 )*
             }
 
@@ -1094,7 +1111,7 @@ impl Register {
                     #[allow(unsafe_op_in_unsafe_fn)]
                     Self {
                         #(
-                            #field_idents: unsafe { <#field_idents::#reset_tys as ::proto_hal::stasis::Conjure>::conjure() },
+                            #field_idents: unsafe { <#field_modules::#reset_tys as ::proto_hal::stasis::Conjure>::conjure() },
                         )*
                     }
                 }
@@ -1215,7 +1232,7 @@ impl Register {
             self.reset,
         ));
         body.extend(Self::generate_refined_writers(self.fields.values()));
-        body.extend(Self::maybe_generate_reader(self.fields.values()));
+        body.extend(Self::maybe_generate_reader(self.fields.values(), hal));
 
         let entitlement_bounds = Self::create_entitlement_bounds(self.fields.values());
 
@@ -1223,6 +1240,7 @@ impl Register {
             self.fields.values(),
             entitlement_bounds.iter(),
             self.reset,
+            hal,
         ));
         body.extend(Self::generate_reset(self.fields.values(), self.reset));
         body.extend(Self::generate_states_struct(self.fields.values()));

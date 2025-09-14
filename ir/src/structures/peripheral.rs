@@ -74,7 +74,7 @@ impl Peripheral {
         )
     }
 
-    pub fn validate(&self, context: &Context) -> Diagnostics {
+    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone().to_string());
 
@@ -104,7 +104,7 @@ impl Peripheral {
         }
 
         for register in self.registers.values() {
-            diagnostics.extend(register.validate(&new_context));
+            diagnostics.extend(register.validate(&new_context, hal));
         }
 
         diagnostics
@@ -247,7 +247,7 @@ impl Peripheral {
         let entitlement_paths = self
             .entitlements
             .iter()
-            .map(|entitlement| entitlement.render())
+            .map(|entitlement| entitlement.render(hal))
             .collect::<Vec<_>>();
 
         body.extend(Self::generate_reset(

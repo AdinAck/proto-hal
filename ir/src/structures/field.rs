@@ -38,7 +38,7 @@ impl Numericity {
 #[derive(Debug, Clone)]
 pub enum Dimensionality {
     Single,
-    Array { idents: HashMap<String, u8> },
+    Array { idents: HashMap<Ident, u8> },
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +82,9 @@ impl Field {
     pub fn array(self, count: u8, idents: impl Fn(u8) -> String + 'static) -> Self {
         Self {
             dimensionality: Dimensionality::Array {
-                idents: (0..count).map(|i| ((idents)(i), i)).collect(),
+                idents: (0..count)
+                    .map(|i| (Ident::new((idents)(i).as_str(), Span::call_site()), i))
+                    .collect(),
             },
             ..self
         }
@@ -114,7 +116,9 @@ impl Field {
             )],
             Dimensionality::Array { idents } => idents
                 .keys()
-                .map(|ident| Ident::new(ident.to_lowercase().as_str(), Span::call_site()))
+                .map(|ident| {
+                    Ident::new(ident.to_string().to_lowercase().as_str(), Span::call_site())
+                })
                 .collect(),
         }
     }
@@ -134,7 +138,12 @@ impl Field {
             )],
             Dimensionality::Array { idents } => idents
                 .keys()
-                .map(|ident| Ident::new(ident.to_pascal_case().as_str(), Span::call_site()))
+                .map(|ident| {
+                    Ident::new(
+                        ident.to_string().to_pascal_case().as_str(),
+                        Span::call_site(),
+                    )
+                })
                 .collect(),
         }
     }
@@ -176,27 +185,42 @@ impl Field {
         }
     }
 
-    fn distribute<T>(&self, single: T, array: impl Fn(u8) -> T) -> Vec<T> {
+    fn distribute<T>(&self, single: T, array: impl Fn(Ident) -> T) -> Vec<T> {
         match &self.dimensionality {
             Dimensionality::Single => vec![single],
-            Dimensionality::Array { idents } => idents.values().copied().map(array).collect(),
+            Dimensionality::Array { idents } => idents
+                .keys()
+                .map(|ident| {
+                    Ident::new(
+                        ident.to_string().to_pascal_case().as_str(),
+                        Span::call_site(),
+                    )
+                })
+                .map(array)
+                .collect(),
         }
     }
 
-    pub(crate) fn reset_tys(&self, register_reset: Option<u32>) -> Vec<Type> {
+    pub(crate) fn reset_tys(&self, register_reset: Option<u32>, path_prefix: Path) -> Vec<Type> {
         if !self.entitlements.is_empty() {
             return self.distribute(
                 parse_quote! { Unavailable },
-                |i| parse_quote! { Unavailable::<#i> },
+                |ident| parse_quote! { Unavailable::<#path_prefix::#ident> },
             );
         }
 
         let Some(read) = self.access.get_read() else {
-            return self.distribute(parse_quote! { Dynamic }, |i| parse_quote! { Dynamic::<#i> });
+            return self.distribute(
+                parse_quote! { Dynamic },
+                |ident| parse_quote! { Dynamic::<#path_prefix::#ident> },
+            );
         };
 
         if !self.is_resolvable() {
-            return self.distribute(parse_quote! { Dynamic }, |i| parse_quote! { Dynamic::<#i> });
+            return self.distribute(
+                parse_quote! { Dynamic },
+                |ident| parse_quote! { Dynamic::<#path_prefix::#ident> },
+            );
         }
 
         let register_reset =
@@ -208,7 +232,7 @@ impl Field {
         match &read.numericity {
             Numericity::Numeric => self.distribute(
                 parse_quote! { Value::<#reset> },
-                |i| parse_quote! { Value::<#i, #reset> },
+                |ident| parse_quote! { Value::<#path_prefix::#ident, #reset> },
             ),
             Numericity::Enumerated { variants } => {
                 let ty = variants
@@ -217,12 +241,15 @@ impl Field {
                     .expect("exactly one variant must correspond to the reset value")
                     .type_name();
 
-                self.distribute(parse_quote! { #ty }, |i| parse_quote! { #ty::<#i> })
+                self.distribute(
+                    parse_quote! { #ty },
+                    |ident| parse_quote! { #ty::<#path_prefix::#ident> },
+                )
             }
         }
     }
 
-    pub fn validate(&self, context: &Context) -> Diagnostics {
+    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
 
@@ -271,7 +298,7 @@ impl Field {
                                 .iter()
                                 .zip(
                                     entitlement
-                                        .render()
+                                        .render(hal)
                                         .segments
                                         .iter()
                                         .skip(1) // skip "crate"
@@ -422,11 +449,12 @@ impl Field {
         entitlement_paths: &Vec<Path>,
         dimensionality: &Dimensionality,
     ) -> TokenStream {
-        let generics: Generics = match dimensionality {
-            Dimensionality::Single => parse_quote! { <> },
-            Dimensionality::Array { .. } => {
-                parse_quote! { <Index: ::proto_hal::stasis::Index<Field>> }
-            }
+        let (generics, indicies): (Generics, _) = match dimensionality {
+            Dimensionality::Single => (parse_quote! { <> }, quote! { () }),
+            Dimensionality::Array { .. } => (
+                parse_quote! { <Index: ::proto_hal::stasis::Index<Field>> },
+                quote! { Index },
+            ),
         };
         let (impl_generics, ty_generics, ..) = generics.split_for_impl();
 
@@ -436,7 +464,7 @@ impl Field {
                     #[expect(unused)] #entitlement_idents: ::proto_hal::stasis::Entitlement<#entitlement_paths>,
                 )*
 
-                _sealed: (),
+                _indicies: ::core::marker::PhantomData<#indicies>,
             }
 
             impl #impl_generics ::proto_hal::stasis::Conjure for Dynamic #ty_generics {
@@ -445,7 +473,7 @@ impl Field {
                         #(
                             #entitlement_idents: unsafe { <::proto_hal::stasis::Entitlement<#entitlement_paths> as ::proto_hal::stasis::Conjure>::conjure() },
                         )*
-                        _sealed: (),
+                        _indicies: ::core::marker::PhantomData,
                     }
                 }
             }
@@ -463,17 +491,18 @@ impl Field {
             };
 
             let ident = self.module_name();
-            let generics: Generics = match self.dimensionality {
-                Dimensionality::Single => parse_quote! { <const V: u32> },
-                Dimensionality::Array { .. } => {
-                    parse_quote! { <Index: ::proto_hal::stasis::Index<Field>, const V: u32> }
-                }
+            let (generics, indicies): (Generics, _) = match self.dimensionality {
+                Dimensionality::Single => (parse_quote! { <const V: u32> }, quote! { () }),
+                Dimensionality::Array { .. } => (
+                    parse_quote! { <Index: ::proto_hal::stasis::Index<Field>, const V: u32> },
+                    quote! { Index },
+                ),
             };
             let (impl_generics, ty_generics, ..) = generics.split_for_impl();
 
             Some(quote! {
                 pub struct Value #impl_generics {
-                    _sealed: (),
+                    _indicies: ::core::marker::PhantomData<#indicies>,
                 }
 
                 impl #impl_generics Value # ty_generics {
@@ -489,7 +518,7 @@ impl Field {
                 impl #impl_generics ::proto_hal::stasis::Conjure for Value #ty_generics {
                     unsafe fn conjure() -> Self {
                         Self {
-                            _sealed: (),
+                            _indicies: ::core::marker::PhantomData,
                         }
                     }
                 }
@@ -756,13 +785,15 @@ impl Field {
         }
     }
 
-    fn generate_marker_ty(entitlements: &Entitlements) -> TokenStream {
+    fn generate_marker_ty(entitlements: &Entitlements, hal: &Hal) -> TokenStream {
         let mut out = quote! {
             pub struct Field;
         };
 
         if !entitlements.is_empty() {
-            let entitlement_paths = entitlements.iter().map(|entitlement| entitlement.render());
+            let entitlement_paths = entitlements
+                .iter()
+                .map(|entitlement| entitlement.render(hal));
 
             out.extend(quote! {
                 #(
@@ -777,25 +808,35 @@ impl Field {
     fn generate_unavailable(
         entitlement_idents: &Vec<Ident>,
         entitlement_paths: &Vec<Path>,
+        dimensionality: &Dimensionality,
     ) -> TokenStream {
+        let (generics, indicies): (Generics, _) = match dimensionality {
+            Dimensionality::Single => (parse_quote! { <> }, quote! { () }),
+            Dimensionality::Array { .. } => (
+                parse_quote! { <Index: ::proto_hal::stasis::Index<Field>> },
+                quote! { Index },
+            ),
+        };
+        let (impl_generics, ty_generics, ..) = generics.split_for_impl();
+
         quote! {
-            pub struct Unavailable {
-                _sealed: (),
+            pub struct Unavailable #impl_generics {
+                _indicies: ::core::marker::PhantomData<#indicies>,
             }
 
-            impl ::proto_hal::stasis::Conjure for Unavailable {
+            impl #impl_generics ::proto_hal::stasis::Conjure for Unavailable #ty_generics {
                 unsafe fn conjure() -> Self {
                     Self {
-                        _sealed: (),
+                        _indicies: ::core::marker::PhantomData,
                     }
                 }
             }
 
-            impl Unavailable {
-                pub fn unmask(self, #(#entitlement_idents: impl Into<::proto_hal::stasis::Entitlement<#entitlement_paths>>),*) -> Dynamic {
+            impl #impl_generics Unavailable #ty_generics {
+                pub fn unmask(self, #(#entitlement_idents: impl Into<::proto_hal::stasis::Entitlement<#entitlement_paths>>),*) -> Dynamic #ty_generics {
                     Dynamic {
                         #(#entitlement_idents: #entitlement_idents.into(),)*
-                        _sealed: (),
+                        _indicies: ::core::marker::PhantomData,
                     }
                 }
             }
@@ -808,7 +849,15 @@ impl Field {
             Dimensionality::Array { idents } => {
                 let (idents, indicies) = idents
                     .iter()
-                    .map(|(ident, &i)| (ident, Index::from(i as usize)))
+                    .map(|(ident, &i)| {
+                        (
+                            Ident::new(
+                                ident.to_string().to_pascal_case().as_str(),
+                                Span::call_site(),
+                            ),
+                            Index::from(i as usize),
+                        )
+                    })
                     .collect::<(Vec<_>, Vec<_>)>();
 
                 Some(quote! {
@@ -841,7 +890,7 @@ impl Field {
         body.extend(self.generate_value());
         body.extend(Self::generate_repr(&self.ident, &self.access));
         body.extend(Self::generate_trait_impls(self));
-        body.extend(Self::generate_marker_ty(&self.entitlements));
+        body.extend(Self::generate_marker_ty(&self.entitlements, hal));
         body.extend(self.generate_indicies());
 
         let mut entitlements = self.entitlements.iter().collect::<Vec<_>>();
@@ -854,7 +903,7 @@ impl Field {
             .collect::<Vec<_>>();
         let entitlement_paths = entitlements
             .iter()
-            .map(|entitlement| entitlement.render())
+            .map(|entitlement| entitlement.render(hal))
             .collect::<Vec<_>>();
 
         body.extend(Self::generate_dynamic(
@@ -867,6 +916,7 @@ impl Field {
             body.extend(Self::generate_unavailable(
                 &entitlement_idents,
                 &entitlement_paths,
+                &self.dimensionality,
             ));
         }
 
