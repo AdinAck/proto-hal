@@ -74,7 +74,7 @@ impl Peripheral {
         )
     }
 
-    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
+    pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone().to_string());
 
@@ -104,7 +104,7 @@ impl Peripheral {
         }
 
         for register in self.registers.values() {
-            diagnostics.extend(register.validate(&new_context, hal));
+            diagnostics.extend(register.validate(&new_context));
         }
 
         diagnostics

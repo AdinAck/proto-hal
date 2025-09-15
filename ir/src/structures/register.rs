@@ -73,7 +73,7 @@ impl Register {
         self.fields.values().any(|field| field.is_resolvable())
     }
 
-    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
+    pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.module_name().to_string());
 
@@ -159,7 +159,7 @@ impl Register {
         }
 
         for field in fields {
-            diagnostics.extend(field.validate(&new_context, hal));
+            diagnostics.extend(field.validate(&new_context));
         }
 
         diagnostics
@@ -409,36 +409,58 @@ impl Register {
         fields: impl Iterator<Item = &'a Field> + Clone,
         reset: Option<u32>,
     ) -> TokenStream {
+        fn accessor_items(field: &Field) -> (Ident, Option<TokenStream>, Option<TokenStream>) {
+            match &field.dimensionality {
+                Dimensionality::Single => (field.module_name(), None, None),
+                Dimensionality::Array { .. } => {
+                    let ident = field.module_name();
+
+                    (
+                        field.module_name(),
+                        Some(quote! { <Index: ::proto_hal::stasis::Index<#ident::Field>> }),
+                        Some(quote! { + Index::INDEX * #ident::WIDTH }),
+                    )
+                }
+            }
+        }
+
         fn read<'a>(fields: impl Iterator<Item = &'a Field> + Clone) -> Option<TokenStream> {
             if fields.clone().any(|field| field.access.is_read()) {
-                let enumerated_field_idents =
-                    fields.clone().filter_map(|field| match &field.access {
+                let (enumerated_field_idents, enumerated_array_generics, enumerated_array_offsets) =
+                    fields
+                        .clone()
+                        .filter_map(|field| match &field.access {
+                            Access::Read(read)
+                            | Access::ReadWrite(
+                                ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. },
+                            ) => {
+                                if matches!(read.numericity, Numericity::Enumerated { variants: _ })
+                                {
+                                    Some(accessor_items(field))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        })
+                        .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
+
+                let (numeric_field_idents, numeric_array_generics, numeric_array_offsets) = fields
+                    .clone()
+                    .filter_map(|field| match &field.access {
                         Access::Read(read)
                         | Access::ReadWrite(
                             ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. },
                         ) => {
-                            if matches!(read.numericity, Numericity::Enumerated { variants: _ }) {
-                                Some(field.module_name())
+                            if matches!(read.numericity, Numericity::Numeric) {
+                                Some(accessor_items(field))
                             } else {
                                 None
                             }
                         }
                         _ => None,
-                    });
-
-                let numeric_field_idents = fields.filter_map(|field| match &field.access {
-                    Access::Read(read)
-                    | Access::ReadWrite(
-                        ReadWrite::Symmetrical(read) | ReadWrite::Asymmetrical { read, .. },
-                    ) => {
-                        if matches!(read.numericity, Numericity::Numeric) {
-                            Some(field.module_name())
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                });
+                    })
+                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
                 Some(quote! {
                     #[derive(Clone, Copy)]
@@ -453,20 +475,20 @@ impl Register {
                         }
 
                         #(
-                            pub fn #enumerated_field_idents(&self) -> #enumerated_field_idents::ReadVariant {
+                            pub fn #enumerated_field_idents #enumerated_array_generics (&self) -> #enumerated_field_idents::ReadVariant {
                                 unsafe {
                                     #enumerated_field_idents::ReadVariant::from_bits({
                                         let mask = u32::MAX >> (32 - #enumerated_field_idents::WIDTH);
-                                        (self.value >> #enumerated_field_idents::OFFSET) & mask
+                                        (self.value >> (#enumerated_field_idents::OFFSET #enumerated_array_offsets)) & mask
                                     })
                                 }
                             }
                         )*
 
                         #(
-                            pub fn #numeric_field_idents(&self) -> u32 {
+                            pub fn #numeric_field_idents #numeric_array_generics (&self) -> u32 {
                                 let mask = u32::MAX >> (32 - #numeric_field_idents::WIDTH);
-                                (self.value >> #numeric_field_idents::OFFSET) & mask
+                                (self.value >> (#numeric_field_idents::OFFSET #numeric_array_offsets)) & mask
                             }
                         )*
                     }
@@ -495,24 +517,25 @@ impl Register {
 
             let fields = fields.filter(|field| field.access.is_write());
 
-            let enumerated_field_idents = fields
-                .clone()
-                .filter_map(
-                    |field| match &field.access.get_write().unwrap().numericity {
-                        Numericity::Enumerated { .. } => Some(field.module_name()),
-                        _ => None,
-                    },
-                )
-                .collect::<Vec<_>>();
+            let (enumerated_field_idents, enumerated_array_generics, enumerated_array_offsets) =
+                fields
+                    .clone()
+                    .filter_map(
+                        |field| match &field.access.get_write().unwrap().numericity {
+                            Numericity::Enumerated { .. } => Some(accessor_items(field)),
+                            _ => None,
+                        },
+                    )
+                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let numeric_field_idents = fields
+            let (numeric_field_idents, numeric_array_generics, numeric_array_offsets) = fields
                 .filter_map(
                     |field| match &field.access.get_write().unwrap().numericity {
-                        Numericity::Numeric => Some(field.module_name()),
+                        Numericity::Numeric => Some(accessor_items(field)),
                         _ => None,
                     },
                 )
-                .collect::<Vec<_>>();
+                .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
             Some(quote! {
                 pub struct UnsafeWriter {
@@ -531,17 +554,17 @@ impl Register {
                     }
 
                     #(
-                        pub fn #enumerated_field_idents(&mut self, variant: #enumerated_field_idents::WriteVariant) -> &mut Self {
-                            let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << #enumerated_field_idents::OFFSET;
-                            self.value = (self.value & !mask) | ((variant as u32) << #enumerated_field_idents::OFFSET);
+                        pub fn #enumerated_field_idents #enumerated_array_generics (&mut self, variant: #enumerated_field_idents::WriteVariant) -> &mut Self {
+                            let mask = (u32::MAX >> (32 - #enumerated_field_idents::WIDTH)) << (#enumerated_field_idents::OFFSET #enumerated_array_offsets);
+                            self.value = (self.value & !mask) | ((variant as u32) << (#enumerated_field_idents::OFFSET #enumerated_array_offsets));
 
                             self
                         }
                     )*
                     #(
-                        pub fn #numeric_field_idents(&mut self, value: impl Into<u32>) -> &mut Self {
-                            let mask = (u32::MAX >> (32 - #numeric_field_idents::WIDTH)) << #numeric_field_idents::OFFSET;
-                            self.value = (self.value & !mask) | (value.into() << #numeric_field_idents::OFFSET);
+                        pub fn #numeric_field_idents #numeric_array_generics (&mut self, value: impl Into<u32>) -> &mut Self {
+                            let mask = (u32::MAX >> (32 - #numeric_field_idents::WIDTH)) << (#numeric_field_idents::OFFSET #numeric_array_offsets);
+                            self.value = (self.value & !mask) | (value.into() << (#numeric_field_idents::OFFSET #numeric_array_offsets));
 
                             self
                         }
@@ -661,18 +684,23 @@ impl Register {
                         None
                     };
 
+                let (array_impl_generics, array_ty_generics) = match &field.dimensionality {
+                    Dimensionality::Single => (None, None),
+                    Dimensionality::Array { .. } => (Some(quote! { <Index: ::proto_hal::stasis::Index<#ident::Field>> }), Some(quote! { ::<Index> })),
+                };
+
                 Some(match &read.numericity {
                     Numericity::Enumerated { variants: _ } => {
                         quote! {
-                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlements) -> #ident::ReadVariant {
-                                self.r.#ident()
+                            pub fn #ident #array_impl_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #array_ty_generics #entitlements) -> #ident::ReadVariant {
+                                self.r.#ident #array_ty_generics ()
                             }
                         }
                     },
                     Numericity::Numeric => {
                         quote! {
-                            pub fn #ident(&self, #[expect(unused)] instance: &mut #ident::Dynamic #entitlements) -> u32 {
-                                self.r.#ident()
+                            pub fn #ident #array_impl_generics (&self, #[expect(unused)] instance: &mut #ident::Dynamic #array_ty_generics #entitlements) -> u32 {
+                                self.r.#ident #array_ty_generics ()
                             }
                         }
                     },

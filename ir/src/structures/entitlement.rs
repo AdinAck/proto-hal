@@ -49,7 +49,7 @@ impl Entitlement {
                 let r_ident = r.module_name();
                 let f_ident = f.module_name();
                 let v_ident = v.type_name();
-                let index = idents[&self.field()];
+                let index = idents[self.field()];
 
                 parse_quote! {
                     crate::#p_ident::#r_ident::#f_ident::#v_ident::<#index>

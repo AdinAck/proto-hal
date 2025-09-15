@@ -103,8 +103,8 @@ mod tests {
                     cordic.rdata.res1.unmask(res1_nres_ent, res1_ressize_ent),
                 );
 
-                assert_eq!(cordic::rdata::read().res0(&mut res0), 0xbeef);
-                assert_eq!(cordic::rdata::read().res1(&mut res1), 0xdead);
+                assert_eq!(cordic::rdata::read().resx(&mut res0), 0xbeef);
+                assert_eq!(cordic::rdata::read().resx(&mut res1), 0xdead);
             });
         }
     }

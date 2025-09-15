@@ -249,7 +249,7 @@ impl Field {
         }
     }
 
-    pub fn validate(&self, context: &Context, hal: &Hal) -> Diagnostics {
+    pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
 
@@ -296,14 +296,7 @@ impl Field {
                             if new_context
                                 .path()
                                 .iter()
-                                .zip(
-                                    entitlement
-                                        .render(hal)
-                                        .segments
-                                        .iter()
-                                        .skip(1) // skip "crate"
-                                        .map(|segment| &segment.ident),
-                                )
+                                .zip([entitlement.peripheral(), entitlement.register()])
                                 .take(2) // only check peripheral and register
                                 .any(|(lhs, rhs)| lhs != &rhs.to_string())
                             {
