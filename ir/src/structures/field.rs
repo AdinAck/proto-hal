@@ -855,9 +855,7 @@ impl Field {
 
                 Some(quote! {
                     #(
-                        pub struct #idents {
-                            _sealed: (),
-                        }
+                        pub struct #idents;
                         impl ::proto_hal::stasis::Index<Field> for #idents {
                             const INDEX: u32 = #indicies;
                         }

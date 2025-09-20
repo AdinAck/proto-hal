@@ -1,4 +1,4 @@
-pub mod ahbenr;
+pub mod enr;
 
 use proto_hal_build::ir::structures::peripheral::Peripheral;
 
@@ -7,8 +7,9 @@ pub fn generate() -> Peripheral {
         "rcc",
         0x4002_1000,
         [
-            ahbenr::generate(ahbenr::Instance::I1),
-            ahbenr::generate(ahbenr::Instance::I2),
+            enr::generate(enr::Instance::AHB1),
+            enr::generate(enr::Instance::AHB2),
+            enr::generate(enr::Instance::APB2),
         ],
     )
 }

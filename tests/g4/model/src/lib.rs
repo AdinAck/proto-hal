@@ -6,6 +6,7 @@ use proto_hal_build::ir::{
 pub mod cordic;
 pub mod crc;
 pub mod rcc;
+pub mod syscfg;
 
 #[derive(Debug)]
 pub enum DeviceVariant {
@@ -24,7 +25,13 @@ pub fn generate(variant: DeviceVariant) -> (Hal, Diagnostics) {
         }
     };
 
-    let hal = Hal::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts([
+    let hal = Hal::new([
+        rcc::generate(),
+        cordic::generate(),
+        crc::generate(),
+        syscfg::generate(),
+    ])
+    .interrupts([
         Interrupt::handler("WWDG").docs(["Window Watchdog"]),
         Interrupt::handler("PVD_PVM").docs(["PVD through EXTI line detection"]),
         Interrupt::handler("RTC_TAMP_CSS_LSE"),
