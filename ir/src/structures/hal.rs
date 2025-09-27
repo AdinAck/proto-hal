@@ -39,10 +39,25 @@ impl Hal {
         self.to_token_stream().to_string()
     }
 
-    pub fn render(&self) -> syn::Result<String> {
-        Ok(prettyplease::unparse(&syn::parse_file(
-            self.to_token_stream().to_string().as_str(),
-        )?))
+    pub fn render(&self) -> Result<String, String> {
+        let content = self.to_token_stream().to_string();
+        let parsed = syn::parse_file(content.as_str());
+
+        match parsed {
+            Ok(file) => Ok(prettyplease::unparse(&file)),
+            Err(e) => {
+                let start = e.span().start().column;
+                let end = e.span().end().column;
+
+                const PADDING: usize = 50;
+
+                let lhs = &content[start - PADDING..start];
+                let err = &content[start..end].red();
+                let rhs = &content[end..end + PADDING];
+
+                Err(format!("{}:\n{lhs}{err}{rhs}", e))
+            }
+        }
     }
 }
 
