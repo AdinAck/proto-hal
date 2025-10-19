@@ -1,4 +1,5 @@
 use indexmap::{IndexMap, IndexSet};
+use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
@@ -65,7 +66,7 @@ impl Peripheral {
 
     pub fn type_name(&self) -> Ident {
         Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
+            self.ident.to_string().to_pascal_case().as_str(),
             Span::call_site(),
         )
     }

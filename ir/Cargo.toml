@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 colored = { workspace = true }
 indexmap = { workspace = true }
-Inflector = "0.11.4"
+Inflector = { workspace = true }
 log = "0.4.27"
 prettyplease = "0.2.32"
 proc-macro2 = { workspace = true }

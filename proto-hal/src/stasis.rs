@@ -1,5 +1,7 @@
 pub trait State<Parent>: Conjure {}
 
+pub unsafe trait Entitled<State> {}
+
 pub trait PartialConjure {
     type Target;
 

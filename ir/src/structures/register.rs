@@ -1,5 +1,6 @@
 use colored::Colorize;
 use indexmap::IndexMap;
+use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, parse_quote};
@@ -61,6 +62,13 @@ impl Register {
 
     pub fn module_name(&self) -> Ident {
         self.ident.clone()
+    }
+
+    pub fn type_name(&self) -> Ident {
+        Ident::new(
+            self.ident.to_string().to_pascal_case().as_str(),
+            Span::call_site(),
+        )
     }
 
     /// A register is resolvable if at least one field within it is resolvable.

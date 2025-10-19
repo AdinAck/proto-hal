@@ -1,5 +1,6 @@
 use colored::Colorize;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
+use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Ident, Path, Type, parse_quote};
@@ -96,7 +97,7 @@ impl Field {
 
     pub fn type_name(&self) -> Ident {
         Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
+            self.ident.to_string().to_pascal_case().as_str(),
             Span::call_site(),
         )
     }
@@ -169,47 +170,6 @@ impl Field {
                 parse_quote! { #path::#ty }
             }
         }
-    }
-
-    /// All of this field's entitlements from any of:
-    /// - Field
-    /// - Access
-    /// - Variants
-    pub fn all_entitlements(&self) -> Entitlements {
-        let field_entitlements = &self.entitlements;
-        // skip read; won't have entitlements (see branch "access")
-        let access_entitlements = self.access.get_write().map(|write| &write.entitlements);
-
-        let entitlements_from_numericity = |numericity: &Numericity| {
-            Some(match numericity {
-                Numericity::Numeric => None?,
-                Numericity::Enumerated { variants } => variants
-                    .values()
-                    .map(|variant| &variant.entitlements)
-                    .fold(IndexSet::new(), |mut acc, entitlements| {
-                        acc.extend(entitlements.iter().cloned());
-                        acc
-                    }),
-            })
-        };
-
-        let read_variant_entitlements = self
-            .access
-            .get_read()
-            .and_then(|read| entitlements_from_numericity(&read.numericity));
-
-        let write_variant_entitlements = self
-            .access
-            .get_write()
-            .and_then(|write| entitlements_from_numericity(&write.numericity));
-
-        let mut entitlements = Entitlements::new();
-        entitlements.extend(field_entitlements.into_iter().cloned());
-        entitlements.extend(access_entitlements.into_iter().flatten().cloned());
-        entitlements.extend(read_variant_entitlements.into_iter().flatten());
-        entitlements.extend(write_variant_entitlements.into_iter().flatten());
-
-        entitlements
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {

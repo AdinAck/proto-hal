@@ -140,7 +140,7 @@ mod tests {
             // let foo::foo0::States { a, .. } = foo::foo0::write(|w| w.a(p.foo.foo0.a).v5());
             let a = write! {
                 foo::foo0 {
-                    a: p.foo.foo0.a => 5,
+                    a: p.foo.foo0.a => V5,
                 }
             };
 
@@ -152,6 +152,16 @@ mod tests {
                 foo::foo1 {
                     write_requires_v5: &mut p.foo.foo1.write_requires_v5 => Noop,
                 }
+                // foo::foo0 {
+                //     a: &a,
+                // }
+            }
+
+            fn gate<T>()
+            where
+                foo::foo1::write_requires_v5::WriteRequiresV5<::proto_hal::stasis::Dynamic>:
+                    ::proto_hal::stasis::Entitled<T>,
+            {
             }
 
             // foo::foo1::read().read_requires_v5(&mut p.foo.foo1.read_requires_v5, &a);
