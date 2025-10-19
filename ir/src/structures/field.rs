@@ -1,5 +1,5 @@
 use colored::Colorize;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Ident, Path, Type, parse_quote};
@@ -169,6 +169,47 @@ impl Field {
                 parse_quote! { #path::#ty }
             }
         }
+    }
+
+    /// All of this field's entitlements from any of:
+    /// - Field
+    /// - Access
+    /// - Variants
+    pub fn all_entitlements(&self) -> Entitlements {
+        let field_entitlements = &self.entitlements;
+        // skip read; won't have entitlements (see branch "access")
+        let access_entitlements = self.access.get_write().map(|write| &write.entitlements);
+
+        let entitlements_from_numericity = |numericity: &Numericity| {
+            Some(match numericity {
+                Numericity::Numeric => None?,
+                Numericity::Enumerated { variants } => variants
+                    .values()
+                    .map(|variant| &variant.entitlements)
+                    .fold(IndexSet::new(), |mut acc, entitlements| {
+                        acc.extend(entitlements.iter().cloned());
+                        acc
+                    }),
+            })
+        };
+
+        let read_variant_entitlements = self
+            .access
+            .get_read()
+            .and_then(|read| entitlements_from_numericity(&read.numericity));
+
+        let write_variant_entitlements = self
+            .access
+            .get_write()
+            .and_then(|write| entitlements_from_numericity(&write.numericity));
+
+        let mut entitlements = Entitlements::new();
+        entitlements.extend(field_entitlements.into_iter().cloned());
+        entitlements.extend(access_entitlements.into_iter().flatten().cloned());
+        entitlements.extend(read_variant_entitlements.into_iter().flatten());
+        entitlements.extend(write_variant_entitlements.into_iter().flatten());
+
+        entitlements
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
@@ -367,7 +408,26 @@ impl Field {
         }
     }
 
-    fn generate_container(ident: Ident) -> TokenStream {
+    fn generate_container(&self) -> TokenStream {
+        let ident = self.type_name();
+
+        let into_dynamic = if self.is_resolvable() {
+            Some(quote! {
+                impl<S> #ident<S>
+                where
+                    S: ::proto_hal::stasis::State<Field>,
+                {
+                    pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
+                        Self {
+                            _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
+                        }
+                    }
+                }
+            })
+        } else {
+            None
+        };
+
         quote! {
             pub struct #ident<S>
             where
@@ -375,6 +435,8 @@ impl Field {
             {
                 _state: S,
             }
+
+            #into_dynamic
 
             impl<S> ::proto_hal::stasis::Conjure for #ident<S>
             where
@@ -564,7 +626,7 @@ impl Field {
 
         body.extend(self.generate_states());
         body.extend(Self::generate_markers(self.offset, self.width));
-        body.extend(Self::generate_container(self.type_name()));
+        body.extend(self.generate_container());
         body.extend(Self::generate_repr(&self.access));
         body.extend(self.generate_state_impls());
 

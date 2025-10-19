@@ -130,21 +130,31 @@ mod tests {
         }
     }
 
-    // mod entitlements {
-    //     use crate::foo;
+    mod entitlements {
+        use crate::{foo, write};
 
-    //     #[test]
-    //     fn access() {
-    //         let mut p = unsafe { crate::peripherals() };
+        #[test]
+        fn access() {
+            let mut p = unsafe { crate::peripherals() };
 
-    //         let foo::foo0::States { a, .. } = foo::foo0::write(|w| w.a(p.foo.foo0.a).v5());
+            // let foo::foo0::States { a, .. } = foo::foo0::write(|w| w.a(p.foo.foo0.a).v5());
+            let a = write! {
+                foo::foo0 {
+                    a: p.foo.foo0.a => 5,
+                }
+            };
 
-    //         foo::foo1::write(|w| {
-    //             w.write_requires_v5(&mut p.foo.foo1.write_requires_v5, &a)
-    //                 .noop()
-    //         });
+            // foo::foo1::write(|w| {
+            //     w.write_requires_v5(&mut p.foo.foo1.write_requires_v5, &a)
+            //         .noop()
+            // });
+            write! {
+                foo::foo1 {
+                    write_requires_v5: &mut p.foo.foo1.write_requires_v5 => Noop,
+                }
+            }
 
-    //         foo::foo1::read().read_requires_v5(&mut p.foo.foo1.read_requires_v5, &a);
-    //     }
-    // }
+            // foo::foo1::read().read_requires_v5(&mut p.foo.foo1.read_requires_v5, &a);
+        }
+    }
 }

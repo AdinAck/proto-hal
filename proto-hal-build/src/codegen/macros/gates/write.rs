@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
+use ir::structures::{
+    field::{Field, Numericity},
+    hal::Hal,
+    peripheral::Peripheral,
+    register::Register,
+    variant::Variant,
+};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Expr, Ident, Path, spanned::Spanned};
+use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
 
 use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
@@ -15,7 +21,20 @@ use crate::codegen::macros::{
 struct Parsed<'args, 'hal> {
     peripheral: &'hal Peripheral,
     register: &'hal Register,
-    items: IndexMap<Ident, (&'hal Field, &'args BindingArgs, Option<&'args StateArgs>)>,
+    items: IndexMap<
+        Ident,
+        (
+            &'hal Field,
+            &'args BindingArgs,
+            Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
+        ),
+    >,
+}
+
+enum WriteState<'args, 'hal> {
+    Variant(&'hal Variant),
+    Expr(&'args Expr),
+    Lit(&'args LitInt),
 }
 
 fn parse<'args, 'hal>(
@@ -86,7 +105,14 @@ fn parse_fields<'args, 'hal>(
     register_args: &'args RegisterArgs,
     register: &'hal Register,
 ) -> (
-    IndexMap<Ident, (&'hal Field, &'args BindingArgs, Option<&'args StateArgs>)>,
+    IndexMap<
+        Ident,
+        (
+            &'hal Field,
+            &'args BindingArgs,
+            Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
+        ),
+    >,
     Vec<syn::Error>,
 ) {
     let mut items = IndexMap::new();
@@ -106,7 +132,62 @@ fn parse_fields<'args, 'hal>(
                 .as_ref()
                 .map(|transition| &transition.state);
 
-            if let Some(..) = items.insert(field_args.ident.clone(), (field, binding, transition)) {
+            let transition_and_write_state = match transition {
+                Some(transition) => Some((
+                    transition,
+                    match (
+                        transition,
+                        &field
+                            .access
+                            .get_write()
+                            .ok_or(syn::Error::new_spanned(
+                                &field_args.ident,
+                                format!("field {} must be writable", field_args.ident),
+                            ))?
+                            .numericity,
+                    ) {
+                        (
+                            StateArgs::Expr(expr @ Expr::Path(path)),
+                            Numericity::Enumerated { variants },
+                        ) => {
+                            let ident = path.path.require_ident()?;
+                            if let Some(variant) = variants
+                                .values()
+                                .find(|variant| &variant.type_name() == ident)
+                            {
+                                WriteState::Variant(variant)
+                            } else {
+                                WriteState::Expr(expr)
+                            }
+                        }
+                        (StateArgs::Expr(expr), Numericity::Enumerated { .. }) => {
+                            WriteState::Expr(expr)
+                        }
+                        (StateArgs::Expr(expr), Numericity::Numeric) => WriteState::Expr(expr),
+                        (StateArgs::Lit(lit_int), Numericity::Enumerated { variants }) => {
+                            let bits = lit_int.base10_parse::<u32>()?;
+                            let variant = variants
+                                .values()
+                                .find(|variant| variant.bits == bits)
+                                .ok_or(syn::Error::new_spanned(
+                                    &lit_int,
+                                    format!(
+                                        "value {} has no corresponding variant in field {}",
+                                        lit_int, field_args.ident
+                                    ),
+                                ))?;
+                            WriteState::Variant(variant)
+                        }
+                        (StateArgs::Lit(lit_int), Numericity::Numeric) => WriteState::Lit(lit_int),
+                    },
+                )),
+                None => None,
+            };
+
+            if let Some(..) = items.insert(
+                field_args.ident.clone(),
+                (field, binding, transition_and_write_state),
+            ) {
                 Err(syn::Error::new_spanned(
                     &field_args.ident,
                     "field already specified",
@@ -180,18 +261,167 @@ fn initials<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
         acc | ((u32::MAX >> (32 - field.width)) << field.offset)
     });
 
-    inert & !mask
+    // fill in statically known values from fields being statically transitioned
+    let statics = parsed
+        .items
+        .values()
+        .flat_map(|(field, binding, transition)| Some((field, binding, transition.as_ref()?)))
+        .flat_map(|(field, binding, (.., write_state))| {
+            if let Expr::Reference(..) = binding {
+                None?
+            }
+
+            let bits = match write_state {
+                WriteState::Variant(variant) => variant.bits,
+                WriteState::Lit(lit_int) => lit_int
+                    .base10_parse::<u32>()
+                    .expect("lit int should be valid"),
+                WriteState::Expr(..) => None?,
+            };
+
+            Some(bits << field.offset)
+        })
+        .reduce(|acc, value| acc | value)
+        .unwrap_or(0);
+
+    (inert & !mask) | statics
 }
 
-fn write_values(path: &Path, transition: &StateArgs, ident: &Ident) -> Option<TokenStream> {
-    Some(match transition {
-        StateArgs::Expr(expr) => {
+fn return_tys<'args, 'hal>(
+    path: &'args Path,
+    binding: &'args BindingArgs,
+    transition: &'args StateArgs,
+    write_state: &'args WriteState<'args, 'hal>,
+    field: &'hal Field,
+    field_ident: &'args Ident,
+) -> Option<TokenStream> {
+    if let Expr::Reference(..) = binding {
+        None?
+    }
+
+    let ty_name = field.type_name();
+
+    Some(match write_state {
+        WriteState::Variant(variant) => {
+            let ty = match transition {
+                StateArgs::Expr(expr) => quote! { #expr },
+                StateArgs::Lit(..) => {
+                    let ty = variant.type_name();
+                    quote! { #ty }
+                }
+            };
+            quote! {
+                #path::#field_ident::#ty_name<#path::#field_ident::#ty>
+            }
+        }
+        WriteState::Expr(expr) => {
+            quote! {
+                #path::#field_ident::#ty_name<#path::#field_ident::#expr>
+            }
+        }
+        WriteState::Lit(lit_int) => quote! { #path::#field_ident::#ty_name<#lit_int> },
+    })
+}
+
+fn parameter_tys<'args, 'hal>(
+    path: &'args Path,
+    binding: &'args BindingArgs,
+    field: &'hal Field,
+    field_ident: &'args Ident,
+) -> TokenStream {
+    let ty_name = field.type_name();
+
+    match binding {
+        Expr::Reference(r) => {
+            if r.mutability.is_some() {
+                quote! {
+                    (&mut #path::#field_ident::#ty_name<::proto_hal::stasis::Dynamic>, u32)
+                }
+            } else {
+                quote! {
+                    &#path::#field_ident::#ty_name<#ty_name>
+                }
+            }
+        }
+        _expr => quote! {
+            #path::#field_ident::#ty_name<#ty_name>
+        },
+    }
+}
+
+fn generics<'args, 'hal>(binding: &'args BindingArgs, field: &'hal Field) -> Option<TokenStream> {
+    if let Expr::Reference(r) = binding
+        && r.mutability.is_some()
+    {
+        None?
+    }
+
+    let generic = field.type_name();
+
+    Some(quote! { #generic })
+}
+
+fn where_clause<'args, 'hal>(
+    path: &'args Path,
+    binding: &'args BindingArgs,
+    field: &'hal Field,
+    field_ident: &'args Ident,
+) -> Option<TokenStream> {
+    if let Expr::Reference(r) = binding
+        && r.mutability.is_some()
+    {
+        None?
+    }
+
+    let generic = field.type_name();
+
+    Some(quote! { #generic: ::proto_hal::stasis::State<#path::#field_ident::Field> })
+}
+
+fn arguments<'args, 'hal>(
+    path: &'args Path,
+    binding: &'args BindingArgs,
+    transition: Option<&&'args StateArgs>, // Q: why???
+    ident: &'args Ident,
+    field: &'hal Field,
+) -> TokenStream {
+    if let Expr::Reference(r) = binding
+        && r.mutability.is_some()
+    {
+        // continue forth!
+    } else {
+        return quote! { #binding };
+    };
+
+    let Some(transition) = transition else {
+        return quote! { #binding };
+    };
+
+    let Some(write) = &field.access.get_write() else {
+        return quote! { #binding };
+    };
+
+    let body = match (transition, &write.numericity) {
+        (StateArgs::Expr(expr), Numericity::Enumerated { .. }) => {
             quote! {{
-                #path::#ident::write::Variant::#expr as u32
+                #[allow(unused_imports)]
+                use #path::#ident::write::Variant::*;
+                #expr as u32
             }}
         }
-        StateArgs::Lit(lit_int) => quote! { #lit_int },
-    })
+        (StateArgs::Expr(expr), ..) => {
+            quote! {{
+                #expr as u32
+            }}
+        }
+        (StateArgs::Lit(lit_int), ..) => quote! { #lit_int },
+    };
+
+    quote! { (#binding, #body) }
+}
+
+fn conjures(return_ty: &TokenStream) -> TokenStream {
+    quote! { <#return_ty as ::proto_hal::stasis::Conjure>::conjure() }
 }
 
 pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
@@ -257,52 +487,137 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
         }
     };
 
-    let (addrs, initials, parameter_idents, parameter_tys, write_values, offsets) = parsed
+    // passive items
+    let (parameter_idents, parameter_tys, generics, where_clause) = parsed
         .iter()
         .map(|(path, parsed)| {
-            let (parameter_idents, parameter_tys, write_values, offsets) = parsed
+            let (parameter_idents, parameter_tys, generics, where_clause) = parsed
                 .items
                 .iter()
-                .filter_map(|(ident, (field, binding, transition))| {
+                .filter_map(|(ident, (field, binding, _transition))| {
                     Some((
                         unique_field_ident(parsed.peripheral, parsed.register, ident),
-                        quote! { u32 },
-                        write_values(path, transition, ident)?,
-                        quote! { #path::#ident::OFFSET },
+                        parameter_tys(path, binding, field, ident),
+                        generics(binding, field),
+                        where_clause(path, binding, field, ident),
                     ))
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();
 
+            (parameter_idents, parameter_tys, generics, where_clause)
+        })
+        .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();
+
+    // arguments
+    let arguments = parsed
+        .iter()
+        .map(|(path, parsed)| {
+            let arguments = parsed
+                .items
+                .iter()
+                .filter_map(|(ident, (field, binding, transition))| {
+                    Some(arguments(
+                        path,
+                        binding,
+                        transition.as_ref().map(|(transition, ..)| transition),
+                        ident,
+                        field,
+                    ))
+                })
+                .collect::<Vec<_>>();
+
+            arguments
+        })
+        .collect::<Vec<_>>();
+
+    // dynamic items
+    let dynamic_values = parsed
+        .iter()
+        .map(|(path, parsed)| {
+            let dynamic_values = parsed
+                .items
+                .iter()
+                .filter_map(|(ident, (.., binding, _transition))| {
+                    if let Expr::Reference(r) = binding
+                        && r.mutability.is_some()
+                    {
+                        // and onwards!
+                    } else {
+                        None?
+                    };
+
+                    let unique_field_ident =
+                        unique_field_ident(parsed.peripheral, parsed.register, ident);
+
+                    Some(quote! { #unique_field_ident.1 << #path::#ident::OFFSET })
+                })
+                .collect::<Vec<_>>();
+
+            dynamic_values
+        })
+        .collect::<Vec<_>>();
+
+    // write items
+    let (addrs, initials, returns, conjures) = parsed
+        .iter()
+        .map(|(path, parsed)| {
+            let (returns, conjures) = parsed
+                .items
+                .iter()
+                .filter_map(|(ident, (field, binding, transition))| {
+                    let return_ty = return_tys(
+                        path,
+                        binding,
+                        &transition.as_ref()?.0,
+                        &transition.as_ref()?.1,
+                        field,
+                        ident,
+                    )?;
+                    let conjure = conjures(&return_ty);
+
+                    Some((return_ty, conjure))
+                })
+                .collect::<(Vec<_>, Vec<_>)>();
+
             (
                 addrs(path, parsed, &overridden_base_addrs),
                 initials(parsed),
-                parameter_idents,
-                parameter_tys,
-                write_values,
-                offsets,
+                returns,
+                conjures,
             )
         })
-        .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();
+        .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();
 
     quote! {
         #suggestions
         #errors
 
         {
-            unsafe fn gate(#(#(#parameter_idents: #parameter_tys,)*)*) {
+            fn gate <#(#(#generics),*),*> (#(#(#parameter_idents: #parameter_tys,)*)*) -> (#(#(#returns),*),*)
+            where
+                #(#(
+                    #where_clause
+                ),*),*
+            {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
                             #addrs as *mut u32,
                             #initials #(
-                                | (#parameter_idents << #offsets)
+                                | (#dynamic_values)
                             )*
                         )
                     };
                 )*
+
+                unsafe { (
+                    #(#(
+                        #conjures
+                    ),*),*
+                ) }
             }
 
-            gate(#(#(#write_values,)*)*)
+            gate(#(#(#arguments,)*)*)
         }
     }
 }

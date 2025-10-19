@@ -6,11 +6,12 @@ mod unmask;
 
 use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{
     Expr, ExprLit, Ident, Lit, LitInt, Path, Token, braced,
     parse::Parse,
     punctuated::Punctuated,
+    spanned::Spanned,
     token::{Brace, Comma},
 };
 
@@ -151,6 +152,15 @@ impl Parse for TransitionArgs {
 enum StateArgs {
     Expr(Expr),
     Lit(LitInt),
+}
+
+impl ToTokens for StateArgs {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            StateArgs::Expr(expr) => expr.to_tokens(tokens),
+            StateArgs::Lit(lit_int) => lit_int.to_tokens(tokens),
+        }
+    }
 }
 
 impl Parse for StateArgs {
