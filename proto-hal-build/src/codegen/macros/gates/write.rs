@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use inflector::Inflector;
 use ir::structures::{
-    entitlement::Entitlement,
     field::{Field, Numericity},
     hal::Hal,
     peripheral::Peripheral,
@@ -12,11 +11,17 @@ use ir::structures::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Expr, Ident, LitInt, Path, parse_quote, spanned::Spanned};
+use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
 
 use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
 };
+
+type FieldItem<'args, 'hal> = (
+    &'hal Field,
+    &'args BindingArgs,
+    Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
+);
 
 /// A parsed unit of the provided tokens and corresponding model nodes which
 /// represents a single register.
@@ -24,14 +29,7 @@ struct Parsed<'args, 'hal> {
     prefix: Option<Path>,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
-    items: IndexMap<
-        Ident,
-        (
-            &'hal Field,
-            &'args BindingArgs,
-            Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
-        ),
-    >,
+    items: IndexMap<Ident, FieldItem<'args, 'hal>>,
 }
 
 enum WriteState<'args, 'hal> {
@@ -116,17 +114,7 @@ fn parse_registers<'args, 'hal>(
 fn parse_fields<'args, 'hal>(
     register_args: &'args RegisterArgs,
     register: &'hal Register,
-) -> (
-    IndexMap<
-        Ident,
-        (
-            &'hal Field,
-            &'args BindingArgs,
-            Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
-        ),
-    >,
-    Vec<syn::Error>,
-) {
+) -> (IndexMap<Ident, FieldItem<'args, 'hal>>, Vec<syn::Error>) {
     let mut items = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -229,12 +217,13 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
                 )];
             };
 
+            let access_entitlements = write.entitlements.iter().map(|entitlement| (entitlement.peripheral(), entitlement.register(), entitlement.field()));
             let statewise_entitlements = match &write.numericity {
                 Numericity::Numeric => None,
                 Numericity::Enumerated { variants } => Some(
                     variants
                         .values()
-                        .flat_map(|variant| variant.entitlements.iter())
+                        .flat_map(|variant| variant.entitlements.iter().map(|entitlement| (entitlement.peripheral(), entitlement.register(), entitlement.field())))
                         .collect::<IndexSet<_>>(),
                 ),
             }
@@ -243,15 +232,12 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
 
             let mut errors = Vec::new();
 
-            for entitlement in write.entitlements.iter().chain(statewise_entitlements) {
-                if !entitlement_is_present(parsed, entitlement) {
+            for (peripheral_entitlement, register_entitlement, field_entitlement) in access_entitlements.chain(statewise_entitlements) {
+                if query_field(parsed, peripheral_entitlement, register_entitlement, field_entitlement).is_none() {
                     errors.push(syn::Error::new_spanned(
                         &field_ident,
                         format!(
-                            "field \"{field_ident}\" is entitled to at least one state in \"{}::{}::{}\" which must be provided",
-                            entitlement.peripheral(),
-                            entitlement.register(),
-                            entitlement.field(),
+                            "field \"{field_ident}\" is entitled to at least one state in \"{peripheral_entitlement}::{register_entitlement}::{field_entitlement}\" which must be provided",
                         )
                     ));
                 }
@@ -262,32 +248,39 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
         .collect::<Vec<_>>()
 }
 
-fn entitlement_is_present<'args, 'hal>(
-    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
-    entitlement: &Entitlement,
-) -> bool {
+fn query_field<'args, 'hal, 'parsed>(
+    parsed: &'parsed IndexMap<Path, Parsed<'args, 'hal>>,
+    peripheral_ident: &Ident,
+    register_ident: &Ident,
+    field_ident: &Ident,
+) -> Option<(
+    &'parsed Path,
+    &'parsed Ident,
+    &'parsed FieldItem<'args, 'hal>,
+)> {
     // peripheral/register is provided
-    let Some(parsed_reg) = parsed.values().find(
-        |Parsed {
-             peripheral,
-             register,
-             ..
-         }| {
-            &peripheral.ident == entitlement.peripheral()
-                && &register.ident == entitlement.register()
-        },
+    let Some((path, parsed_reg)) = parsed.iter().find(
+        |(
+            ..,
+            Parsed {
+                peripheral,
+                register,
+                ..
+            },
+        )| { &peripheral.ident == peripheral_ident && &register.ident == register_ident },
     ) else {
-        return false;
+        None?
     };
 
     // field is provided
     parsed_reg
         .items
         .iter()
-        .any(|(ident, ..)| entitlement.field() == ident)
+        .find(|(ident, ..)| &field_ident == ident)
+        .map(|(ident, item)| (path, ident, item))
 }
 
-fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Ident) -> Ident {
+fn make_unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Ident) -> Ident {
     format_ident!(
         "{}_{}_{}",
         peripheral.module_name(),
@@ -296,7 +289,7 @@ fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Iden
     )
 }
 
-fn addr<'args, 'hal>(
+fn make_addr<'args, 'hal>(
     path: &Path,
     parsed: &Parsed<'args, 'hal>,
     overridden_base_addrs: &HashMap<Ident, Expr>,
@@ -310,7 +303,7 @@ fn addr<'args, 'hal>(
     }
 }
 
-fn initial<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
+fn make_initial<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
     // start with inert field values (or zero)
     let inert = parsed
         .register
@@ -352,7 +345,7 @@ fn initial<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
     (inert & !mask) | statics
 }
 
-fn return_ty<'args, 'hal>(
+fn make_return_ty<'args, 'hal>(
     path: &'args Path,
     binding: &'args BindingArgs,
     state_args: &'args StateArgs,
@@ -388,13 +381,14 @@ fn return_ty<'args, 'hal>(
     })
 }
 
-fn input_ty<'args, 'hal>(
+fn make_input_ty<'args, 'hal>(
     path: &'args Path,
     binding: &'args BindingArgs,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
     field: &'hal Field,
     field_ident: &'args Ident,
+    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
 ) -> TokenStream {
     let ty_name = field.type_name();
     let generic = format_ident!(
@@ -406,7 +400,7 @@ fn input_ty<'args, 'hal>(
 
     match binding {
         Expr::Reference(r) => {
-            if r.mutability.is_some() {
+            if r.mutability.is_some() && transition.is_some() {
                 quote! {
                     #path::#field_ident::#ty_name<::proto_hal::stasis::Dynamic>
                 }
@@ -422,9 +416,13 @@ fn input_ty<'args, 'hal>(
     }
 }
 
-fn parameter_ty<'args, 'hal>(binding: &'args BindingArgs, input_ty: &TokenStream) -> TokenStream {
+fn make_parameter_ty<'args, 'hal>(
+    binding: &'args BindingArgs,
+    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
+    input_ty: &TokenStream,
+) -> TokenStream {
     if let Expr::Reference(r) = binding {
-        if r.mutability.is_some() {
+        if r.mutability.is_some() && transition.is_some() {
             quote! { (&mut #input_ty, u32) }
         } else {
             quote! { &#input_ty }
@@ -434,14 +432,16 @@ fn parameter_ty<'args, 'hal>(binding: &'args BindingArgs, input_ty: &TokenStream
     }
 }
 
-fn generic<'args, 'hal>(
+fn make_generic<'args, 'hal>(
     binding: &'args BindingArgs,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
     field: &'hal Field,
+    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
 ) -> Option<TokenStream> {
     if let Expr::Reference(r) = binding
         && r.mutability.is_some()
+        && transition.is_some()
     {
         None?
     }
@@ -456,7 +456,7 @@ fn generic<'args, 'hal>(
     Some(quote! { #generic })
 }
 
-fn parameter_constraints<'args, 'hal>(
+fn make_parameter_constraints<'args, 'hal>(
     parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
     path: &'args Path,
     prefix: Option<&Path>,
@@ -490,30 +490,28 @@ fn parameter_constraints<'args, 'hal>(
                 write
                     .entitlements
                     .iter()
-                    .filter_map(|entitlement| {
-                        if entitlement_is_present(parsed, entitlement) {
-                            Some((
-                                entitlement.peripheral(),
-                                entitlement.register(),
-                                entitlement.field(),
-                            ))
-                        } else {
-                            None
-                        }
+                    .map(|entitlement| {
+                        (
+                            entitlement.peripheral(),
+                            entitlement.register(),
+                            entitlement.field(),
+                        )
                     })
                     .collect::<IndexSet<_>>()
             })
             .into_iter()
             .flatten()
-            .map(|(peripheral, register, field)| {
+            .filter_map(|(peripheral, register, field)| {
+                query_field(parsed, peripheral, register, field)?;
+
                 let generic = format_ident!("{}{}{}", peripheral.to_string().to_pascal_case(), register.to_string().to_pascal_case(), field.to_string().to_pascal_case(), span = span);
 
                 let prefix = prefix.map(|prefix| quote! { #prefix:: });
                 let field_ty = Ident::new(field.to_string().to_pascal_case().as_str(), Span::call_site());
 
-                quote! {
+                Some(quote! {
                     #input_ty: ::proto_hal::stasis::Entitled<#prefix #peripheral::#register::#field::#field_ty<#generic>>
-                }
+                })
             });
 
         constraints.extend(write_access_entitlements);
@@ -522,6 +520,10 @@ fn parameter_constraints<'args, 'hal>(
     if let Expr::Reference(..) = binding {
         return Some(quote! { #(#constraints,)* });
     }
+
+    let Some(return_ty) = return_ty else {
+        return Some(quote! { #(#constraints,)* });
+    };
 
     let statewise_entitlements = field
         .access
@@ -532,16 +534,12 @@ fn parameter_constraints<'args, 'hal>(
                 Numericity::Enumerated { variants } => variants
                     .values()
                     .flat_map(|variant| {
-                        variant.entitlements.iter().filter_map(|entitlement| {
-                            if entitlement_is_present(parsed, entitlement) {
-                                Some((
-                                    entitlement.peripheral(),
-                                    entitlement.register(),
-                                    entitlement.field(),
-                                ))
-                            } else {
-                                None
-                            }
+                        variant.entitlements.iter().map(|entitlement| {
+                            (
+                                entitlement.peripheral(),
+                                entitlement.register(),
+                                entitlement.field(),
+                            )
                         })
                     })
                     .collect::<IndexSet<_>>(),
@@ -549,18 +547,28 @@ fn parameter_constraints<'args, 'hal>(
         })
         .into_iter()
         .flatten()
-        .map(|(peripheral, register, field)| {
-            let entitled_reg_path: Path = parse_quote! { #prefix::#peripheral::#register };
-            if let Some(parsed) = parsed.get(&entitled_reg_path) && let Some((.., Some(..))) = parsed.items.get(field) {
+        .filter_map(|(peripheral, register, field)| {
+            let entitlement_return_ty = {
+                let (path, field_ident, (field, binding, transition)) = query_field(parsed, peripheral, register, field)?;
+                if let Some((state_args, write_state)) = transition {
+                    make_return_ty(path, binding, state_args, write_state, field, field_ident)
+                } else {
+                    None
+                }
+            };
+
+            Some(if let Some(entitlement_return_ty) = entitlement_return_ty {
                 // the entitled to field is being transitioned
-                todo!()
+                quote! {
+                    #return_ty: ::proto_hal::stasis::Entitled<#entitlement_return_ty>
+                }
             } else {
                 let generic = format_ident!("{peripheral}{register}{field}", span = span);
 
                 quote! {
-                    #input_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#field<#generic>>
+                    #return_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#field<#generic>>
                 }
-            }
+            })
         });
 
     constraints.extend(statewise_entitlements);
@@ -568,7 +576,7 @@ fn parameter_constraints<'args, 'hal>(
     Some(quote! { #(#constraints,)* })
 }
 
-fn argument<'args, 'hal>(
+fn make_argument<'args, 'hal>(
     path: &'args Path,
     binding: &'args BindingArgs,
     transition: Option<&&'args StateArgs>,
@@ -610,11 +618,13 @@ fn argument<'args, 'hal>(
     quote! { (#binding, #body) }
 }
 
-fn dynamic_value<'args, 'hal>(path: &'args Path, parsed: &Parsed<'args, 'hal>) -> TokenStream {
+fn make_dynamic_value<'args, 'hal>(path: &'args Path, parsed: &Parsed<'args, 'hal>) -> TokenStream {
     parsed
         .items
         .iter()
-        .filter_map(|(field_ident, (_, binding, ..))| {
+        .filter_map(|(field_ident, (_, binding, transition))| {
+            transition.as_ref()?;
+
             if let Expr::Reference(r) = binding
                 && r.mutability.is_some()
             {
@@ -624,14 +634,14 @@ fn dynamic_value<'args, 'hal>(path: &'args Path, parsed: &Parsed<'args, 'hal>) -
             };
 
             let unique_field_ident =
-                unique_field_ident(parsed.peripheral, parsed.register, field_ident);
+                make_unique_field_ident(parsed.peripheral, parsed.register, field_ident);
 
             Some(quote! { | (#unique_field_ident.1 << #path::#field_ident::OFFSET) })
         })
         .collect()
 }
 
-fn conjure(return_ty: &TokenStream) -> TokenStream {
+fn make_conjure(return_ty: &TokenStream) -> TokenStream {
     quote! { <#return_ty as ::proto_hal::stasis::Conjure>::conjure() }
 }
 
@@ -711,30 +721,37 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
 
     for (path, parsed_reg) in &parsed {
         for (field_ident, (field, binding, transition)) in &parsed_reg.items {
-            parameter_idents.push(unique_field_ident(
+            parameter_idents.push(make_unique_field_ident(
                 parsed_reg.peripheral,
                 parsed_reg.register,
                 field_ident,
             ));
 
-            let input_ty = input_ty(
+            let input_ty = make_input_ty(
                 path,
                 binding,
                 parsed_reg.peripheral,
                 parsed_reg.register,
                 field,
                 field_ident,
+                transition.as_ref(),
             );
 
             let return_ty = if let Some((state_args, write_state)) = transition {
-                return_ty(path, binding, state_args, write_state, field, field_ident)
+                make_return_ty(path, binding, state_args, write_state, field, field_ident)
             } else {
                 None
             };
 
-            let generic = generic(binding, parsed_reg.peripheral, parsed_reg.register, field);
+            let generic = make_generic(
+                binding,
+                parsed_reg.peripheral,
+                parsed_reg.register,
+                field,
+                transition.as_ref(),
+            );
 
-            if let Some(parameter_constraints) = parameter_constraints(
+            if let Some(parameter_constraints) = make_parameter_constraints(
                 &parsed,
                 path,
                 parsed_reg.prefix.as_ref(),
@@ -752,14 +769,14 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                 generics.push(generic);
             }
 
-            parameter_tys.push(parameter_ty(binding, &input_ty));
+            parameter_tys.push(make_parameter_ty(binding, transition.as_ref(), &input_ty));
 
             if let Some(return_ty) = return_ty {
-                conjures.push(conjure(&return_ty));
+                conjures.push(make_conjure(&return_ty));
                 return_tys.push(return_ty);
             }
 
-            arguments.push(argument(
+            arguments.push(make_argument(
                 path,
                 binding,
                 transition.as_ref().map(|(state_args, ..)| state_args),
@@ -778,9 +795,9 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             continue;
         }
 
-        addrs.push(addr(path, parsed_reg, &overridden_base_addrs));
-        initials.push(initial(parsed_reg));
-        dynamic_values.push(dynamic_value(path, parsed_reg));
+        addrs.push(make_addr(path, parsed_reg, &overridden_base_addrs));
+        initials.push(make_initial(parsed_reg));
+        dynamic_values.push(make_dynamic_value(path, parsed_reg));
     }
 
     quote! {
