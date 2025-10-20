@@ -1,5 +1,10 @@
 pub trait State<Parent>: Conjure {}
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has entitlements, but `{State}` is not one of them",
+    label = "must be an entitlement of `{Self}`",
+    // note = "learn more: <docs link>"
+)]
 pub unsafe trait Entitled<State> {}
 
 pub trait PartialConjure {

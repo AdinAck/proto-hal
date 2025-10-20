@@ -418,6 +418,7 @@ fn parameter_constraints<'args, 'hal>(
     // satisfy the entitlements cannot be written
 
     let mut constraints = Vec::new();
+    let span = field_ident.span();
 
     if let Some(generic) = generic {
         constraints
@@ -447,7 +448,7 @@ fn parameter_constraints<'args, 'hal>(
             .into_iter()
             .flatten()
             .map(|(peripheral, register, field)| {
-                let generic = format_ident!("{}{}{}", peripheral.to_string().to_pascal_case(), register.to_string().to_pascal_case(), field.to_string().to_pascal_case());
+                let generic = format_ident!("{}{}{}", peripheral.to_string().to_pascal_case(), register.to_string().to_pascal_case(), field.to_string().to_pascal_case(), span = span);
 
                 let prefix = prefix.map(|prefix| quote! { #prefix:: });
                 let field_ty = Ident::new(field.to_string().to_pascal_case().as_str(), Span::call_site());
@@ -492,7 +493,7 @@ fn parameter_constraints<'args, 'hal>(
                 // the entitled to field is being transitioned
                 todo!()
             } else {
-                let generic = format_ident!("{peripheral}{register}{field}");
+                let generic = format_ident!("{peripheral}{register}{field}", span = span);
 
                 quote! {
                     #input_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#field<#generic>>
