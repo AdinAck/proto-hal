@@ -213,36 +213,6 @@ impl Field {
                             );
                         }
                     }
-
-                    for variant in sorted_variants {
-                        for entitlement in &variant.entitlements {
-                            if new_context
-                                .path()
-                                .iter()
-                                .zip(
-                                    entitlement
-                                        .render()
-                                        .segments
-                                        .iter()
-                                        .skip(1) // skip "crate"
-                                        .map(|segment| &segment.ident),
-                                )
-                                .take(2) // only check peripheral and register
-                                .any(|(lhs, rhs)| lhs != &rhs.to_string())
-                            {
-                                diagnostics.insert(
-                                    Diagnostic::error(
-                                        "entangled variants must reside within the same register"
-                                            .to_string(),
-                                    )
-                                    .notes([format!("erroneous entitlement: \"{entitlement}\"")])
-                                    .with_context(
-                                        new_context.clone().and(variant.ident.to_string()),
-                                    ),
-                                );
-                            }
-                        }
-                    }
                 }
             }
         };
@@ -354,7 +324,7 @@ impl Field {
             && let Numericity::Enumerated { variants } = &access.numericity
         {
             let variants = variants.values();
-            variants.for_each(|variant| out.extend(variant.generate()));
+            variants.for_each(|variant| out.extend(variant.generate(self)));
         }
 
         out
@@ -388,6 +358,22 @@ impl Field {
             None
         };
 
+        let entitlement_paths = self
+            .access
+            .get_write()
+            .map(|write| &write.entitlements)
+            .into_iter()
+            .flatten()
+            .map(|entitlement| {
+                let field_ty = Ident::new(
+                    entitlement.field().to_string().to_pascal_case().as_str(),
+                    Span::call_site(),
+                );
+                let prefix = entitlement.render_up_to_field();
+                let state = entitlement.render_entirely();
+                quote! { #prefix::#field_ty<#state> }
+            });
+
         quote! {
             pub struct #ident<S>
             where
@@ -408,6 +394,13 @@ impl Field {
                     }
                 }
             }
+
+            #(
+                unsafe impl<S> ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident<S>
+                where
+                    S: ::proto_hal::stasis::State<Field>,
+                {}
+            )*
         }
     }
 

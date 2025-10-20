@@ -6,6 +6,12 @@ scaffolding!();
 
 #[cfg(test)]
 mod tests {
+    static mut MOCK_FOO: u32 = u32::MAX;
+
+    fn addr_of_foo() -> usize {
+        (&raw const MOCK_FOO).addr()
+    }
+
     mod hal {
         use crate::foo::foo0::a;
         use core::any::{Any, TypeId};
@@ -35,13 +41,10 @@ mod tests {
             extern crate std;
             use macros::{modify_untracked, read_untracked, write_from_zero_untracked};
 
-            use crate::foo;
-
-            static mut MOCK_FOO: u32 = u32::MAX;
-
-            fn addr_of_foo() -> usize {
-                (&raw const MOCK_FOO).addr()
-            }
+            use crate::{
+                foo,
+                tests::{MOCK_FOO, addr_of_foo},
+            };
 
             #[test]
             fn unsafe_read() {
@@ -131,40 +134,28 @@ mod tests {
     }
 
     mod entitlements {
-        use crate::{foo, write};
+        use crate::{foo, tests::addr_of_foo, write};
 
         #[test]
         fn access() {
             let mut p = unsafe { crate::peripherals() };
 
-            // let foo::foo0::States { a, .. } = foo::foo0::write(|w| w.a(p.foo.foo0.a).v5());
             let a = write! {
                 foo::foo0 {
-                    a: p.foo.foo0.a => V5,
+                    a: p.foo.foo0.a => 5,
                 }
+                @base_addr foo addr_of_foo()
             };
 
-            // foo::foo1::write(|w| {
-            //     w.write_requires_v5(&mut p.foo.foo1.write_requires_v5, &a)
-            //         .noop()
-            // });
             write! {
                 foo::foo1 {
                     write_requires_v5: &mut p.foo.foo1.write_requires_v5 => Noop,
                 }
-                foo::foo0 {
-                    a: &a,
-                }
+                // foo::foo0 {
+                //     a: &a,
+                // }
+                @base_addr foo addr_of_foo()
             }
-
-            fn gate<T>()
-            where
-                foo::foo1::write_requires_v5::WriteRequiresV5<::proto_hal::stasis::Dynamic>:
-                    ::proto_hal::stasis::Entitled<T>,
-            {
-            }
-
-            // foo::foo1::read().read_requires_v5(&mut p.foo.foo1.read_requires_v5, &a);
         }
     }
 }

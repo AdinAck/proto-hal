@@ -1,9 +1,10 @@
+use inflector::Inflector;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
 use crate::{
-    structures::entitlement::Entitlements,
+    structures::{entitlement::Entitlements, field::Field},
     utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
@@ -99,15 +100,54 @@ impl Variant {
             }
         }
     }
+
+    pub fn generate_entitlement_impls(
+        ident: &Ident,
+        entitlements: &Entitlements,
+        field: &Field,
+    ) -> TokenStream {
+        let field_ty = field.type_name();
+        if entitlements.is_empty() {
+            // any T satisfies this state's entitlement requirements
+
+            quote! {
+                unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #field_ty<#ident> {}
+            }
+        } else {
+            // exactly this finite set of states satisfy this state's entitlement requirements
+
+            let entitlement_paths = entitlements.iter().map(|entitlement| {
+                let field_ty = Ident::new(
+                    entitlement.field().to_string().to_pascal_case().as_str(),
+                    Span::call_site(),
+                );
+                let prefix = entitlement.render_up_to_field();
+                let state = entitlement.render_entirely();
+                quote! { #prefix::#field_ty<#state> }
+            });
+
+            quote! {
+                #(
+                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #field_ty<#ident> {}
+                )*
+            }
+        }
+    }
 }
 
 impl Variant {
-    pub fn generate(&self) -> TokenStream {
-        let ident = Ident::new(
-            &inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()),
-            Span::call_site(),
-        );
+    pub fn generate(&self, parent: &Field) -> TokenStream {
+        let ident = self.type_name();
 
-        Self::generate_state(&ident, self.docs.iter())
+        let mut body = quote! {};
+
+        body.extend(Self::generate_state(&ident, self.docs.iter()));
+        body.extend(Self::generate_entitlement_impls(
+            &ident,
+            &self.entitlements,
+            parent,
+        ));
+
+        body
     }
 }

@@ -30,13 +30,22 @@ impl Entitlement {
         }
     }
 
-    pub fn render(&self) -> Path {
+    pub fn render_up_to_field(&self) -> Path {
         let peripheral = self.peripheral();
         let register = self.register();
         let field = self.field();
-        let variant = self.variant();
+
         parse_quote! {
-            crate::#peripheral::#register::#field::#variant
+            crate::#peripheral::#register::#field
+        }
+    }
+
+    pub fn render_entirely(&self) -> Path {
+        let prefix = self.render_up_to_field();
+        let variant = self.variant();
+
+        parse_quote! {
+            #prefix::#variant
         }
     }
 }
