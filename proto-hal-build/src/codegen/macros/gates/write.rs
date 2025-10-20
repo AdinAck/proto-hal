@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use inflector::Inflector;
 use ir::structures::{
+    entitlement::Entitlement,
     field::{Field, Numericity},
     hal::Hal,
     peripheral::Peripheral,
@@ -220,17 +221,70 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
     parsed
         .values()
         .flat_map(|Parsed { items, .. }| items.iter())
-        .filter_map(|(ident, (field, ..))| {
-            if field.access.get_write().is_none() {
-                Some(syn::Error::new_spanned(
-                    ident,
-                    format!("field \"{ident}\" is not writable"),
-                ))
-            } else {
-                None
+        .flat_map(|(field_ident, (field, ..))| {
+            let Some(write) = field.access.get_write() else {
+                return vec![syn::Error::new_spanned(
+                    field_ident,
+                    format!("field \"{field_ident}\" is not writable"),
+                )];
+            };
+
+            let statewise_entitlements = match &write.numericity {
+                Numericity::Numeric => None,
+                Numericity::Enumerated { variants } => Some(
+                    variants
+                        .values()
+                        .flat_map(|variant| variant.entitlements.iter())
+                        .collect::<IndexSet<_>>(),
+                ),
             }
+            .into_iter()
+            .flatten();
+
+            let mut errors = Vec::new();
+
+            for entitlement in write.entitlements.iter().chain(statewise_entitlements) {
+                if !entitlement_is_present(parsed, entitlement) {
+                    errors.push(syn::Error::new_spanned(
+                        &field_ident,
+                        format!(
+                            "field \"{field_ident}\" is entitled to at least one state in \"{}::{}::{}\" which must be provided",
+                            entitlement.peripheral(),
+                            entitlement.register(),
+                            entitlement.field(),
+                        )
+                    ));
+                }
+            }
+
+            errors
         })
         .collect::<Vec<_>>()
+}
+
+fn entitlement_is_present<'args, 'hal>(
+    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
+    entitlement: &Entitlement,
+) -> bool {
+    // peripheral/register is provided
+    let Some(parsed_reg) = parsed.values().find(
+        |Parsed {
+             peripheral,
+             register,
+             ..
+         }| {
+            &peripheral.ident == entitlement.peripheral()
+                && &register.ident == entitlement.register()
+        },
+    ) else {
+        return false;
+    };
+
+    // field is provided
+    parsed_reg
+        .items
+        .iter()
+        .any(|(ident, ..)| entitlement.field() == ident)
 }
 
 fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Ident) -> Ident {
@@ -436,12 +490,16 @@ fn parameter_constraints<'args, 'hal>(
                 write
                     .entitlements
                     .iter()
-                    .map(|entitlement| {
-                        (
-                            entitlement.peripheral(),
-                            entitlement.register(),
-                            entitlement.field(),
-                        )
+                    .filter_map(|entitlement| {
+                        if entitlement_is_present(parsed, entitlement) {
+                            Some((
+                                entitlement.peripheral(),
+                                entitlement.register(),
+                                entitlement.field(),
+                            ))
+                        } else {
+                            None
+                        }
                     })
                     .collect::<IndexSet<_>>()
             })
@@ -474,12 +532,16 @@ fn parameter_constraints<'args, 'hal>(
                 Numericity::Enumerated { variants } => variants
                     .values()
                     .flat_map(|variant| {
-                        variant.entitlements.iter().map(|entitlement| {
-                            (
-                                entitlement.peripheral(),
-                                entitlement.register(),
-                                entitlement.field(),
-                            )
+                        variant.entitlements.iter().filter_map(|entitlement| {
+                            if entitlement_is_present(parsed, entitlement) {
+                                Some((
+                                    entitlement.peripheral(),
+                                    entitlement.register(),
+                                    entitlement.field(),
+                                ))
+                            } else {
+                                None
+                            }
                         })
                     })
                     .collect::<IndexSet<_>>(),
@@ -707,10 +769,8 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
         }
 
         if parsed_reg.items.iter().any(|(.., (_, binding, ..))| {
-            if let Expr::Reference(r) = binding
-                && r.mutability.is_none()
-            {
-                true
+            if let Expr::Reference(r) = binding {
+                r.mutability.is_none()
             } else {
                 false
             }
