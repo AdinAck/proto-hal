@@ -152,9 +152,9 @@ mod tests {
                 foo::foo1 {
                     write_requires_v5: &mut p.foo.foo1.write_requires_v5 => Noop,
                 }
-                // foo::foo0 {
-                //     a: &a,
-                // }
+                foo::foo0 {
+                    a: &a,
+                }
             }
 
             fn gate<T>()

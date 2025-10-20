@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use indexmap::{IndexMap, IndexSet};
+use inflector::Inflector;
 use ir::structures::{
     field::{Field, Numericity},
     hal::Hal,
@@ -8,9 +9,9 @@ use ir::structures::{
     register::Register,
     variant::Variant,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
+use syn::{Expr, Ident, LitInt, Path, parse_quote, spanned::Spanned};
 
 use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
@@ -19,6 +20,7 @@ use crate::codegen::macros::{
 /// A parsed unit of the provided tokens and corresponding model nodes which
 /// represents a single register.
 struct Parsed<'args, 'hal> {
+    prefix: Option<Path>,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
     items: IndexMap<
@@ -47,13 +49,14 @@ fn parse<'args, 'hal>(
     let (registers, e) = parse_registers(args, model);
     errors.extend(e);
 
-    for (register_ident, (register_args, peripheral, register)) in registers {
+    for (register_ident, (prefix, register_args, peripheral, register)) in registers {
         let (items, e) = parse_fields(register_args, register);
         errors.extend(e);
 
         out.insert(
             register_ident.clone(),
             Parsed {
+                prefix,
                 peripheral,
                 register,
                 items,
@@ -69,7 +72,15 @@ fn parse_registers<'args, 'hal>(
     args: &'args Args,
     model: &'hal Hal,
 ) -> (
-    IndexMap<Path, (&'args RegisterArgs, &'hal Peripheral, &'hal Register)>,
+    IndexMap<
+        Path,
+        (
+            Option<Path>,
+            &'args RegisterArgs,
+            &'hal Peripheral,
+            &'hal Register,
+        ),
+    >,
     Vec<syn::Error>,
 ) {
     let mut registers = IndexMap::new();
@@ -77,11 +88,11 @@ fn parse_registers<'args, 'hal>(
 
     for register_args in &args.registers {
         let mut parse_register = || {
-            let (peripheral, register) = get_register(&register_args.path, model)?;
+            let (prefix, peripheral, register) = get_register(&register_args.path, model)?;
 
             if let Some(..) = registers.insert(
                 register_args.path.clone(),
-                (register_args, peripheral, register),
+                (prefix, register_args, peripheral, register),
             ) {
                 Err(syn::Error::new_spanned(
                     &register_args.path,
@@ -323,7 +334,7 @@ fn return_ty<'args, 'hal>(
     })
 }
 
-fn parameter_ty<'args, 'hal>(
+fn input_ty<'args, 'hal>(
     path: &'args Path,
     binding: &'args BindingArgs,
     peripheral: &'hal Peripheral,
@@ -343,17 +354,29 @@ fn parameter_ty<'args, 'hal>(
         Expr::Reference(r) => {
             if r.mutability.is_some() {
                 quote! {
-                    (&mut #path::#field_ident::#ty_name<::proto_hal::stasis::Dynamic>, u32)
+                    #path::#field_ident::#ty_name<::proto_hal::stasis::Dynamic>
                 }
             } else {
                 quote! {
-                    &#path::#field_ident::#ty_name<#generic>
+                    #path::#field_ident::#ty_name<#generic>
                 }
             }
         }
         _expr => quote! {
             #path::#field_ident::#ty_name<#generic>
         },
+    }
+}
+
+fn parameter_ty<'args, 'hal>(binding: &'args BindingArgs, input_ty: &TokenStream) -> TokenStream {
+    if let Expr::Reference(r) = binding {
+        if r.mutability.is_some() {
+            quote! { (&mut #input_ty, u32) }
+        } else {
+            quote! { &#input_ty }
+        }
+    } else {
+        input_ty.clone()
     }
 }
 
@@ -379,28 +402,69 @@ fn generic<'args, 'hal>(
     Some(quote! { #generic })
 }
 
-fn constraint<'args, 'hal>(
+fn parameter_constraints<'args, 'hal>(
+    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
     path: &'args Path,
+    prefix: Option<&Path>,
     binding: &'args BindingArgs,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
     field: &'hal Field,
     field_ident: &'args Ident,
+    generic: Option<&TokenStream>,
+    input_ty: &TokenStream,
+    return_ty: Option<&TokenStream>,
 ) -> Option<TokenStream> {
-    if let Expr::Reference(r) = binding
-        && r.mutability.is_some()
-    {
-        None?
+    // if the subject field's write access has entitlements, the entitlements
+    // must be satisfied in the input to the gate, and the fields used to
+    // satisfy the entitlements cannot be written
+
+    let mut constraints = Vec::new();
+
+    if let Some(generic) = generic {
+        constraints
+            .push(quote! { #generic: ::proto_hal::stasis::State<#path::#field_ident::Field> });
     }
 
-    let generic = format_ident!(
-        "{}{}{}",
-        peripheral.type_name(),
-        register.type_name(),
-        field.type_name()
-    );
+    if let Expr::Reference(r) = binding
+        && r.mutability.is_none()
+    {
+    } else {
+        let write_access_entitlements = field
+            .access
+            .get_write()
+            .map(|write| {
+                write
+                    .entitlements
+                    .iter()
+                    .map(|entitlement| {
+                        (
+                            entitlement.peripheral(),
+                            entitlement.register(),
+                            entitlement.field(),
+                        )
+                    })
+                    .collect::<IndexSet<_>>()
+            })
+            .into_iter()
+            .flatten()
+            .map(|(peripheral, register, field)| {
+                let generic = format_ident!("{}{}{}", peripheral.to_string().to_pascal_case(), register.to_string().to_pascal_case(), field.to_string().to_pascal_case());
 
-    let entitlements = field
+                let prefix = prefix.map(|prefix| quote! { #prefix:: });
+                let field_ty = Ident::new(field.to_string().to_pascal_case().as_str(), Span::call_site());
+
+                quote! {
+                    #input_ty: ::proto_hal::stasis::Entitled<#prefix #peripheral::#register::#field::#field_ty<#generic>>
+                }
+            });
+
+        constraints.extend(write_access_entitlements);
+    }
+
+    if let Expr::Reference(..) = binding {
+        return Some(quote! { #(#constraints,)* });
+    }
+
+    let statewise_entitlements = field
         .access
         .get_write()
         .and_then(|write| {
@@ -408,32 +472,37 @@ fn constraint<'args, 'hal>(
                 Numericity::Numeric => None?,
                 Numericity::Enumerated { variants } => variants
                     .values()
-                    .map(|variant| {
+                    .flat_map(|variant| {
                         variant.entitlements.iter().map(|entitlement| {
-                            format_ident!(
-                                "{}{}{}",
+                            (
                                 entitlement.peripheral(),
                                 entitlement.register(),
-                                entitlement.field()
+                                entitlement.field(),
                             )
                         })
                     })
-                    .flatten()
                     .collect::<IndexSet<_>>(),
             })
         })
         .into_iter()
         .flatten()
-        .map(|entitlement_generic| {
-            quote! {
-                ::proto_hal::stasis::Entitled<#entitlement_generic>
+        .map(|(peripheral, register, field)| {
+            let entitled_reg_path: Path = parse_quote! { #prefix::#peripheral::#register };
+            if let Some(parsed) = parsed.get(&entitled_reg_path) && let Some((.., Some(..))) = parsed.items.get(field) {
+                // the entitled to field is being transitioned
+                todo!()
+            } else {
+                let generic = format_ident!("{peripheral}{register}{field}");
+
+                quote! {
+                    #input_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#field<#generic>>
+                }
             }
         });
 
-    Some(quote! {
-        #generic: ::proto_hal::stasis::State<#path::#field_ident::Field>
-        #(+ #entitlements)*
-    })
+    constraints.extend(statewise_entitlements);
+
+    Some(quote! { #(#constraints,)* })
 }
 
 fn argument<'args, 'hal>(
@@ -577,44 +646,54 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let mut dynamic_values = Vec::new();
     let mut arguments = Vec::new();
 
-    for (path, parsed) in &parsed {
-        for (field_ident, (field, binding, transition)) in &parsed.items {
-            if let Some(generic) = generic(binding, parsed.peripheral, parsed.register, field) {
+    for (path, parsed_reg) in &parsed {
+        for (field_ident, (field, binding, transition)) in &parsed_reg.items {
+            parameter_idents.push(unique_field_ident(
+                parsed_reg.peripheral,
+                parsed_reg.register,
+                field_ident,
+            ));
+
+            let input_ty = input_ty(
+                path,
+                binding,
+                parsed_reg.peripheral,
+                parsed_reg.register,
+                field,
+                field_ident,
+            );
+
+            let return_ty = if let Some((state_args, write_state)) = transition {
+                return_ty(path, binding, state_args, write_state, field, field_ident)
+            } else {
+                None
+            };
+
+            let generic = generic(binding, parsed_reg.peripheral, parsed_reg.register, field);
+
+            if let Some(parameter_constraints) = parameter_constraints(
+                &parsed,
+                path,
+                parsed_reg.prefix.as_ref(),
+                binding,
+                field,
+                field_ident,
+                generic.as_ref(),
+                &input_ty,
+                return_ty.as_ref(),
+            ) {
+                constraints.push(parameter_constraints);
+            }
+
+            if let Some(generic) = generic {
                 generics.push(generic);
             }
 
-            parameter_idents.push(unique_field_ident(
-                parsed.peripheral,
-                parsed.register,
-                field_ident,
-            ));
+            parameter_tys.push(parameter_ty(binding, &input_ty));
 
-            parameter_tys.push(parameter_ty(
-                path,
-                binding,
-                parsed.peripheral,
-                parsed.register,
-                field,
-                field_ident,
-            ));
-
-            if let Some((state_args, write_state)) = transition
-                && let Some(return_ty) =
-                    return_ty(path, binding, state_args, write_state, field, field_ident)
-            {
+            if let Some(return_ty) = return_ty {
                 conjures.push(conjure(&return_ty));
                 return_tys.push(return_ty);
-            }
-
-            if let Some(constraint) = constraint(
-                path,
-                binding,
-                parsed.peripheral,
-                parsed.register,
-                field,
-                field_ident,
-            ) {
-                constraints.push(constraint);
             }
 
             arguments.push(argument(
@@ -626,7 +705,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             ));
         }
 
-        if parsed.items.iter().any(|(.., (_, binding, ..))| {
+        if parsed_reg.items.iter().any(|(.., (_, binding, ..))| {
             if let Expr::Reference(r) = binding
                 && r.mutability.is_none()
             {
@@ -638,9 +717,9 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             continue;
         }
 
-        addrs.push(addr(path, parsed, &overridden_base_addrs));
-        initials.push(initial(parsed));
-        dynamic_values.push(dynamic_value(path, parsed));
+        addrs.push(addr(path, parsed_reg, &overridden_base_addrs));
+        initials.push(initial(parsed_reg));
+        dynamic_values.push(dynamic_value(path, parsed_reg));
     }
 
     quote! {
@@ -651,7 +730,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             fn gate <#(#generics,)*> (#(#parameter_idents: #parameter_tys,)*) -> (#(#return_tys),*)
             where
                 #(
-                    #constraints,
+                    #constraints
                 )*
             {
                 #(

@@ -10,8 +10,8 @@ use quote::{ToTokens, quote};
 use syn::{
     Expr, ExprLit, Ident, Lit, LitInt, Path, Token, braced,
     parse::Parse,
+    parse_quote,
     punctuated::Punctuated,
-    spanned::Spanned,
     token::{Brace, Comma},
 };
 
@@ -177,7 +177,7 @@ impl Parse for StateArgs {
 fn get_register<'hal>(
     path: &Path,
     model: &'hal Hal,
-) -> Result<(&'hal Peripheral, &'hal Register), syn::Error> {
+) -> Result<(Option<Path>, &'hal Peripheral, &'hal Register), syn::Error> {
     let mut segments = path.segments.iter().rev();
 
     let Some(register_ident) = segments.next().map(|segment| &segment.ident) else {
@@ -185,6 +185,19 @@ fn get_register<'hal>(
     };
     let Some(peripheral_ident) = segments.next().map(|segment| &segment.ident) else {
         Err(syn::Error::new_spanned(path, "expected peripheral ident"))?
+    };
+
+    let prefix = {
+        let segments = segments.rev().collect::<Vec<_>>();
+        let leading_colon = &path.leading_colon;
+
+        if segments.is_empty() {
+            None
+        } else {
+            Some(parse_quote! {
+                #leading_colon #(#segments)::*
+            })
+        }
     };
 
     let peripheral = model
@@ -207,7 +220,7 @@ fn get_register<'hal>(
 
     // TODO: show some peripherals the register *was* found in?
 
-    Ok((peripheral, register))
+    Ok((prefix, peripheral, register))
 }
 
 fn get_field<'a>(ident: &Ident, register: &'a Register) -> syn::Result<&'a Field> {

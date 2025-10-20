@@ -378,7 +378,7 @@ impl Field {
                     S: ::proto_hal::stasis::State<Field>,
                 {
                     pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
-                        Self {
+                        #ident {
                             _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
                         }
                     }

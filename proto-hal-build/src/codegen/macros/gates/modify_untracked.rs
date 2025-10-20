@@ -68,7 +68,7 @@ fn parse_registers<'args, 'hal>(
 
     for register_args in &args.registers {
         let mut parse_register = || {
-            let (peripheral, register) = get_register(&register_args.path, model)?;
+            let (.., peripheral, register) = get_register(&register_args.path, model)?;
 
             if let Some(..) = registers.insert(
                 register_args.path.clone(),
