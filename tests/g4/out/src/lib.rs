@@ -15,9 +15,7 @@ mod tests {
     }
 
     mod cordic {
-        use macros::{read, read_untracked, write_from_reset_untracked};
-
-        use crate::{cordic, rcc};
+        use crate::{cordic, rcc, read, read_untracked, write, write_from_reset_untracked};
 
         static mut MOCK_CORDIC: [u32; 3] = [0x0000_0050, 0, 0];
 
@@ -87,7 +85,11 @@ mod tests {
 
                 let mut arg = cordic.wdata.arg.unmask(cordic.csr.argsize);
 
-                cordic::wdata::write(|w| w.arg(&mut arg, 0xdeadbeefu32));
+                write! {
+                    cordic::wdata {
+                        arg: &mut arg => 0xdeadbeef,
+                    }
+                }
 
                 assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
             });
@@ -132,7 +134,7 @@ mod tests {
     }
 
     mod crc {
-        use crate::{crc, rcc};
+        use crate::{crc, rcc, write};
 
         static mut MOCK_CRC: [u32; 2] = [0, 0];
 
@@ -151,6 +153,12 @@ mod tests {
 
                 let crc::idr::States { idr } =
                     crc::idr::write(|w| w.idr(crc.idr.idr).value::<0xdeadbeef>());
+
+                let idr = write! {
+                    crc::idr {
+                        idr: crc.idr.idr => 0xdeadbeef,
+                    }
+                };
 
                 assert_eq!(idr.value(), unsafe { MOCK_CRC[1] });
             });

@@ -234,16 +234,19 @@ fn get_field<'a>(ident: &Ident, register: &'a Register) -> syn::Result<&'a Field
 }
 
 pub fn reexports(args: TokenStream) -> TokenStream {
-    let idents = vec![
+    let idents_raw = vec![
         "modify_untracked",
         "read",
         "read_untracked",
         "write",
         "write_from_reset_untracked",
         "write_from_zero_untracked",
-    ]
-    .into_iter()
-    .map(|name| Ident::new(name, Span::call_site()));
+    ];
+
+    let idents = idents_raw
+        .iter()
+        .map(|name| Ident::new(name, Span::call_site()))
+        .collect::<Vec<_>>();
 
     quote! {
         #(
@@ -255,7 +258,7 @@ pub fn reexports(args: TokenStream) -> TokenStream {
 
         #[proc_macro]
         pub fn scaffolding(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-            ::proto_hal_build::codegen::macros::scaffolding().into()
+            ::proto_hal_build::codegen::macros::scaffolding([#(#idents_raw,)*]).into()
         }
     }
 }
