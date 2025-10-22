@@ -269,9 +269,9 @@ impl Hal {
             /// 1. The peripherals are in the reset state.
             /// 1. The peripherals are not accessed anywhere else.
             ///
-            /// These invariances can be easyily achieved by limiting the call-site of this function to one place.
+            /// These invariances can easily be achieved by limiting the call-site of this function to one place
+            /// and ensuring no other binaries are running on the target.
             pub unsafe fn peripherals() -> Peripherals {
-                #[allow(unsafe_op_in_unsafe_fn)]
                 Peripherals {
                     // fundamental
                     #(

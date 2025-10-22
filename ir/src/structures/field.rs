@@ -141,7 +141,7 @@ impl Field {
 
     pub(crate) fn reset_ty(&self, path: Path, register_reset: Option<u32>) -> Type {
         if !self.entitlements.is_empty() {
-            return parse_quote! { ::proto_hal::stasis::Unavailable };
+            return parse_quote! { #path::Masked };
         }
 
         let Some(read) = self.access.get_read() else {
@@ -532,12 +532,24 @@ impl Field {
         }
     }
 
+    fn generate_masked(&self) -> Option<TokenStream> {
+        if self.entitlements.is_empty() {
+            None?
+        }
+
+        Some(quote! {
+            pub struct Masked {
+                _sealed: (),
+            }
+        })
+    }
+
     fn generate_state_impls(&self) -> Option<TokenStream> {
         if let Some(access) = self.resolvable() {
             if let Numericity::Enumerated { variants } = &access.numericity {
                 let variants = variants.values().map(|variant| variant.type_name());
 
-                Some(quote! { #(impl ::proto_hal::stasis::State<Field> for #variants {})* })
+                Some(quote! { #(unsafe impl ::proto_hal::stasis::State<Field> for #variants {})* })
             } else {
                 None
             }
@@ -557,6 +569,7 @@ impl Field {
         body.extend(Self::generate_markers(self.offset, self.width));
         body.extend(self.generate_container());
         body.extend(Self::generate_repr(&self.access));
+        body.extend(self.generate_masked());
         body.extend(self.generate_state_impls());
 
         let docs = &self.docs;
