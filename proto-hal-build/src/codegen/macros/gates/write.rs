@@ -618,11 +618,11 @@ fn make_argument<'args, 'hal>(
     quote! { (#binding, #body) }
 }
 
-fn make_dynamic_value<'args, 'hal>(path: &'args Path, parsed: &Parsed<'args, 'hal>) -> TokenStream {
-    parsed
+fn make_dynamic_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<TokenStream> {
+    let values = parsed
         .items
         .iter()
-        .filter_map(|(field_ident, (_, binding, transition))| {
+        .filter_map(|(field_ident, (field, binding, transition))| {
             transition.as_ref()?;
 
             if let Expr::Reference(r) = binding
@@ -636,13 +636,16 @@ fn make_dynamic_value<'args, 'hal>(path: &'args Path, parsed: &Parsed<'args, 'ha
             let unique_field_ident =
                 make_unique_field_ident(parsed.peripheral, parsed.register, field_ident);
 
-            Some(quote! { | (#unique_field_ident.1 << #path::#field_ident::OFFSET) })
-        })
-        .collect()
-}
+            let offset = field.offset;
+            let shift = (offset != 0).then_some(quote! { << #offset });
 
-fn make_conjure(return_ty: &TokenStream) -> TokenStream {
-    quote! { <#return_ty as ::proto_hal::stasis::Conjure>::conjure() }
+            Some(quote! { (#unique_field_ident.1 #shift) })
+        })
+        .collect::<Vec<_>>();
+
+    (!values.is_empty()).then_some(quote! {
+        #(#values)|*
+    })
 }
 
 pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
@@ -712,7 +715,6 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let mut parameter_idents = Vec::new();
     let mut parameter_tys = Vec::new();
     let mut return_tys = Vec::new();
-    let mut conjures = Vec::new();
     let mut constraints = Vec::new();
     let mut addrs = Vec::new();
     let mut initials = Vec::new();
@@ -737,6 +739,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                 transition.as_ref(),
             );
 
+            // TODO: if field isn't transitioned, just return it
             let return_ty = if let Some((state_args, write_state)) = transition {
                 make_return_ty(path, binding, state_args, write_state, field, field_ident)
             } else {
@@ -772,7 +775,6 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             parameter_tys.push(make_parameter_ty(binding, transition.as_ref(), &input_ty));
 
             if let Some(return_ty) = return_ty {
-                conjures.push(make_conjure(&return_ty));
                 return_tys.push(return_ty);
             }
 
@@ -795,36 +797,61 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             continue;
         }
 
-        addrs.push(make_addr(path, parsed_reg, &overridden_base_addrs));
-        initials.push(make_initial(parsed_reg));
-        dynamic_values.push(make_dynamic_value(path, parsed_reg));
+        if parsed_reg
+            .items
+            .values()
+            .any(|(.., transition)| transition.is_some())
+        {
+            addrs.push(make_addr(path, parsed_reg, &overridden_base_addrs));
+            initials.push(make_initial(parsed_reg));
+            dynamic_values.push(make_dynamic_value(parsed_reg));
+        }
     }
+
+    let generics = (!generics.is_empty()).then_some(quote! {
+        <#(#generics,)*>
+    });
+
+    let transmute = (!return_tys.is_empty()).then_some(quote! {
+        unsafe { ::core::mem::transmute(()) }
+    });
+
+    let return_tys = (!return_tys.is_empty()).then_some(quote! {
+        -> (#(#return_tys),*)
+    });
+
+    let constraints = (!constraints.is_empty()).then_some(quote! {
+        where #(#constraints)*
+    });
+
+    let write_reg_values =
+        initials
+            .iter()
+            .zip(dynamic_values.iter())
+            .map(
+                |(initial, dynamic_values)| match (initial, dynamic_values) {
+                    (0, Some(dynamic_values)) => dynamic_values.clone(),
+                    (1.., Some(dynamic_values)) => quote! { #initial | #dynamic_values },
+                    (initial, None) => quote! { #initial },
+                },
+            );
 
     quote! {
         {
             #suggestions
             #errors
 
-            fn gate <#(#generics,)*> (#(#parameter_idents: #parameter_tys,)*) -> (#(#return_tys),*)
-            where
-                #(
-                    #constraints
-                )*
-            {
+            fn gate #generics (#(#parameter_idents: #parameter_tys,)*) #return_tys #constraints {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
                             #addrs as *mut u32,
-                            #initials #dynamic_values
+                            #write_reg_values
                         )
                     };
                 )*
 
-                unsafe { (
-                    #(
-                        #conjures
-                    ),*
-                ) }
+                #transmute
             }
 
             gate(#(#arguments,)*)
