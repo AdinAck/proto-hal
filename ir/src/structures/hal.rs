@@ -275,12 +275,12 @@ impl Hal {
                 Peripherals {
                     // fundamental
                     #(
-                        #fundamental_peripheral_idents: unsafe { <#fundamental_peripheral_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
+                        #fundamental_peripheral_idents: unsafe { ::core::mem::transmute(()) },
                     )*
 
                     // conditional
                     #(
-                        #conditional_peripheral_idents: unsafe { <#conditional_peripheral_idents::Masked as ::proto_hal::stasis::Conjure>::conjure() },
+                        #conditional_peripheral_idents: unsafe { ::core::mem::transmute(()) },
                     )*
                 }
             }

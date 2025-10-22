@@ -135,12 +135,6 @@ impl Peripheral {
             pub struct Masked {
                 _sealed: (),
             }
-
-            impl ::proto_hal::stasis::Conjure for Masked {
-                unsafe fn conjure() -> Self {
-                    Self { _sealed: () }
-                }
-            }
         })
     }
 
@@ -154,16 +148,6 @@ impl Peripheral {
                 #(
                     pub #register_idents: #register_idents::Reset,
                 )*
-            }
-
-            impl ::proto_hal::stasis::Conjure for Reset {
-                unsafe fn conjure() -> Self {
-                    Self {
-                        #(
-                            #register_idents: unsafe { <#register_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
-                        )*
-                    }
-                }
             }
         }
     }
