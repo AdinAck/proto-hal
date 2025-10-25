@@ -46,10 +46,16 @@ pub unsafe trait State<Parent>: Conjure {}
 )]
 pub unsafe trait Entitled<Locus> {}
 
+/// Implementors of this trait are type-stated resources. Since device resources have no size,
+/// they must be "conjured" when the type context requires them to be.
 pub trait Conjure {
+    /// Produce the resource out of thin air.
+    ///
     /// # Safety
-    /// Produce a value where the invariants of the value's existence
-    /// are upheld by the user.
+    ///
+    /// If the production of the resource is contextually unsound (meaning it violates or is
+    /// performed external to the device model) this action renders hardware invariance claims
+    /// to be moot.
     unsafe fn conjure() -> Self;
 }
 
