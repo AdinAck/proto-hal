@@ -62,8 +62,6 @@ macro_rules! numerics {
             pub struct $name<const V: $ty> {
                 _sealed: (),
             }
-
-            unsafe impl<F, const V: $ty> State<F> for $name<V> {}
         )*
     };
 }

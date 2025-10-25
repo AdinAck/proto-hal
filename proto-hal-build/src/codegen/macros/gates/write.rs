@@ -359,6 +359,13 @@ fn make_return_ty<'args, 'hal>(
 
     let ty_name = field.type_name();
 
+    let numeric_ty = field
+        .access
+        .get_write()?
+        .numericity
+        .numeric_ty(field.width)
+        .map(|(.., ty)| ty);
+
     Some(match write_state {
         WriteState::Variant(variant) => {
             let ty = match state_args {
@@ -373,11 +380,25 @@ fn make_return_ty<'args, 'hal>(
             }
         }
         WriteState::Expr(expr) => {
+            let state = if let Some(numeric_ty) = numeric_ty {
+                quote! { ::proto_hal::stasis::#numeric_ty<#expr> }
+            } else {
+                quote! { #path::#field_ident::#expr }
+            };
+
             quote! {
-                #path::#field_ident::#ty_name<#path::#field_ident::#expr>
+                #path::#field_ident::#ty_name<#state>
             }
         }
-        WriteState::Lit(lit_int) => quote! { #path::#field_ident::#ty_name<#lit_int> },
+        WriteState::Lit(lit_int) => {
+            let state = if let Some(numeric_ty) = numeric_ty {
+                quote! { ::proto_hal::stasis::#numeric_ty<#lit_int> }
+            } else {
+                quote! { #lit_int }
+            };
+
+            quote! { #path::#field_ident::#ty_name<#state> }
+        }
     })
 }
 

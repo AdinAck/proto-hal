@@ -87,10 +87,14 @@ impl Variant {
 
 // codegen
 impl Variant {
-    pub fn generate_state<'a>(
-        ident: &Ident,
-        docs: impl Iterator<Item = &'a String>,
-    ) -> TokenStream {
+    pub fn generate_state(&self, field: &Field) -> TokenStream {
+        let ident = self.type_name();
+        let docs = &self.docs;
+
+        let numeric_state_impl = field.access.get_write().and_then(|write| write.numericity.numeric_ty(field.width)).map(|(raw_ty, ty)| quote! {
+            unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<#ident> for ::proto_hal::stasis::#ty<V> {}
+        });
+
         quote! {
             #(
                 #[doc = #docs]
@@ -98,15 +102,16 @@ impl Variant {
             pub struct #ident {
                 _sealed: (),
             }
+
+            #numeric_state_impl
         }
     }
 
-    pub fn generate_entitlement_impls(
-        ident: &Ident,
-        entitlements: &Entitlements,
-        field: &Field,
-    ) -> TokenStream {
+    pub fn generate_entitlement_impls(&self, field: &Field) -> TokenStream {
+        let ident = self.type_name();
+        let entitlements = &self.entitlements;
         let field_ty = field.type_name();
+
         if entitlements.is_empty() {
             // any T satisfies this state's entitlement requirements
 
@@ -137,16 +142,10 @@ impl Variant {
 
 impl Variant {
     pub fn generate(&self, parent: &Field) -> TokenStream {
-        let ident = self.type_name();
-
         let mut body = quote! {};
 
-        body.extend(Self::generate_state(&ident, self.docs.iter()));
-        body.extend(Self::generate_entitlement_impls(
-            &ident,
-            &self.entitlements,
-            parent,
-        ));
+        body.extend(self.generate_state(parent));
+        body.extend(self.generate_entitlement_impls(parent));
 
         body
     }

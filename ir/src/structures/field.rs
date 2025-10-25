@@ -39,6 +39,16 @@ impl Numericity {
         };
         variants.values().find(|variant| variant.inert)
     }
+
+    pub fn numeric_ty(&self, width: u8) -> Option<(Ident, Ident)> {
+        Some(match width {
+            1 => (parse_quote! { bool }, parse_quote! { Bool }),
+            2..9 => (parse_quote! { u8 }, parse_quote! { UInt8 }),
+            9..17 => (parse_quote! { u16 }, parse_quote! { UInt16 }),
+            17..33 => (parse_quote! { u32 }, parse_quote! { UInt32 }),
+            _unreachable => None?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
