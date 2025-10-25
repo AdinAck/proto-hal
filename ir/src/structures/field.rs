@@ -367,7 +367,7 @@ impl Field {
             Some(quote! {
                 pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
                     #ident {
-                        _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
+                        _state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     }
                 }
             })
@@ -408,10 +408,13 @@ impl Field {
 
             #concrete_impl
 
-            impl<S> ::proto_hal::stasis::Conjure for #ident<S> {
+            impl<S> ::proto_hal::stasis::Conjure for #ident<S>
+            where
+                S: ::proto_hal::stasis::Conjure,
+            {
                 unsafe fn conjure() -> Self {
                     Self {
-                        _state: unsafe { <S as ::proto_hal::stasis::Conjure>::conjure() },
+                        _state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     }
                 }
             }
@@ -586,6 +589,7 @@ impl Field {
     fn generate_state_impls(&self) -> Option<TokenStream> {
         if let Some(access) = self.resolvable() {
             if let Numericity::Enumerated { variants } = &access.numericity {
+                let variant_values = variants.values().map(|variant| variant.bits);
                 let variants = variants.values().map(|variant| variant.type_name());
                 Some(quote! {
                     #(
@@ -597,12 +601,16 @@ impl Field {
                             }
                         }
 
-                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {}
+                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {
+                            const VALUE: u32 = #variant_values;
+                        }
                     )*
                 })
             } else {
                 self.access.get_write().and_then(|write| write.numericity.numeric_ty(self.width)).map(|(raw_ty, ty)| quote! {
-                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {}
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {
+                        const VALUE: u32 = V as _;
+                    }
                 })
             }
         } else {

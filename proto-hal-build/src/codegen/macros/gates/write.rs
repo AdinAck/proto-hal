@@ -734,7 +734,7 @@ fn make_argument<'args, 'hal>(
     quote! { (#binding, #body) }
 }
 
-fn make_dynamic_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<TokenStream> {
+fn make_reg_write_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<TokenStream> {
     let values = parsed
         .items
         .iter()
@@ -838,7 +838,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let mut constraints = Vec::new();
     let mut addrs = Vec::new();
     let mut initials = Vec::new();
-    let mut dynamic_values = Vec::new();
+    let mut reg_write_values = Vec::new();
     let mut arguments = Vec::new();
     let mut conjures = Vec::new();
 
@@ -939,7 +939,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
         {
             addrs.push(make_addr(path, parsed_reg, &overridden_base_addrs));
             initials.push(make_initial(parsed_reg));
-            dynamic_values.push(make_dynamic_value(parsed_reg));
+            reg_write_values.push(make_reg_write_value(parsed_reg));
         }
     }
 
@@ -963,17 +963,15 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
         where #(#constraints)*
     });
 
-    let write_reg_values =
+    let reg_write_values =
         initials
             .iter()
-            .zip(dynamic_values.iter())
-            .map(
-                |(initial, dynamic_values)| match (initial, dynamic_values) {
-                    (0, Some(dynamic_values)) => dynamic_values.clone(),
-                    (1.., Some(dynamic_values)) => quote! { #initial | #dynamic_values },
-                    (initial, None) => quote! { #initial },
-                },
-            );
+            .zip(reg_write_values.iter())
+            .map(|(initial, write_values)| match (initial, write_values) {
+                (0, Some(write_values)) => write_values.clone(),
+                (1.., Some(write_values)) => quote! { #initial | #write_values },
+                (initial, None) => quote! { #initial },
+            });
 
     quote! {
         {
@@ -985,7 +983,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                     unsafe {
                         ::core::ptr::write_volatile(
                             #addrs as *mut u32,
-                            #write_reg_values
+                            #reg_write_values
                         )
                     };
                 )*

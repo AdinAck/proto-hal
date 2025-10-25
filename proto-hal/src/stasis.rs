@@ -11,7 +11,10 @@
 /// Implementing this trait is a contract that the implementor is a type-state of the parent.
 /// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
 /// undefined behavior.
-pub unsafe trait State<Parent>: Conjure {}
+pub unsafe trait State<Parent>: Conjure {
+    /// The physical value the state denotes.
+    const VALUE: u32;
+}
 
 /// Implementors of this trait are type-stated resources with entitlement constraints.
 /// Many kinds of resources can be entitled in any of the following ways:
