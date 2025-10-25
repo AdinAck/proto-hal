@@ -80,6 +80,12 @@ macro_rules! numerics {
                     Self { _sealed: () }
                 }
             }
+
+            impl<const V: $ty> $name<V> {
+                pub fn value() -> $ty {
+                    V
+                }
+            }
         )*
     };
 }

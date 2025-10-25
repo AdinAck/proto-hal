@@ -87,13 +87,9 @@ impl Variant {
 
 // codegen
 impl Variant {
-    pub fn generate_state(&self, field: &Field) -> TokenStream {
+    pub fn generate_state(&self) -> TokenStream {
         let ident = self.type_name();
         let docs = &self.docs;
-
-        let numeric_state_impl = field.access.get_write().and_then(|write| write.numericity.numeric_ty(field.width)).map(|(raw_ty, ty)| quote! {
-            unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<#ident> for ::proto_hal::stasis::#ty<V> {}
-        });
 
         quote! {
             #(
@@ -102,8 +98,6 @@ impl Variant {
             pub struct #ident {
                 _sealed: (),
             }
-
-            #numeric_state_impl
         }
     }
 
@@ -144,7 +138,7 @@ impl Variant {
     pub fn generate(&self, parent: &Field) -> TokenStream {
         let mut body = quote! {};
 
-        body.extend(self.generate_state(parent));
+        body.extend(self.generate_state());
         body.extend(self.generate_entitlement_impls(parent));
 
         body

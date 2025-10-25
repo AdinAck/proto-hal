@@ -669,6 +669,10 @@ fn make_dynamic_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<Token
     })
 }
 
+fn make_conjure(return_ty: &TokenStream) -> TokenStream {
+    quote! { <#return_ty as ::proto_hal::stasis::Conjure>::conjure() }
+}
+
 pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2::<Args>(tokens) {
         Ok(args) => args,
@@ -741,6 +745,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let mut initials = Vec::new();
     let mut dynamic_values = Vec::new();
     let mut arguments = Vec::new();
+    let mut conjures = Vec::new();
 
     for (path, parsed_reg) in &parsed {
         for (field_ident, (field, binding, transition)) in &parsed_reg.items {
@@ -796,6 +801,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             parameter_tys.push(make_parameter_ty(binding, transition.as_ref(), &input_ty));
 
             if let Some(return_ty) = return_ty {
+                conjures.push(make_conjure(&return_ty));
                 return_tys.push(return_ty);
             }
 
@@ -833,8 +839,12 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
         <#(#generics,)*>
     });
 
-    let transmute = (!return_tys.is_empty()).then_some(quote! {
-        unsafe { ::core::mem::transmute(()) }
+    let conjures = (!return_tys.is_empty()).then_some(quote! {
+        unsafe {(
+            #(
+                #conjures
+            ),*
+        )}
     });
 
     let return_tys = (!return_tys.is_empty()).then_some(quote! {
@@ -872,7 +882,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                     };
                 )*
 
-                #transmute
+                #conjures
             }
 
             gate(#(#arguments,)*)

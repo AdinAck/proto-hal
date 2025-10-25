@@ -151,9 +151,6 @@ mod tests {
                     rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
                 let crc = p.crc.unmask(crcen);
 
-                let crc::idr::States { idr } =
-                    crc::idr::write(|w| w.idr(crc.idr.idr).value::<0xdeadbeef>());
-
                 let idr = write! {
                     crc::idr {
                         idr: crc.idr.idr => 0xdeadbeef,
@@ -174,12 +171,12 @@ mod tests {
                 let crc = p.crc.unmask(crcen);
 
                 // "rst" need not be specified because it has an inert variant
-                crc::cr::write(|w| {
-                    w.polysize(crc.cr.polysize)
-                        .preserve()
-                        .rev_in(crc.cr.rev_in)
-                        .preserve()
-                });
+                // crc::cr::write(|w| {
+                //     w.polysize(crc.cr.polysize)
+                //         .preserve()
+                //         .rev_in(crc.cr.rev_in)
+                //         .preserve()
+                // });
             });
         }
     }

@@ -353,15 +353,39 @@ impl Field {
 
         let into_dynamic = if self.is_resolvable() {
             Some(quote! {
+                pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
+                    #ident {
+                        _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
+                    }
+                }
+            })
+        } else {
+            None
+        };
+
+        let numeric_value = if let Some(numericity @ Numericity::Numeric) =
+            self.resolvable().map(|access| &access.numericity)
+        {
+            let (raw_ty, ..) = numericity
+                .numeric_ty(self.width)
+                .expect("expected numeric type to be known");
+            Some(quote! {
+                pub fn value(&self) -> #raw_ty {
+                    S::value()
+                }
+            })
+        } else {
+            None
+        };
+
+        let concrete_impl = if into_dynamic.is_some() || numeric_value.is_some() {
+            Some(quote! {
                 impl<S> #ident<S>
                 where
                     S: ::proto_hal::stasis::State<Field>,
                 {
-                    pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
-                        #ident {
-                            _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
-                        }
-                    }
+                    #into_dynamic
+                    #numeric_value
                 }
             })
         } else {
@@ -392,7 +416,7 @@ impl Field {
                 _state: S,
             }
 
-            #into_dynamic
+            #concrete_impl
 
             impl<S> ::proto_hal::stasis::Conjure for #ident<S>
             where
@@ -585,7 +609,9 @@ impl Field {
                     )*
                 })
             } else {
-                None
+                self.access.get_write().and_then(|write| write.numericity.numeric_ty(self.width)).map(|(raw_ty, ty)| quote! {
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {}
+                })
             }
         } else {
             None
