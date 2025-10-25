@@ -142,7 +142,7 @@ mod tests {
 
             let a = write! {
                 foo::foo0 {
-                    a: p.foo.foo0.a => V5,
+                    a: p.foo.foo0.a => _,
                 }
                 @base_addr foo addr_of_foo()
             };

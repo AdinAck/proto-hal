@@ -10,7 +10,7 @@ use ir::structures::{
     variant::Variant,
 };
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens as _, format_ident, quote, quote_spanned};
 use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
 
 use crate::codegen::macros::{
@@ -352,12 +352,19 @@ fn make_return_ty<'args, 'hal>(
     write_state: &'args WriteState<'args, 'hal>,
     field: &'hal Field,
     field_ident: &'args Ident,
+    output_generic: Option<&TokenStream>,
 ) -> Option<TokenStream> {
     if let Expr::Reference(..) = binding {
         None?
     }
 
     let ty_name = field.type_name();
+
+    if let Some(output_generic) = output_generic {
+        return Some(quote! {
+            #path::#field_ident::#ty_name<#output_generic>
+        });
+    }
 
     let numeric_ty = field
         .access
@@ -453,38 +460,45 @@ fn make_parameter_ty<'args, 'hal>(
     }
 }
 
-fn make_generic<'args, 'hal>(
+fn make_generics<'args, 'hal>(
     binding: &'args BindingArgs,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-    field: &'hal Field,
+    peripheral: &Ident,
+    register: &Ident,
+    field: &Ident,
     transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
-) -> Option<TokenStream> {
+) -> (Option<TokenStream>, Option<TokenStream>) {
     if let Expr::Reference(r) = binding
         && r.mutability.is_some()
         && transition.is_some()
     {
-        None?
+        return (None, None);
     }
 
-    let generic = format_ident!(
-        "{}{}{}",
-        peripheral.type_name(),
-        register.type_name(),
-        field.type_name()
-    );
+    let input_generic = format_ident!("{}{}{}", peripheral, register, field,);
 
-    Some(quote! { #generic })
+    let output_generic = if let Some((state_args, ..)) = transition
+        && let StateArgs::Expr(expr) = state_args
+        && expr.to_token_stream().to_string().trim() == "_"
+    {
+        let ident = format_ident!("New{input_generic}");
+
+        Some(quote! { #ident })
+    } else {
+        None
+    };
+
+    (Some(quote! { #input_generic }), output_generic)
 }
 
-fn make_parameter_constraints<'args, 'hal>(
+fn make_constraints<'args, 'hal>(
     parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
     path: &'args Path,
     prefix: Option<&Path>,
     binding: &'args BindingArgs,
     field: &'hal Field,
     field_ident: &'args Ident,
-    generic: Option<&TokenStream>,
+    input_generic: Option<&TokenStream>,
+    output_generic: Option<&TokenStream>,
     input_ty: &TokenStream,
     return_ty: Option<&TokenStream>,
 ) -> Option<TokenStream> {
@@ -495,7 +509,12 @@ fn make_parameter_constraints<'args, 'hal>(
     let mut constraints = Vec::new();
     let span = field_ident.span();
 
-    if let Some(generic) = generic {
+    if let Some(generic) = input_generic {
+        constraints
+            .push(quote! { #generic: ::proto_hal::stasis::State<#path::#field_ident::Field> });
+    }
+
+    if let Some(generic) = output_generic {
         constraints
             .push(quote! { #generic: ::proto_hal::stasis::State<#path::#field_ident::Field> });
     }
@@ -568,11 +587,13 @@ fn make_parameter_constraints<'args, 'hal>(
         })
         .into_iter()
         .flatten()
-        .filter_map(|(peripheral, register, field)| {
+        .filter_map(|(peripheral, register, f)| {
             let entitlement_return_ty = {
-                let (path, field_ident, (field, binding, transition)) = query_field(parsed, peripheral, register, field)?;
+                let (path, field_ident, (field, binding, transition)) = query_field(parsed, peripheral, register, f)?;
+                let (.., output_generic) = make_generics(binding, peripheral, register, &field.type_name(), transition.as_ref());
+
                 if let Some((state_args, write_state)) = transition {
-                    make_return_ty(path, binding, state_args, write_state, field, field_ident)
+                    make_return_ty(path, binding, state_args, write_state, field, field_ident, output_generic.as_ref())
                 } else {
                     None
                 }
@@ -580,14 +601,25 @@ fn make_parameter_constraints<'args, 'hal>(
 
             Some(if let Some(entitlement_return_ty) = entitlement_return_ty {
                 // the entitled to field is being transitioned
-                quote! {
-                    #return_ty: ::proto_hal::stasis::Entitled<#entitlement_return_ty>
+
+                if let Some(output_generic) = output_generic {
+                    // transitioned generically
+                    let field_ty = field.type_name();
+
+                    quote! {
+                        #path::#field_ident::#field_ty<#output_generic>: ::proto_hal::stasis::Entitled<#entitlement_return_ty>
+                    }
+                } else {
+                    // transitioned concretely
+                    quote! {
+                        #return_ty: ::proto_hal::stasis::Entitled<#entitlement_return_ty>
+                    }
                 }
             } else {
-                let generic = format_ident!("{peripheral}{register}{field}", span = span);
+                let generic = format_ident!("{peripheral}{register}{f}", span = span);
 
                 quote! {
-                    #return_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#field<#generic>>
+                    #return_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#f<#generic>>
                 }
             })
         });
@@ -765,36 +797,49 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                 transition.as_ref(),
             );
 
+            let (input_generic, output_generic) = make_generics(
+                binding,
+                &parsed_reg.peripheral.type_name(),
+                &parsed_reg.register.type_name(),
+                &field.type_name(),
+                transition.as_ref(),
+            );
+
             // TODO: if field isn't transitioned, just return it
             let return_ty = if let Some((state_args, write_state)) = transition {
-                make_return_ty(path, binding, state_args, write_state, field, field_ident)
+                make_return_ty(
+                    path,
+                    binding,
+                    state_args,
+                    write_state,
+                    field,
+                    field_ident,
+                    output_generic.as_ref(),
+                )
             } else {
                 None
             };
 
-            let generic = make_generic(
-                binding,
-                parsed_reg.peripheral,
-                parsed_reg.register,
-                field,
-                transition.as_ref(),
-            );
-
-            if let Some(parameter_constraints) = make_parameter_constraints(
+            if let Some(parameter_constraints) = make_constraints(
                 &parsed,
                 path,
                 parsed_reg.prefix.as_ref(),
                 binding,
                 field,
                 field_ident,
-                generic.as_ref(),
+                input_generic.as_ref(),
+                output_generic.as_ref(),
                 &input_ty,
                 return_ty.as_ref(),
             ) {
                 constraints.push(parameter_constraints);
             }
 
-            if let Some(generic) = generic {
+            if let Some(generic) = input_generic {
+                generics.push(generic);
+            }
+
+            if let Some(generic) = output_generic {
                 generics.push(generic);
             }
 
