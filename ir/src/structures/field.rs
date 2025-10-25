@@ -377,10 +377,7 @@ impl Field {
 
         let concrete_impl = if into_dynamic.is_some() {
             Some(quote! {
-                impl<S> #ident<S>
-                where
-                    S: ::proto_hal::stasis::State<Field>,
-                {
+                impl<S> #ident<S> {
                     #into_dynamic
                 }
             })
@@ -405,19 +402,13 @@ impl Field {
             });
 
         quote! {
-            pub struct #ident<S>
-            where
-                S: ::proto_hal::stasis::State<Field>,
-            {
+            pub struct #ident<S> {
                 _state: S,
             }
 
             #concrete_impl
 
-            impl<S> ::proto_hal::stasis::Conjure for #ident<S>
-            where
-                S: ::proto_hal::stasis::State<Field>,
-            {
+            impl<S> ::proto_hal::stasis::Conjure for #ident<S> {
                 unsafe fn conjure() -> Self {
                     Self {
                         _state: unsafe { <S as ::proto_hal::stasis::Conjure>::conjure() },
@@ -426,10 +417,7 @@ impl Field {
             }
 
             #(
-                unsafe impl<S> ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident<S>
-                where
-                    S: ::proto_hal::stasis::State<Field>,
-                {}
+                unsafe impl<S> ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident<S> {}
             )*
         }
     }

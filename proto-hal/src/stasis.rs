@@ -70,8 +70,6 @@ impl Conjure for Dynamic {
     }
 }
 
-unsafe impl<F> State<F> for Dynamic {}
-
 macro_rules! numerics {
     {
         $($name:ident ($ty:ty) $(,)?)*
