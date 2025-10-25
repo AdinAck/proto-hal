@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident, Path, Type, parse_quote};
+use syn::{Ident, Index, Path, Type, parse_quote};
 
 use crate::{
     access::{Access, AccessProperties, HardwareAccess, ReadWrite},
@@ -152,10 +152,6 @@ impl Field {
     }
 
     pub(crate) fn reset_ty(&self, path: Path, register_reset: Option<u32>) -> Type {
-        if !self.entitlements.is_empty() {
-            return parse_quote! { #path::Masked };
-        }
-
         let Some(read) = self.access.get_read() else {
             return parse_quote! { ::proto_hal::stasis::Dynamic };
         };
@@ -171,7 +167,14 @@ impl Field {
         let reset = (register_reset >> self.offset) & mask;
 
         match &read.numericity {
-            Numericity::Numeric => parse_quote! { ::proto_hal::stasis::Value<#reset> },
+            numericity @ Numericity::Numeric => {
+                let (.., ty) = numericity
+                    .numeric_ty(self.width)
+                    .expect("numeric ty expected to exist");
+                let reset = Index::from(reset as usize);
+
+                parse_quote! { ::proto_hal::stasis::#ty<#reset> }
+            }
             Numericity::Enumerated { variants } => {
                 let ty = variants
                     .values()
@@ -365,29 +368,13 @@ impl Field {
             None
         };
 
-        let numeric_value = if let Some(numericity @ Numericity::Numeric) =
-            self.resolvable().map(|access| &access.numericity)
-        {
-            let (raw_ty, ..) = numericity
-                .numeric_ty(self.width)
-                .expect("expected numeric type to be known");
-            Some(quote! {
-                pub fn value(&self) -> #raw_ty {
-                    S::value()
-                }
-            })
-        } else {
-            None
-        };
-
-        let concrete_impl = if into_dynamic.is_some() || numeric_value.is_some() {
+        let concrete_impl = if into_dynamic.is_some() {
             Some(quote! {
                 impl<S> #ident<S>
                 where
                     S: ::proto_hal::stasis::State<Field>,
                 {
                     #into_dynamic
-                    #numeric_value
                 }
             })
         } else {
@@ -589,6 +576,14 @@ impl Field {
         Some(quote! {
             pub struct Masked {
                 _sealed: (),
+            }
+
+            impl ::proto_hal::stasis::Conjure for Masked {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
             }
         })
     }

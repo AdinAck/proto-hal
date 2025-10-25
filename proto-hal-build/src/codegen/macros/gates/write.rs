@@ -206,10 +206,12 @@ fn parse_fields<'args, 'hal>(
 }
 
 fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<syn::Error> {
-    parsed
+    let mut errors = Vec::new();
+    let field_errors = parsed
         .values()
         .flat_map(|Parsed { items, .. }| items.iter())
         .flat_map(|(field_ident, (field, ..))| {
+            // write access
             let Some(write) = field.access.get_write() else {
                 return vec![syn::Error::new_spanned(
                     field_ident,
@@ -217,6 +219,7 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
                 )];
             };
 
+            // entitlements
             let access_entitlements = write.entitlements.iter().map(|entitlement| (entitlement.peripheral(), entitlement.register(), entitlement.field()));
             let statewise_entitlements = match &write.numericity {
                 Numericity::Numeric => None,
@@ -244,8 +247,31 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
             }
 
             errors
-        })
-        .collect::<Vec<_>>()
+        });
+
+    let register_errors = parsed.iter().flat_map(|(path, parsed)| {
+        parsed
+            .register
+            .fields
+            .iter()
+            .filter_map(|(field_ident, field)| {
+                if field.access.get_write()?.numericity.some_inert().is_none()
+                    && !parsed.items.contains_key(field_ident)
+                {
+                    Some(syn::Error::new(
+                        path.span(),
+                        format!("Missing field \"{field_ident}\" which must be provided"),
+                    ))
+                } else {
+                    None
+                }
+            })
+    });
+
+    errors.extend(field_errors);
+    errors.extend(register_errors);
+
+    errors
 }
 
 fn query_field<'args, 'hal, 'parsed>(

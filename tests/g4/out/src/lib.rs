@@ -157,7 +157,7 @@ mod tests {
                     }
                 };
 
-                assert_eq!(idr.value(), unsafe { MOCK_CRC[1] });
+                assert_eq!(0xdeadbeef, unsafe { MOCK_CRC[1] });
             });
         }
 

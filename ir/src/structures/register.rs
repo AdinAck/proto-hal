@@ -194,21 +194,28 @@ impl Register {
             .clone()
             .map(|field| field.module_name())
             .collect::<Vec<_>>();
-        let field_tys = fields
-            .clone()
-            .map(|field| field.type_name())
-            .collect::<Vec<_>>();
+
         let reset_tys = fields
             .map(|field| {
                 let ident = field.module_name();
-                field.reset_ty(parse_quote! { #ident }, reset)
+                let ty = field.type_name();
+
+                let reset_ty = if field.entitlements.is_empty() {
+                    let reset_ty = field.reset_ty(parse_quote! { #ident }, reset);
+
+                    quote! { #ident::#ty<#reset_ty> }
+                } else {
+                    quote! { #ident::Masked }
+                };
+
+                quote! { #reset_ty }
             })
             .collect::<Vec<_>>();
 
         quote! {
             pub struct Reset {
                 #(
-                    pub #field_idents: #field_idents::#field_tys<#reset_tys>,
+                    pub #field_idents: #reset_tys,
                 )*
             }
 
@@ -216,7 +223,7 @@ impl Register {
                 unsafe fn conjure() -> Self {
                     Self {
                         #(
-                            #field_idents: unsafe { <#field_idents::#field_tys<#reset_tys> as ::proto_hal::stasis::Conjure>::conjure() },
+                            #field_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                         )*
                     }
                 }
