@@ -669,8 +669,8 @@ fn make_dynamic_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<Token
     })
 }
 
-fn make_conjure(return_ty: &TokenStream) -> TokenStream {
-    quote! { <#return_ty as ::proto_hal::stasis::Conjure>::conjure() }
+fn make_conjure() -> TokenStream {
+    quote! { ::proto_hal::stasis::Conjure::conjure() }
 }
 
 pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
@@ -801,8 +801,8 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             parameter_tys.push(make_parameter_ty(binding, transition.as_ref(), &input_ty));
 
             if let Some(return_ty) = return_ty {
-                conjures.push(make_conjure(&return_ty));
                 return_tys.push(return_ty);
+                conjures.push(make_conjure());
             }
 
             arguments.push(make_argument(

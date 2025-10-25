@@ -41,6 +41,8 @@ impl Numericity {
     }
 
     pub fn numeric_ty(&self, width: u8) -> Option<(Ident, Ident)> {
+        let Self::Numeric = self else { None? };
+
         Some(match width {
             1 => (parse_quote! { bool }, parse_quote! { Bool }),
             2..9 => (parse_quote! { u8 }, parse_quote! { UInt8 }),
