@@ -11,7 +11,7 @@
 /// Implementing this trait is a contract that the implementor is a type-state of the parent.
 /// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
 /// undefined behavior.
-pub unsafe trait State<Parent> {}
+pub unsafe trait State<Parent>: Conjure {}
 
 /// Implementors of this trait are type-stated resources with entitlement constraints.
 /// Many kinds of resources can be entitled in any of the following ways:
@@ -46,10 +46,22 @@ pub unsafe trait State<Parent> {}
 )]
 pub unsafe trait Entitled<Locus> {}
 
-/// A universal type-state indicating that the true hardware state is not statically
-/// resolved currently.
+pub trait Conjure {
+    /// # Safety
+    /// Produce a value where the invariants of the value's existence
+    /// are upheld by the user.
+    unsafe fn conjure() -> Self;
+}
+
+/// A marker type for a dynamic state.
 pub struct Dynamic {
     _sealed: (),
+}
+
+impl Conjure for Dynamic {
+    unsafe fn conjure() -> Self {
+        Dynamic { _sealed: () }
+    }
 }
 
 unsafe impl<F> State<F> for Dynamic {}
@@ -61,6 +73,12 @@ macro_rules! numerics {
         $(
             pub struct $name<const V: $ty> {
                 _sealed: (),
+            }
+
+            impl<const V: $ty> Conjure for $name<V> {
+                unsafe fn conjure() -> Self {
+                    Self { _sealed: () }
+                }
             }
         )*
     };

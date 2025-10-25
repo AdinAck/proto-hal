@@ -211,6 +211,16 @@ impl Register {
                     pub #field_idents: #field_idents::#field_tys<#reset_tys>,
                 )*
             }
+
+            impl ::proto_hal::stasis::Conjure for Reset {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        #(
+                            #field_idents: unsafe { <#field_idents::#field_tys<#reset_tys> as ::proto_hal::stasis::Conjure>::conjure() },
+                        )*
+                    }
+                }
+            }
         }
     }
 }

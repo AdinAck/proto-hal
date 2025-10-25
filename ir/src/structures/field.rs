@@ -358,7 +358,9 @@ impl Field {
                     S: ::proto_hal::stasis::State<Field>,
                 {
                     pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
-                        unsafe { ::core::mem::transmute(()) }
+                        #ident {
+                            _state: unsafe { <::proto_hal::stasis::Dynamic as ::proto_hal::stasis::Conjure>::conjure() },
+                        }
                     }
                 }
             })
@@ -391,6 +393,17 @@ impl Field {
             }
 
             #into_dynamic
+
+            impl<S> ::proto_hal::stasis::Conjure for #ident<S>
+            where
+                S: ::proto_hal::stasis::State<Field>,
+            {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _state: unsafe { <S as ::proto_hal::stasis::Conjure>::conjure() },
+                    }
+                }
+            }
 
             #(
                 unsafe impl<S> ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident<S>
@@ -558,8 +571,19 @@ impl Field {
         if let Some(access) = self.resolvable() {
             if let Numericity::Enumerated { variants } = &access.numericity {
                 let variants = variants.values().map(|variant| variant.type_name());
+                Some(quote! {
+                    #(
+                        impl ::proto_hal::stasis::Conjure for #variants {
+                            unsafe fn conjure() -> Self {
+                                Self {
+                                    _sealed: (),
+                                }
+                            }
+                        }
 
-                Some(quote! { #(unsafe impl ::proto_hal::stasis::State<Field> for #variants {})* })
+                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {}
+                    )*
+                })
             } else {
                 None
             }
