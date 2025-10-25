@@ -250,22 +250,59 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
         });
 
     let register_errors = parsed.iter().flat_map(|(path, parsed)| {
-        parsed
+        let provided_fields = parsed
+            .items
+            .values()
+            .map(|(field, ..)| field)
+            .collect::<Vec<_>>();
+        let required_fields = parsed
             .register
             .fields
-            .iter()
-            .filter_map(|(field_ident, field)| {
-                if field.access.get_write()?.numericity.some_inert().is_none()
-                    && !parsed.items.contains_key(field_ident)
-                {
-                    Some(syn::Error::new(
-                        path.span(),
-                        format!("Missing field \"{field_ident}\" which must be provided"),
-                    ))
-                } else {
-                    None
-                }
+            .values()
+            .filter(|field| {
+                let Some(write) = field.access.get_write() else {
+                    return false;
+                };
+                write.numericity.some_inert().is_none()
             })
+            .collect::<Vec<_>>();
+
+        let mut errors = Vec::new();
+        let mut previous_missing_fields = IndexSet::new();
+
+        for i in 0..32 {
+            if provided_fields
+                .iter()
+                .any(|field| field.domain().contains(&i))
+            {
+                continue;
+            }
+
+            let missing_fields = required_fields
+                .iter()
+                .filter(|field| field.domain().contains(&i))
+                .map(|field| field.module_name())
+                .collect();
+
+            if previous_missing_fields != missing_fields && !missing_fields.is_empty() {
+                let formatted_fields = missing_fields
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                errors.push(syn::Error::new(
+                    path.span(),
+                    if missing_fields.len() == 1 {
+                        format!("{formatted_fields} must be specified")
+                    } else {
+                        format!("one of [{formatted_fields}] must be specified")
+                    },
+                ));
+                previous_missing_fields = missing_fields;
+            }
+        }
+
+        errors
     });
 
     errors.extend(field_errors);

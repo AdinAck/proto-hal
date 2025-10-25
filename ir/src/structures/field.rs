@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use colored::Colorize;
 use indexmap::IndexMap;
 use inflector::Inflector as _;
@@ -185,6 +187,11 @@ impl Field {
                 parse_quote! { #path::#ty }
             }
         }
+    }
+
+    /// The domain of the parent register in which the field occupies.
+    pub fn domain(&self) -> Range<u8> {
+        self.offset..(self.offset + self.width)
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
