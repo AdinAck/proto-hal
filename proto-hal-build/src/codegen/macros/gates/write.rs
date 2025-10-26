@@ -11,7 +11,7 @@ use ir::structures::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote, quote_spanned};
-use syn::{Expr, Ident, LitInt, Path, Token, spanned::Spanned};
+use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
 
 use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
@@ -212,7 +212,14 @@ fn validate<'args, 'hal>(
     let mut errors = Vec::new();
     let field_errors = parsed
         .values()
-        .flat_map(|parsed_reg| parsed_reg.items.iter().flat_map(|(field_ident, (field, ..))| {
+        .flat_map(|parsed_reg| parsed_reg.items.iter().flat_map(|(field_ident, (field, .., transition))| {
+            if transition.is_none() {
+                return vec![];
+            }
+
+            // the following validation steps only apply if the field is
+            // being transitioned
+
             // write access
             let Some(write) = field.access.get_write() else {
                 return vec![syn::Error::new_spanned(
@@ -255,7 +262,13 @@ fn validate<'args, 'hal>(
                     for field in register.fields.values() {
                         if let Some(Numericity::Enumerated { variants }) = field.access.get_write().map(|write| &write.numericity) {
                             for variant in variants.values() {
-                                if !variant.entitlements.is_empty() {
+                                if variant.entitlements
+                                    .iter()
+                                    .any(|entitlement|
+                                        entitlement.peripheral() == &parsed_reg.peripheral.module_name()
+                                        && entitlement.register() == &parsed_reg.register.module_name()
+                                        && parsed_reg.items.keys().any(|field_ident| field_ident == entitlement.field())
+                                    ) {
                                     statewise_entitlements.insert((peripheral.module_name(), register.module_name(), field.module_name()));
                                 }
                             }
@@ -790,18 +803,20 @@ fn make_reg_write_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<Tok
                 transition.as_ref(),
             );
 
-            match (binding, transition) {
+            match (binding, transition, input_generic, output_generic) {
                 // 1. &mut binding => expr
-                (Expr::Reference(r), Some(..)) if r.mutability.is_some() => {
+                (Expr::Reference(r), Some(..), ..) if r.mutability.is_some() => {
                     let unique_field_ident =
                         make_unique_field_ident(parsed.peripheral, parsed.register, field_ident);
 
                     Some(quote! { (#unique_field_ident.1 #shift) })
                 }
                 // 2. &binding
-                (Expr::Reference(..), None) => Some(quote! { #input_generic::VALUE #shift }),
+                (Expr::Reference(..), None, Some(input_generic), ..) => {
+                    Some(quote! { #input_generic::VALUE #shift })
+                }
                 // 3. binding => _
-                (.., Some(..)) => Some(quote! { #output_generic::VALUE #shift }),
+                (.., Some(output_generic)) => Some(quote! { #output_generic::VALUE #shift }),
                 (..) => None,
             }
         })
