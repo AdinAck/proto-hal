@@ -191,9 +191,15 @@ fn read_values<'hal>(
 ) -> Option<TokenStream> {
     let reg = unique_register_ident(parsed.peripheral, parsed.register);
     let mask = u32::MAX >> (32 - field.width);
+    let shift = if field.offset == 0 {
+        None
+    } else {
+        let offset = &field.offset;
+        Some(quote! { >> #offset })
+    };
 
     let value = quote! {
-        (#reg >> #path::#ident::OFFSET) & #mask
+        (#reg #shift) & #mask
     };
 
     Some(match field.access.get_read()?.numericity {

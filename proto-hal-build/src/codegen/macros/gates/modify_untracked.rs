@@ -8,7 +8,7 @@ use ir::structures::{
     register::Register,
 };
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{Expr, Ident, Path, spanned::Spanned};
 
 use crate::codegen::macros::{Args, Override, RegisterArgs, StateArgs, get_field, get_register};
@@ -212,9 +212,15 @@ fn read_values<'args, 'hal>(
 ) -> Option<TokenStream> {
     let reg = unique_register_ident(parsed.peripheral, parsed.register);
     let mask = u32::MAX >> (32 - field.width);
+    let shift = if field.offset == 0 {
+        None
+    } else {
+        let offset = &field.offset;
+        Some(quote! { >> #offset })
+    };
 
     let value = quote! {
-        (#reg >> #path::#ident::OFFSET) & #mask
+        (#reg #shift) & #mask
     };
 
     Some(match field.access.get_read()?.numericity {
@@ -383,7 +389,7 @@ pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
                         unique_field_ident(parsed.peripheral, parsed.register, ident),
                         quote! { u32 },
                         write_values(path, (*transition)?, ident, field)?,
-                        quote! { #path::#ident::OFFSET },
+                        field.offset.to_token_stream(),
                     ))
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();

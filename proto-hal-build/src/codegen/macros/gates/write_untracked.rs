@@ -8,7 +8,7 @@ use ir::structures::{
     register::Register,
 };
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{Expr, Ident, Path, spanned::Spanned};
 
 use crate::codegen::macros::{Args, Override, RegisterArgs, StateArgs, get_field, get_register};
@@ -285,7 +285,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                         unique_field_ident(parsed.peripheral, parsed.register, ident),
                         quote! { u32 },
                         write_values(path, transition, ident, field)?,
-                        quote! { #path::#ident::OFFSET },
+                        field.offset.to_token_stream(),
                     ))
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>, Vec<_>)>();
