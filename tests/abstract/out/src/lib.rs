@@ -134,6 +134,8 @@ mod tests {
     }
 
     mod entitlements {
+        use macros::read_untracked;
+
         use crate::{foo, tests::addr_of_foo, write};
 
         #[test]
@@ -146,6 +148,18 @@ mod tests {
                 }
                 @base_addr foo addr_of_foo()
             };
+
+            assert!(
+                unsafe {
+                    read_untracked! {
+                        foo::foo0 {
+                            a,
+                        }
+                        @base_addr foo addr_of_foo()
+                    }
+                }
+                .is_v5()
+            );
 
             write! {
                 foo::foo1 {

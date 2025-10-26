@@ -205,12 +205,14 @@ fn parse_fields<'args, 'hal>(
     (items, errors)
 }
 
-fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<syn::Error> {
+fn validate<'args, 'hal>(
+    hal: &'hal Hal,
+    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
+) -> Vec<syn::Error> {
     let mut errors = Vec::new();
     let field_errors = parsed
         .values()
-        .flat_map(|Parsed { items, .. }| items.iter())
-        .flat_map(|(field_ident, (field, ..))| {
+        .flat_map(|parsed_reg| parsed_reg.items.iter().flat_map(|(field_ident, (field, ..))| {
             // write access
             let Some(write) = field.access.get_write() else {
                 return vec![syn::Error::new_spanned(
@@ -219,7 +221,7 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
                 )];
             };
 
-            // entitlements
+            // entitlements *from* the field
             let access_entitlements = write.entitlements.iter().map(|entitlement| (entitlement.peripheral(), entitlement.register(), entitlement.field()));
             let statewise_entitlements = match &write.numericity {
                 Numericity::Numeric => None,
@@ -246,8 +248,37 @@ fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<sy
                 }
             }
 
+            // entitlements *to* the field
+            let mut statewise_entitlements = IndexSet::new();
+            for peripheral in hal.peripherals.values() {
+                for register in peripheral.registers.values() {
+                    for field in register.fields.values() {
+                        if let Some(Numericity::Enumerated { variants }) = field.access.get_write().map(|write| &write.numericity) {
+                            for variant in variants.values() {
+                                if !variant.entitlements.is_empty() {
+                                    statewise_entitlements.insert((peripheral.module_name(), register.module_name(), field.module_name()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for entitlement in statewise_entitlements {
+                if !parsed.values().any(|parsed_reg| {
+                    parsed_reg.peripheral.module_name() == entitlement.0 && parsed_reg.register.module_name() == entitlement.1 && parsed_reg.items.keys().any(|field_ident| field_ident == &entitlement.2)
+                }) {
+                    errors.push(syn::Error::new_spanned(&field_ident, format!(
+                        "field \"{field_ident}\" is an entitlement of at least one state in \"{}::{}::{}\" which must be provided",
+                        entitlement.0,
+                        entitlement.1,
+                        entitlement.2
+                    )));
+                }
+            }
+
             errors
-        });
+        }));
 
     let register_errors = parsed.iter().flat_map(|(path, parsed)| {
         let provided_fields = parsed
@@ -653,7 +684,7 @@ fn make_constraints<'args, 'hal>(
         .filter_map(|(peripheral, register, f)| {
             let entitlement_return_ty = {
                 let (path, field_ident, (field, binding, transition)) = query_field(parsed, peripheral, register, f)?;
-                let (.., output_generic) = make_generics(binding, peripheral, register, &field.type_name(), transition.as_ref());
+                let (.., output_generic) = make_generics(binding, &Ident::new(peripheral.to_string().to_pascal_case().as_str(), peripheral.span()), &Ident::new(register.to_string().to_pascal_case().as_str(), register.span()), &field.type_name(), transition.as_ref());
 
                 if let Some((state_args, write_state)) = transition {
                     make_return_ty(path, binding, state_args, write_state, field, field_ident, output_generic.as_ref())
@@ -679,10 +710,19 @@ fn make_constraints<'args, 'hal>(
                     }
                 }
             } else {
-                let generic = format_ident!("{peripheral}{register}{f}", span = span);
+                let generic = format_ident!(
+                    "{}{}{}",
+                    peripheral.to_string().to_pascal_case(),
+                    register.to_string().to_pascal_case(),
+                    f.to_string().to_pascal_case(),
+                    span = span);
+
+                let field_ty = Ident::new(f.to_string().to_pascal_case().as_str(), f.span());
+
+                let prefix = prefix.map(|prefix| quote! { #prefix:: });
 
                 quote! {
-                    #return_ty: ::proto_hal::stasis::Entitled<#prefix::#peripheral::#register::#f<#generic>>
+                    #return_ty: ::proto_hal::stasis::Entitled<#prefix #peripheral::#register::#f::#field_ty<#generic>>
                 }
             })
         });
@@ -739,23 +779,31 @@ fn make_reg_write_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<Tok
         .items
         .iter()
         .filter_map(|(field_ident, (field, binding, transition))| {
-            transition.as_ref()?;
-
-            if let Expr::Reference(r) = binding
-                && r.mutability.is_some()
-            {
-                // and onwards!
-            } else {
-                None?
-            };
-
-            let unique_field_ident =
-                make_unique_field_ident(parsed.peripheral, parsed.register, field_ident);
-
             let offset = field.offset;
             let shift = (offset != 0).then_some(quote! { << #offset });
 
-            Some(quote! { (#unique_field_ident.1 #shift) })
+            let (input_generic, output_generic) = make_generics(
+                binding,
+                &parsed.peripheral.type_name(),
+                &parsed.register.type_name(),
+                &field.type_name(),
+                transition.as_ref(),
+            );
+
+            match (binding, transition) {
+                // 1. &mut binding => expr
+                (Expr::Reference(r), Some(..)) if r.mutability.is_some() => {
+                    let unique_field_ident =
+                        make_unique_field_ident(parsed.peripheral, parsed.register, field_ident);
+
+                    Some(quote! { (#unique_field_ident.1 #shift) })
+                }
+                // 2. &binding
+                (Expr::Reference(..), None) => Some(quote! { #input_generic::VALUE #shift }),
+                // 3. binding => _
+                (.., Some(..)) => Some(quote! { #output_generic::VALUE #shift }),
+                (..) => None,
+            }
         })
         .collect::<Vec<_>>();
 
@@ -778,7 +826,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
 
     let (parsed, e) = parse(&args, &model);
     errors.extend(e);
-    errors.extend(validate(&parsed));
+    errors.extend(validate(model, &parsed));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
 
