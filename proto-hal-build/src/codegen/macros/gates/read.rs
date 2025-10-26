@@ -323,7 +323,7 @@ pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
         #errors
 
         {
-            fn gate(#(#(#parameters,)*)*) -> (#(#(#returns),*),*) {
+            fn gate(#(#(#parameters,)*),*) -> (#(#(#returns),*),*) {
                 #(
                     let #reg_idents = unsafe {
                         ::core::ptr::read_volatile(#addrs as *const u32)
@@ -337,7 +337,7 @@ pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
                 )
             }
 
-            gate(#(#(#bindings,)*),*)
+            gate(#(#(#bindings),*),*)
         }
     }
 }

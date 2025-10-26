@@ -306,7 +306,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
         #errors
 
         {
-            unsafe fn gate(#(#(#parameter_idents: #parameter_tys,)*)*) {
+            unsafe fn gate(#(#(#parameter_idents: #parameter_tys),*),*) {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
@@ -319,7 +319,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                 )*
             }
 
-            gate(#(#(#write_values,)*)*)
+            gate(#(#(#write_values),*),*)
         }
     }
 }

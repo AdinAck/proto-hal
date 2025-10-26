@@ -426,7 +426,7 @@ pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
             )
         }
 
-        unsafe fn write(#(#write_reg_idents: u32,)* #(#(#parameter_idents: #parameter_tys,)*)*) {
+        unsafe fn write(#(#write_reg_idents: u32),*, #(#(#parameter_idents: #parameter_tys),*),*) {
             #(
                 unsafe {
                     ::core::ptr::write_volatile(
@@ -443,16 +443,16 @@ pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
         let (#(
             #read_reg_idents,
             #(
-                #read_field_idents,
-            )*
-        )*) = read();
+                #read_field_idents
+            ),*
+        ),*) = read();
 
         write(#(
             #write_reg_idents,
             #(
-                #write_values,
-            )*
-        )*);
+                #write_values
+            ),*
+        ),*);
     };
 
     let body = if cs.is_none() {
