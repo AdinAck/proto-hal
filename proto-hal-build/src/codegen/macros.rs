@@ -19,7 +19,7 @@ pub use gates::{
     modify_untracked::modify_untracked,
     read::read,
     read_untracked::read_untracked,
-    write::write,
+    write::{write, write_in_place},
     write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
 };
 pub use scaffolding::scaffolding;
@@ -239,6 +239,7 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         "read",
         "read_untracked",
         "write",
+        "write_in_place",
         "write_from_reset_untracked",
         "write_from_zero_untracked",
     ];

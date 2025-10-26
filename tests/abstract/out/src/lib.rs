@@ -134,7 +134,7 @@ mod tests {
     }
 
     mod entitlements {
-        use macros::read_untracked;
+        use macros::{read_untracked, write_in_place};
 
         use crate::{foo, tests::addr_of_foo, write};
 
@@ -142,12 +142,14 @@ mod tests {
         fn access() {
             let mut p = unsafe { crate::peripherals() };
 
-            let a = write! {
+            let a = p.foo.foo0.a;
+
+            write_in_place! {
                 foo::foo0 {
-                    a: p.foo.foo0.a => _,
+                    a: a => _,
                 }
                 @base_addr foo addr_of_foo()
-            };
+            }
 
             assert!(
                 unsafe {

@@ -11,7 +11,7 @@ use ir::structures::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote, quote_spanned};
-use syn::{Expr, Ident, LitInt, Path, spanned::Spanned};
+use syn::{Expr, Ident, LitInt, Path, Token, spanned::Spanned};
 
 use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
@@ -816,7 +816,7 @@ fn make_conjure() -> TokenStream {
     quote! { ::proto_hal::stasis::Conjure::conjure() }
 }
 
-pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
+fn write_inner(model: &Hal, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2::<Args>(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
@@ -889,6 +889,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
     let mut reg_write_values = Vec::new();
     let mut arguments = Vec::new();
     let mut conjures = Vec::new();
+    let mut rebinds = Vec::new();
 
     for (path, parsed_reg) in &parsed {
         for (field_ident, (field, binding, transition)) in &parsed_reg.items {
@@ -959,6 +960,7 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             if let Some(return_ty) = return_ty {
                 return_tys.push(return_ty);
                 conjures.push(make_conjure());
+                rebinds.push(binding);
             }
 
             arguments.push(make_argument(
@@ -1021,8 +1023,11 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
                 (initial, None) => quote! { #initial },
             });
 
+    let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });
+    let semicolon = in_place.then_some(quote! { ; });
+
     quote! {
-        {
+        #rebinds {
             #suggestions
             #errors
 
@@ -1040,6 +1045,13 @@ pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
             }
 
             gate(#(#arguments,)*)
-        }
+        } #semicolon
     }
+}
+
+pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
+    write_inner(model, tokens, false)
+}
+pub fn write_in_place(model: &Hal, tokens: TokenStream) -> TokenStream {
+    write_inner(model, tokens, true)
 }
