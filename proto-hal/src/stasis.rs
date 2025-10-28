@@ -5,6 +5,8 @@
 //! types can portray hardware state, and transitioning *state* is represented as transmuting
 //! *type*.
 
+use core::marker::PhantomData;
+
 /// Implementors of this trait are type-states corresponding to some parent resource.
 ///
 /// # Safety
@@ -60,6 +62,35 @@ pub trait Conjure {
     /// performed external to the device model) this action renders hardware invariance claims
     /// to be moot.
     unsafe fn conjure() -> Self;
+}
+
+/// A container for a resource that is forbidden from being *changed*.
+pub struct Frozen<Resource, Key> {
+    /// The resource which is frozen.
+    resource: Resource,
+    /// The resource consumed to unfreeze the frozen resource.
+    _key: PhantomData<Key>,
+}
+
+impl<Resource, Key> Frozen<Resource, Key> {
+    /// Freeze a resource, ensuring the resource is not destructively
+    /// mutated or moved.
+    ///
+    /// # Safety
+    ///
+    /// If the specified key [`K`] is invalid given the entanglements of the resource,
+    /// the invariances assumed by the freezing of the resource are rendered moot.
+    pub unsafe fn freeze<K>(resource: Resource) -> Frozen<Resource, K> {
+        Frozen {
+            resource,
+            _key: PhantomData,
+        }
+    }
+
+    /// Provide the required key to retrieve the resource.
+    pub fn unfreeze(self, #[expect(unused)] key: Key) -> Resource {
+        self.resource
+    }
 }
 
 /// A marker type for a dynamic state.
