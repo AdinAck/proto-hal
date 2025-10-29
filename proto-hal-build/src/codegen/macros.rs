@@ -1,9 +1,9 @@
-mod mask;
-
 mod gates;
+pub mod parsing;
 mod scaffolding;
 mod unmask;
 
+use indexmap::IndexMap;
 use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
@@ -12,27 +12,27 @@ use syn::{
     parse::Parse,
     parse_quote,
     punctuated::Punctuated,
-    token::{Brace, Comma},
+    token::{Brace, Colon, Comma},
 };
 
-pub use gates::{
-    modify_untracked::modify_untracked,
-    read::read,
-    read_untracked::read_untracked,
-    write::{write, write_in_place},
-    write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
-};
+// pub use gates::{
+//     modify_untracked::modify_untracked,
+//     read::read,
+//     read_untracked::read_untracked,
+//     write::{write, write_in_place},
+//     write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
+// };
 pub use scaffolding::scaffolding;
 
 #[derive(Debug)]
 struct Args {
-    registers: Vec<RegisterArgs>,
+    registers: IndexMap<Path, Vec<RegisterArgs>>,
     overrides: Vec<Override>,
 }
 
 impl Parse for Args {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut registers = Vec::new();
+        let mut registers = IndexMap::new();
         let mut overrides = Vec::new();
 
         while !input.is_empty() {
@@ -40,7 +40,11 @@ impl Parse for Args {
                 input.parse::<Token![@]>()?;
                 overrides.push(input.parse()?);
             } else {
-                registers.push(input.parse()?);
+                let register_args = input.parse::<RegisterArgs>()?;
+                registers
+                    .entry(register_args.path.clone())
+                    .or_insert(vec![])
+                    .push(register_args);
             }
         }
 
@@ -75,6 +79,53 @@ impl Parse for Override {
 }
 
 #[derive(Debug)]
+enum Node {
+    Branch {
+        path: Path,
+        children: Punctuated<Node, Comma>,
+    },
+    Leaf {
+        path: Path,
+        entry: FieldArgs,
+    },
+}
+
+impl Parse for Node {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+
+        if input.peek(Colon) {
+            // foo::bar::baz: ...
+
+            input.parse::<Colon>()?;
+
+            Ok(Self::Leaf {
+                path: path,
+                entry: input.parse()?,
+            })
+        } else if input.peek(Brace) {
+            // foo::bar {
+            //  baz: ...
+            // }
+
+            let block;
+            braced!(block in input);
+
+            let children = block.parse_terminated(Parse::parse, Comma)?;
+
+            Ok(Self::Branch { path, children })
+        } else {
+            // foo::bar::baz {erroneous tokens}
+
+            Ok(Self::Branch {
+                path,
+                children: Default::default(),
+            })
+        }
+    }
+}
+
+#[derive(Debug)]
 struct RegisterArgs {
     path: Path,
     fields: Punctuated<FieldArgs, Comma>,
@@ -84,19 +135,30 @@ impl Parse for RegisterArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let path = input.parse()?;
 
-        if !input.peek(Brace) {
-            return Ok(Self {
+        if input.peek(Brace) {
+            // foo::bar {
+            //  baz: ...
+            // }
+
+            let block;
+            braced!(block in input);
+
+            let fields = block.parse_terminated(Parse::parse, Comma)?;
+
+            Ok(Self { path, fields })
+        } else if input.peek(Colon) {
+            // foo::bar::baz: ...
+
+            Ok(Self {
+                path,
+                fields: Punctuated::from_iter(vec![input.parse::<FieldArgs>()?].into_iter()),
+            })
+        } else {
+            Ok(Self {
                 path,
                 fields: Default::default(),
-            });
+            })
         }
-
-        let block;
-        braced!(block in input);
-
-        let fields = block.parse_terminated(Parse::parse, Comma)?;
-
-        Ok(Self { path, fields })
     }
 }
 

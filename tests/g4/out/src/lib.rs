@@ -83,6 +83,13 @@ mod tests {
                     });
                 let cordic = p.cordic.unmask(cordicen);
 
+                let (cordic, cordicen) = unmask! {
+                    cordic: p.cordic,
+                    rcc::ahb1enr {
+                        cordicen: cordicen,
+                    }
+                };
+
                 let mut arg = cordic.wdata.arg.unmask(cordic.csr.argsize);
 
                 write! {
