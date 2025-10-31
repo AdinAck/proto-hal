@@ -17,6 +17,15 @@ pub enum Tree {
     Leaf { path: Path, entry: Entry },
 }
 
+impl Tree {
+    pub fn local_path(&self) -> &Path {
+        match self {
+            Tree::Branch { path, .. } => path,
+            Tree::Leaf { path, .. } => path,
+        }
+    }
+}
+
 impl Parse for Tree {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let path = input.parse()?;
