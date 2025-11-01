@@ -10,7 +10,9 @@ use syn::{Expr, ExprLit, Lit, LitInt, parse::Parse};
 /// ```
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
+    /// The transition input is an expression.
     Expr(Expr),
+    /// The transition input is a literal integer.
     Lit(LitInt),
 }
 

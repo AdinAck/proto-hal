@@ -1,9 +1,15 @@
 use syn::{Expr, Ident, parenthesized, parse::Parse, token::Comma};
 
+/// An override provides a means for altering the gate behavior, like changing the base address of a peripheral for
+/// usage in a test environment, or providing an external critical section handle to forgo acquiring a new on within
+/// the gate.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Override {
+    /// Override the base address of a peripheral.
     BaseAddress(Ident, Expr),
+    /// Pass an external critical section handle.
     CriticalSection(Expr),
+    /// The invoked override is unknown.
     Unknown(Ident),
 }
 

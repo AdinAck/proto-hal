@@ -20,7 +20,9 @@ use super::{Override, Tree};
 /// ```
 #[derive(Debug)]
 pub struct Gate {
+    /// Input trees provided to the gate.
     pub trees: Vec<Tree>,
+    /// Overrides provided to the gate.
     pub overrides: Vec<Override>,
 }
 

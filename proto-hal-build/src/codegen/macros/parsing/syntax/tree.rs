@@ -13,11 +13,24 @@ use super::Entry;
 /// A leaf contains an [`Entry`].
 #[derive(Debug, PartialEq, Eq)]
 pub enum Tree {
-    Branch { path: Path, children: Vec<Tree> },
-    Leaf { path: Path, entry: Entry },
+    /// The tree node is a branch with children.
+    Branch {
+        /// The local path to this node.
+        path: Path,
+        /// The children of this node.
+        children: Vec<Tree>,
+    },
+    /// The tree node is a leaf, terminating the branch.
+    Leaf {
+        /// The local path to this node.
+        path: Path,
+        /// The entry provided at the end of this branch.
+        entry: Entry,
+    },
 }
 
 impl Tree {
+    /// Get the local path of this tree node.
     pub fn local_path(&self) -> &Path {
         match self {
             Tree::Branch { path, .. } => path,

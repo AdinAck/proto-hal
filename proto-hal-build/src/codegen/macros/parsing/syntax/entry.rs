@@ -15,7 +15,9 @@ use super::{Binding, Transition};
 /// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct Entry {
+    /// The binding component of the entry (see [`Binding`]).
     pub binding: Option<Binding>,
+    /// The transition component of the entry (see [`Transition`]).
     pub transition: Option<Transition>,
 }
 
