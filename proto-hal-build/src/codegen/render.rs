@@ -2,8 +2,8 @@ use std::fs;
 
 use colored::Colorize as _;
 use ir::{
+    diagnostic::{self, Diagnostic},
     structures::{hal::Hal, interrupts::InterruptKind},
-    utils::diagnostic::{self, Diagnostic},
 };
 
 /// Validate a HAL model is properly defined and codegen succeeds.

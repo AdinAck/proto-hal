@@ -4,7 +4,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::diagnostic::{Context, Diagnostic, Diagnostics};
 
 use super::{entitlement::Entitlement, register::Register};
 

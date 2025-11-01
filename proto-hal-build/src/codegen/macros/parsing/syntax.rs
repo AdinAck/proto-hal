@@ -1,4 +1,4 @@
-//! Structures related to lexical parsing. These structures have no meaning in terms of the device model, but purely
+//! Structures related to syntactical parsing. These structures have no meaning in terms of the device model, but purely
 //! provide structure to the tokens accepted by the gate macros.
 
 mod binding;

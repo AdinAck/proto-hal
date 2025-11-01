@@ -9,8 +9,8 @@ use syn::{Ident, Index, Path, Type, parse_quote};
 
 use crate::{
     access::{Access, AccessProperties, HardwareAccess, ReadWrite},
+    diagnostic::{Context, Diagnostic, Diagnostics},
     structures::entitlement::{Entitlement, Entitlements},
-    utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
 use super::variant::Variant;

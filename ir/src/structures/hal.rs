@@ -5,8 +5,8 @@ use quote::{ToTokens, quote};
 use syn::Ident;
 
 use crate::{
+    diagnostic::{Context, Diagnostic, Diagnostics},
     structures::interrupts::{Interrupt, Interrupts},
-    utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
 use super::{entitlement::Entitlement, field::Numericity, peripheral::Peripheral};

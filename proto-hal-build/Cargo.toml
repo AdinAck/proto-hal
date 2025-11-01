@@ -11,3 +11,4 @@ syn = { workspace = true }
 quote = { workspace = true }
 indexmap = { workspace = true }
 Inflector = { workspace = true }
+ters = { workspace = true }

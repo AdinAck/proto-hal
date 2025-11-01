@@ -8,7 +8,7 @@ use proc_macro2::Span;
 use quote::{ToTokens, quote};
 use syn::{Ident, Index};
 
-use crate::utils::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::diagnostic::{Context, Diagnostic, Diagnostics};
 
 #[derive(Debug, Clone)]
 pub enum InterruptKind {

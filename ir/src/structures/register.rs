@@ -6,8 +6,8 @@ use quote::quote;
 use syn::{Ident, parse_quote};
 
 use crate::{
+    diagnostic::{Context, Diagnostic, Diagnostics},
     structures::peripheral::Peripheral,
-    utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
 use super::{entitlement::Entitlement, field::Field};

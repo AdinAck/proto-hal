@@ -4,8 +4,8 @@ use quote::quote;
 use syn::Ident;
 
 use crate::{
+    diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{entitlement::Entitlements, field::Field},
-    utils::diagnostic::{Context, Diagnostic, Diagnostics},
 };
 
 use super::entitlement::Entitlement;

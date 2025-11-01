@@ -1,3 +1,4 @@
+pub mod diagnostic;
 mod gates;
 pub mod parsing;
 mod scaffolding;

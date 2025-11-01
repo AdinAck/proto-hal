@@ -3,7 +3,7 @@ pub mod render;
 
 use std::{collections::HashMap, env, fs, path::Path};
 
-use ir::{structures::hal::Hal, utils::diagnostic};
+use ir::{diagnostic, structures::hal::Hal};
 
 fn generate(hal: &Hal, output: impl FnOnce(&Hal) -> Result<HashMap<String, String>, String>) {
     let out_dir = env::var("OUT_DIR").unwrap();

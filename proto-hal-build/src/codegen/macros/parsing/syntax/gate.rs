@@ -8,7 +8,7 @@ use super::{Override, Tree};
 /// 1. Path trees
 /// 1. Any overrides
 ///
-/// This is the top-level lexical parsing structure for gate macros, encapsulating all provided tokens.
+/// This is the top-level syntactical parsing structure for gate macros, encapsulating all provided tokens.
 ///
 /// ```ignore
 /// ::foo::bar {

@@ -24,7 +24,3 @@ impl<S> DerefMut for Validated<S> {
         &mut self.structure
     }
 }
-
-pub trait Ident {
-    fn ident(&self) -> &str;
-}
