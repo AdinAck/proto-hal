@@ -2,18 +2,19 @@
 //! gate inputs to model elements as well as providing semantic querying.
 
 mod keys;
+mod policies;
 mod transition;
 mod utils;
 
 use indexmap::IndexMap;
 use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
-use syn::Path;
+use syn::{Ident, Path};
 use ters::ters;
 
 use crate::codegen::macros::{
     diagnostic::Diagnostics,
     parsing::{
-        semantic::utils::parse_peripheral,
+        semantic::{policies::Policy, utils::parse_peripheral},
         syntax::{self, Binding},
     },
 };
@@ -22,29 +23,43 @@ pub use keys::*;
 pub use transition::Transition;
 
 type PeripheralMap<'args, 'hal> = IndexMap<PeripheralKey, PeripheralItem<'args, 'hal>>;
-type RegisterMap<'args, 'hal> = IndexMap<RegisterKey, RegisterItem<'args, 'hal>>;
-type FieldMap<'args, 'hal> = IndexMap<FieldKey, FieldItem<'args, 'hal>>;
+type RegisterMap<'args, 'hal, BindingPolicy> =
+    IndexMap<RegisterKey, RegisterItem<'args, 'hal, BindingPolicy>>;
+type FieldMap<'args, 'hal, BindingPolicy> =
+    IndexMap<FieldKey, FieldItem<'args, 'hal, BindingPolicy>>;
 
 /// The semantically parsed gate input, with corresponding model elements.
-pub struct Gate<'args, 'hal> {
+pub struct Gate<'args, 'hal, BindingPolicy>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     peripheral_map: PeripheralMap<'args, 'hal>,
-    register_map: RegisterMap<'args, 'hal>,
+    register_map: RegisterMap<'args, 'hal, BindingPolicy>,
 }
 
-impl<'args, 'hal> Gate<'args, 'hal> {
+impl<'args, 'hal, BindingPolicy> Gate<'args, 'hal, BindingPolicy>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     /// Parse the gate input against the model to produce a semantic gate input.
-    pub fn parse(args: &'args syntax::Gate, model: &'hal Hal) -> Result<Self, Diagnostics> {
+    pub fn parse(args: &'args syntax::Gate, model: &'hal Hal) -> (Self, Diagnostics) {
+        let mut diagnostics = Diagnostics::new();
         let mut peripheral_map = Default::default();
         let mut register_map = Default::default();
 
         for tree in &args.trees {
-            parse_peripheral(&mut peripheral_map, &mut register_map, tree, model)?;
+            if let Err(e) = parse_peripheral(&mut peripheral_map, &mut register_map, tree, model) {
+                diagnostics.extend(e);
+            }
         }
 
-        Ok(Self {
-            peripheral_map,
-            register_map,
-        })
+        (
+            Self {
+                peripheral_map,
+                register_map,
+            },
+            diagnostics,
+        )
     }
 
     /// Query for a peripheral-level item with the provided identifier.
@@ -62,13 +77,15 @@ impl<'args, 'hal> Gate<'args, 'hal> {
         &self,
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
-    ) -> Option<&RegisterItem<'args, 'hal>> {
+    ) -> Option<&RegisterItem<'args, 'hal, BindingPolicy>> {
         self.register_map
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
     }
 
     /// Visit all register-level items.
-    pub fn visit_registers(&self) -> impl Iterator<Item = &RegisterItem<'args, 'hal>> {
+    pub fn visit_registers(
+        &self,
+    ) -> impl Iterator<Item = &RegisterItem<'args, 'hal, BindingPolicy>> {
         self.register_map.values()
     }
 
@@ -78,7 +95,10 @@ impl<'args, 'hal> Gate<'args, 'hal> {
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
         field_ident: impl Into<String>,
-    ) -> Option<(&RegisterItem<'args, 'hal>, &FieldItem<'args, 'hal>)> {
+    ) -> Option<(
+        &RegisterItem<'args, 'hal, BindingPolicy>,
+        &FieldItem<'args, 'hal, BindingPolicy>,
+    )> {
         self.register_map
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
             .and_then(|register_item| {
@@ -90,7 +110,7 @@ impl<'args, 'hal> Gate<'args, 'hal> {
     }
 
     /// Visit all field-level items.
-    pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'args, 'hal>> {
+    pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'args, 'hal, BindingPolicy>> {
         self.register_map
             .values()
             .flat_map(|register_item| register_item.fields.values())
@@ -114,7 +134,10 @@ pub struct PeripheralItem<'args, 'hal> {
 ///
 /// *Note: This item DOES contain child fields, and DOES NOT contain a binding.*
 #[ters]
-pub struct RegisterItem<'args, 'hal> {
+pub struct RegisterItem<'args, 'hal, BindingPolicy>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     #[get]
     peripheral_path: Path,
     #[get]
@@ -122,18 +145,21 @@ pub struct RegisterItem<'args, 'hal> {
     #[get]
     register: &'hal Register,
     #[get]
-    fields: FieldMap<'args, 'hal>,
+    fields: FieldMap<'args, 'hal, BindingPolicy>,
 }
 
 /// A field-level item present in the gate.
 ///
 /// *Note: This item has no children, and DOES contain a binding.*
 #[ters]
-pub struct FieldItem<'args, 'hal> {
+pub struct FieldItem<'args, 'hal, BindingPolicy>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     #[get]
     field: &'hal Field,
     #[get]
-    binding: Option<&'args Binding>,
+    binding: BindingPolicy,
     #[get]
     transition: Option<Transition<'args, 'hal>>,
 }
@@ -154,7 +180,10 @@ mod tests {
 
     use crate::codegen::macros::{
         diagnostic,
-        parsing::{semantic::Gate, syntax},
+        parsing::{
+            semantic::{Gate, policies::WithBinding},
+            syntax,
+        },
     };
 
     #[test]
@@ -167,8 +196,10 @@ mod tests {
             #peripheral_path(#peripheral_binding)
         };
 
-        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactical parsing should succeed");
-        let gate = Gate::parse(&args, &model).expect("semantic parsing should succeed");
+        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
+        let (gate, e) = Gate::<WithBinding>::parse(&args, &model);
+
+        assert!(e.is_empty(), "semantic parsing should succeed");
 
         let peripheral = gate
             .get_peripheral(peripheral_name)
@@ -198,8 +229,10 @@ mod tests {
             #peripheral1_path,
         };
 
-        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactical parsing should succeed");
-        let gate = Gate::parse(&args, &model).expect("semantic parsing should succeed");
+        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
+        let (gate, e) = Gate::<WithBinding>::parse(&args, &model);
+
+        assert!(e.is_empty(), "semantic parsing should succeed");
 
         let peripheral0 = gate
             .get_peripheral(peripheral0_name)
@@ -236,14 +269,15 @@ mod tests {
             #peripheral_path::#register_ident
         };
 
-        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactical parsing should succeed");
-        let gate = Gate::parse(&args, &model);
+        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
+        let (.., e) = Gate::<WithBinding>::parse(&args, &model);
 
-        assert!(gate.is_err_and(|diagnostics| {
-            diagnostics
-                .iter()
-                .any(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::UnexpectedRegister))
-        }))
+        assert!(
+            e.iter().any(|diagnostic| matches!(
+                diagnostic.kind(),
+                diagnostic::Kind::UnexpectedRegister
+            ))
+        )
     }
 
     #[test]
@@ -272,13 +306,11 @@ mod tests {
             #peripheral_path::#register_ident::#field_ident(&mut my_field) => Foo,
         };
 
-        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactical parsing should succeed");
-        let gate = Gate::parse(&args, &model);
+        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
+        let (.., e) = Gate::<WithBinding>::parse(&args, &model);
 
-        assert!(gate.is_err_and(|diagnostics| {
-            diagnostics.iter().any(|diagnostic| {
-                matches!(diagnostic.kind(), diagnostic::Kind::FieldMustBeWritable)
-            })
+        assert!(e.iter().any(|diagnostic| {
+            matches!(diagnostic.kind(), diagnostic::Kind::FieldMustBeWritable)
         }))
     }
 
@@ -308,8 +340,10 @@ mod tests {
             #peripheral_path::#register_ident::#field_ident(&mut my_field) => Foo,
         };
 
-        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactical parsing should succeed");
-        let gate = Gate::parse(&args, &model).expect("semantic parsing should succeed");
+        let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
+        let (gate, e) = Gate::<WithBinding>::parse(&args, &model);
+
+        assert!(e.is_empty(), "semantic parsing should succeed");
 
         let (register, field) = gate
             .get_field(peripheral_name, register_name, field_name)
@@ -318,7 +352,7 @@ mod tests {
         assert_eq!(register.peripheral_path(), &peripheral_path);
         assert_eq!(register.peripheral().ident, peripheral_name);
         assert_eq!(register.register().ident, register_name);
-        assert!(field.binding().is_some_and(|binding| binding.is_dynamic()));
+        assert!(field.binding().is_dynamic());
         assert!(field.transition().is_some());
         assert_eq!(field.field().ident, field_name);
     }

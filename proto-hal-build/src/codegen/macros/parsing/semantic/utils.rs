@@ -9,18 +9,21 @@ use crate::codegen::macros::{
     parsing::{
         semantic::{
             FieldItem, FieldKey, PeripheralItem, PeripheralKey, PeripheralMap, RegisterItem,
-            RegisterKey, RegisterMap, Transition,
+            RegisterKey, RegisterMap, Transition, policies::Policy,
         },
-        syntax::Tree,
+        syntax::{Binding, Tree},
     },
 };
 
-pub fn parse_peripheral<'args, 'hal>(
+pub fn parse_peripheral<'args, 'hal, BindingPolicy>(
     peripheral_map: &mut PeripheralMap<'args, 'hal>,
-    register_map: &mut RegisterMap<'args, 'hal>,
+    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
     tree: &'args Tree,
     model: &'hal Hal,
-) -> Result<(), Diagnostics> {
+) -> Result<(), Diagnostics>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     let mut diagnostics = Diagnostics::new();
 
     let path = tree.local_path();
@@ -84,12 +87,15 @@ pub fn parse_peripheral<'args, 'hal>(
     }
 }
 
-fn parse_register<'args, 'hal>(
-    register_map: &mut RegisterMap<'args, 'hal>,
+fn parse_register<'args, 'hal, BindingPolicy>(
+    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
     tree: &'args Tree,
     peripheral_path: &Path,
     peripheral: &'hal Peripheral,
-) -> Result<(), Diagnostics> {
+) -> Result<(), Diagnostics>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     let mut diagnostics = Diagnostics::new();
 
     let path = tree.local_path();
@@ -138,13 +144,16 @@ fn parse_register<'args, 'hal>(
     }
 }
 
-fn parse_field<'args, 'hal>(
-    register_map: &mut RegisterMap<'args, 'hal>,
+fn parse_field<'args, 'hal, BindingPolicy>(
+    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
     tree: &'args Tree,
     peripheral_path: Path,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
-) -> Result<(), Diagnostic> {
+) -> Result<(), Diagnostic>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     let field_segment = tree.local_path().require_ident()?;
 
     put_field(
@@ -157,19 +166,30 @@ fn parse_field<'args, 'hal>(
     )
 }
 
-fn put_field<'args, 'hal>(
-    register_map: &mut RegisterMap<'args, 'hal>,
+fn put_field<'args, 'hal, BindingPolicy>(
+    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
     tree: &'args Tree,
     field_segment: &'args Ident,
     peripheral_path: Path,
     peripheral: &'hal Peripheral,
     register: &'hal Register,
-) -> Result<(), Diagnostic> {
+) -> Result<(), Diagnostic>
+where
+    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+{
     let field = find_field(field_segment, register)?;
 
     match tree {
         Tree::Branch { path, .. } => Err(Diagnostic::path_cannot_contine(path, field_segment))?,
         Tree::Leaf { entry, .. } => {
+            let binding = BindingPolicy::derive(&(field_segment, entry.binding.as_ref()))?;
+
+            let transition = if let Some(transition) = entry.transition.as_ref() {
+                Some(Transition::parse(transition, field, field_segment)?)
+            } else {
+                None
+            };
+
             if let Some(..) = register_map
                 .entry(RegisterKey::from_model(&peripheral, &register))
                 .or_insert(RegisterItem {
@@ -183,12 +203,8 @@ fn put_field<'args, 'hal>(
                     FieldKey::from_model(field),
                     FieldItem {
                         field,
-                        binding: entry.binding.as_ref(),
-                        transition: if let Some(transition) = entry.transition.as_ref() {
-                            Some(Transition::parse(transition, field, field_segment)?)
-                        } else {
-                            None
-                        },
+                        binding,
+                        transition,
                     },
                 )
             {

@@ -3,6 +3,8 @@ use proc_macro2::Span;
 use syn::{Ident, LitInt, Path, spanned::Spanned};
 use ters::ters;
 
+use crate::codegen::macros::parsing::syntax::Binding;
+
 #[derive(Debug)]
 pub enum Kind {
     Syntax,
@@ -14,6 +16,8 @@ pub enum Kind {
     PathCannotContinue,
     FieldMustBeWritable,
     NoCorrespondingVariant,
+    UnexpectedBinding,
+    ExpectedBinding,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -116,6 +120,20 @@ impl Diagnostic {
             format!("value \"{literal}\" has no corresponding variant in field \"{field_ident}\"",),
             literal,
         )
+    }
+
+    /// unexpected binding
+    pub fn unexpected_binding(binding: &Binding) -> Self {
+        Self::new(
+            Kind::UnexpectedBinding,
+            format!("unexpected binding"),
+            binding.as_ref(),
+        )
+    }
+
+    /// expected binding
+    pub fn expected_binding(ident: &Ident) -> Self {
+        Self::new(Kind::ExpectedBinding, format!("expected binding"), ident)
     }
 }
 
