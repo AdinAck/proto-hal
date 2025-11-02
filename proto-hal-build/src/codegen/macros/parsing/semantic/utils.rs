@@ -8,21 +8,23 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
         semantic::{
-            FieldItem, FieldKey, PeripheralItem, PeripheralKey, PeripheralMap, RegisterItem,
-            RegisterKey, RegisterMap, Transition, policies::Policy,
+            Entry, FieldItem, FieldKey, PeripheralItem, PeripheralKey, PeripheralMap, RegisterItem,
+            RegisterKey, RegisterMap,
+            policies::{Filter, Refine},
         },
-        syntax::{Binding, Tree},
+        syntax::Tree,
     },
 };
 
-pub fn parse_peripheral<'args, 'hal, BindingPolicy>(
-    peripheral_map: &mut PeripheralMap<'args, 'hal>,
-    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
-    tree: &'args Tree,
-    model: &'hal Hal,
+pub fn parse_peripheral<'cx, PeripheralPolicy, EntryPolicy>(
+    peripheral_map: &mut PeripheralMap<'cx>,
+    register_map: &mut RegisterMap<'cx, EntryPolicy>,
+    tree: &'cx Tree,
+    model: &'cx Hal,
 ) -> Result<(), Diagnostics>
 where
-    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+    PeripheralPolicy: Filter,
+    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
 {
     let mut diagnostics = Diagnostics::new();
 
@@ -66,6 +68,10 @@ where
             }
             // zero
             Tree::Leaf { entry, .. } => {
+                if !PeripheralPolicy::accepted() {
+                    Err(Diagnostic::unexpected_peripheral(&peripheral.module_name()))?
+                }
+
                 if let Some(..) = peripheral_map.insert(
                     PeripheralKey::from_model(&peripheral),
                     PeripheralItem {
@@ -87,14 +93,14 @@ where
     }
 }
 
-fn parse_register<'args, 'hal, BindingPolicy>(
-    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
-    tree: &'args Tree,
+fn parse_register<'cx, EntryPolicy>(
+    register_map: &mut RegisterMap<'cx, EntryPolicy>,
+    tree: &'cx Tree,
     peripheral_path: &Path,
-    peripheral: &'hal Peripheral,
+    peripheral: &'cx Peripheral,
 ) -> Result<(), Diagnostics>
 where
-    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
 {
     let mut diagnostics = Diagnostics::new();
 
@@ -128,7 +134,7 @@ where
                         peripheral,
                         register,
                     ) {
-                        diagnostics.push(e);
+                        diagnostics.extend(e);
                     }
                 }
             }
@@ -144,17 +150,20 @@ where
     }
 }
 
-fn parse_field<'args, 'hal, BindingPolicy>(
-    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
-    tree: &'args Tree,
+fn parse_field<'cx, EntryPolicy>(
+    register_map: &mut RegisterMap<'cx, EntryPolicy>,
+    tree: &'cx Tree,
     peripheral_path: Path,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-) -> Result<(), Diagnostic>
+    peripheral: &'cx Peripheral,
+    register: &'cx Register,
+) -> Result<(), Diagnostics>
 where
-    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
 {
-    let field_segment = tree.local_path().require_ident()?;
+    let field_segment = tree
+        .local_path()
+        .require_ident()
+        .map_err(Into::<Diagnostic>::into)?;
 
     put_field(
         register_map,
@@ -166,30 +175,22 @@ where
     )
 }
 
-fn put_field<'args, 'hal, BindingPolicy>(
-    register_map: &mut RegisterMap<'args, 'hal, BindingPolicy>,
-    tree: &'args Tree,
-    field_segment: &'args Ident,
+fn put_field<'cx, EntryPolicy>(
+    register_map: &mut RegisterMap<'cx, EntryPolicy>,
+    tree: &'cx Tree,
+    field_segment: &'cx Ident,
     peripheral_path: Path,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-) -> Result<(), Diagnostic>
+    peripheral: &'cx Peripheral,
+    register: &'cx Register,
+) -> Result<(), Diagnostics>
 where
-    BindingPolicy: Policy<'args, Item = (&'args Ident, Option<&'args Binding>)>,
+    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
 {
     let field = find_field(field_segment, register)?;
 
     match tree {
         Tree::Branch { path, .. } => Err(Diagnostic::path_cannot_contine(path, field_segment))?,
         Tree::Leaf { entry, .. } => {
-            let binding = BindingPolicy::derive(&(field_segment, entry.binding.as_ref()))?;
-
-            let transition = if let Some(transition) = entry.transition.as_ref() {
-                Some(Transition::parse(transition, field, field_segment)?)
-            } else {
-                None
-            };
-
             if let Some(..) = register_map
                 .entry(RegisterKey::from_model(&peripheral, &register))
                 .or_insert(RegisterItem {
@@ -203,8 +204,10 @@ where
                     FieldKey::from_model(field),
                     FieldItem {
                         field,
-                        binding,
-                        transition,
+                        entry: EntryPolicy::refine((
+                            field_segment,
+                            Entry::parse(entry, field, field_segment)?,
+                        ))?,
                     },
                 )
             {
@@ -216,11 +219,11 @@ where
     Ok(())
 }
 
-fn fuzzy_find_peripheral<'args, 'hal>(
-    path: &mut impl Iterator<Item = &'args Ident>,
+fn fuzzy_find_peripheral<'input, 'model>(
+    path: &mut impl Iterator<Item = &'input Ident>,
     span: Span,
-    model: &'hal Hal,
-) -> Result<(&'hal Peripheral, Path), Diagnostic> {
+    model: &'model Hal,
+) -> Result<(&'model Peripheral, Path), Diagnostic> {
     let mut peripheral_path = Punctuated::<_, PathSep>::new();
 
     for ident in path {
@@ -233,20 +236,20 @@ fn fuzzy_find_peripheral<'args, 'hal>(
     Err(Diagnostic::expected_peripheral_path(&span))
 }
 
-fn find_register<'args, 'hal>(
-    ident: &'args Ident,
-    peripheral: &'hal Peripheral,
-) -> Result<&'hal Register, Diagnostic> {
+fn find_register<'input, 'model>(
+    ident: &'input Ident,
+    peripheral: &'model Peripheral,
+) -> Result<&'model Register, Diagnostic> {
     peripheral
         .registers
         .get(ident)
         .ok_or(Diagnostic::register_not_found(ident, peripheral))
 }
 
-fn find_field<'args, 'hal>(
-    ident: &'args Ident,
-    register: &'hal Register,
-) -> Result<&'hal Field, Diagnostic> {
+fn find_field<'input, 'model>(
+    ident: &'input Ident,
+    register: &'model Register,
+) -> Result<&'model Field, Diagnostic> {
     register
         .fields
         .get(ident)

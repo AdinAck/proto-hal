@@ -1,49 +1,108 @@
-use std::ops::Deref;
-
 use syn::Ident;
 
-use crate::codegen::macros::{diagnostic::Diagnostic, parsing::syntax::Binding};
+use crate::codegen::macros::{
+    diagnostic::{Diagnostic, Diagnostics},
+    parsing::{
+        semantic::{Entry, Transition},
+        syntax::Binding,
+    },
+};
 
-pub trait Policy<'item>: Sized {
-    type Item;
-
-    fn derive(item: &Self::Item) -> Result<Self, Diagnostic>;
+/// This policy dictates what kind of items are permitted to be
+/// parsed or not.
+pub trait Filter {
+    /// Whether the item class is permitted or not.
+    fn accepted() -> bool;
 }
 
-/// Entries are required to NOT contain a binding.
-pub struct NoBinding;
+/// This policy dictates how to refine the flat semantic input
+/// into different refinement types.
+pub trait Refine<'item>: Sized {
+    /// The input context to be refined.
+    type Input;
 
-impl<'item> Policy<'item> for NoBinding {
-    type Item = (&'item Ident, Option<&'item Binding>);
+    /// Refine the input context into the refinement type, or
+    /// fail trying.
+    fn refine(item: Self::Input) -> Result<Self, Diagnostics>;
+}
 
-    fn derive(item: &Self::Item) -> Result<Self, Diagnostic> {
-        if let Some(binding) = item.1 {
-            Err(Diagnostic::unexpected_binding(binding))
-        } else {
-            Ok(Self)
+/// Forbid peripheral items from being parsed.
+pub struct ForbidPeripherals;
+
+impl Filter for ForbidPeripherals {
+    fn accepted() -> bool {
+        false
+    }
+}
+
+/// Permit peripheral items to be parsed.
+pub struct PermitPeripherals;
+
+impl Filter for PermitPeripherals {
+    fn accepted() -> bool {
+        true
+    }
+}
+
+/// Entries are forbidden from being specified.
+pub struct ForbidEntry;
+
+impl<'cx> Refine<'cx> for ForbidEntry {
+    type Input = (&'cx Ident, Entry<'cx>);
+
+    fn refine((.., entry): Self::Input) -> Result<Self, Diagnostics> {
+        match entry {
+            Entry::Empty => Ok(Self),
+            Entry::View(binding) => Err(vec![Diagnostic::unexpected_binding(binding)]),
+            Entry::BoundDynamicTransition(binding, transition)
+            | Entry::StaticTransition(binding, transition) => Err(vec![
+                Diagnostic::unexpected_binding(binding),
+                Diagnostic::unexpected_transition(&transition),
+            ]),
+            Entry::UnboundDynamicTransition(transition) => {
+                Err(vec![Diagnostic::unexpected_transition(&transition)])
+            }
         }
     }
 }
 
-/// Entries are required to contain a binding.
-pub struct WithBinding<'args>(&'args Binding);
+/// Only the transition component of the entry may be specified.
+pub struct PermitTransition<'cx>(Option<Transition<'cx>>);
 
-impl<'args> Policy<'args> for WithBinding<'args> {
-    type Item = (&'args Ident, Option<&'args Binding>);
+impl<'cx> Refine<'cx> for PermitTransition<'cx> {
+    type Input = (&'cx Ident, Entry<'cx>);
 
-    fn derive(item: &Self::Item) -> Result<Self, Diagnostic> {
-        if let Some(binding) = item.1 {
-            Ok(Self(binding))
-        } else {
-            Err(Diagnostic::expected_binding(item.0))
+    fn refine((.., entry): Self::Input) -> Result<Self, Diagnostics> {
+        match entry {
+            Entry::Empty => Ok(Self(None)),
+            Entry::View(binding) => Err(vec![Diagnostic::unexpected_binding(binding)]),
+            Entry::BoundDynamicTransition(binding, ..) | Entry::StaticTransition(binding, ..) => {
+                Err(vec![Diagnostic::unexpected_binding(binding)])
+            }
+            Entry::UnboundDynamicTransition(transition) => Ok(Self(Some(transition))),
         }
     }
 }
 
-impl<'args> Deref for WithBinding<'args> {
-    type Target = Binding;
+/// The binding component of the entry must be specified.
+pub enum RequireBinding<'cx> {
+    View(&'cx Binding),
+    Dynamic(&'cx Binding, Transition<'cx>),
+    Static(&'cx Binding, Transition<'cx>),
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl<'cx> Refine<'cx> for RequireBinding<'cx> {
+    type Input = (&'cx Ident, Entry<'cx>);
+
+    fn refine((ident, entry): Self::Input) -> Result<Self, Diagnostics> {
+        match entry {
+            Entry::Empty => Err(vec![Diagnostic::expected_binding(ident)]),
+            Entry::View(binding) => Ok(Self::View(binding)),
+            Entry::BoundDynamicTransition(binding, transition) => {
+                Ok(Self::Dynamic(binding, transition))
+            }
+            Entry::StaticTransition(binding, transition) => Ok(Self::Static(binding, transition)),
+            Entry::UnboundDynamicTransition(..) => Err(vec![Diagnostic::expected_binding(ident)]),
+        }
     }
 }

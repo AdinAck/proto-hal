@@ -3,12 +3,13 @@ use proc_macro2::Span;
 use syn::{Ident, LitInt, Path, spanned::Spanned};
 use ters::ters;
 
-use crate::codegen::macros::parsing::syntax::Binding;
+use crate::codegen::macros::parsing::{semantic::Transition, syntax::Binding};
 
 #[derive(Debug)]
 pub enum Kind {
     Syntax,
     UnexpectedRegister,
+    UnexpectedPeripheral,
     ItemAlreadySpecified,
     ExpectedPeripheralPath,
     RegisterNotFound,
@@ -18,6 +19,9 @@ pub enum Kind {
     NoCorrespondingVariant,
     UnexpectedBinding,
     ExpectedBinding,
+    BindingMustBeView,
+    BindingCannotBeView,
+    UnexpectedTransition,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -48,6 +52,15 @@ impl Diagnostic {
             Kind::UnexpectedRegister,
             "unexpected register at end of path",
             register_ident,
+        )
+    }
+
+    /// unexpected peripheral at end of path
+    pub fn unexpected_peripheral(peripheral_ident: &Ident) -> Self {
+        Self::new(
+            Kind::UnexpectedPeripheral,
+            "unexpected peripheral at end of path",
+            peripheral_ident,
         )
     }
 
@@ -126,14 +139,41 @@ impl Diagnostic {
     pub fn unexpected_binding(binding: &Binding) -> Self {
         Self::new(
             Kind::UnexpectedBinding,
-            format!("unexpected binding"),
+            "unexpected binding",
             binding.as_ref(),
         )
     }
 
     /// expected binding
     pub fn expected_binding(ident: &Ident) -> Self {
-        Self::new(Kind::ExpectedBinding, format!("expected binding"), ident)
+        Self::new(Kind::ExpectedBinding, "expected binding", ident)
+    }
+
+    /// binding must be a view (&foo)
+    pub fn binding_must_be_view(binding: &Binding) -> Self {
+        Self::new(
+            Kind::BindingMustBeView,
+            "binding must be a view (&foo)",
+            binding.as_ref(),
+        )
+    }
+
+    /// binding cannot be a view because it is being transitioned. must be (&mut foo) or (foo)
+    pub fn binding_cannot_be_view(binding: &Binding) -> Self {
+        Self::new(
+            Kind::BindingCannotBeView,
+            "binding cannot be a view because it is being transitioned. must be (&mut foo) or (foo)",
+            binding.as_ref(),
+        )
+    }
+
+    /// unexpected transition
+    pub fn unexpected_transition(transition: &Transition) -> Self {
+        Self::new(
+            Kind::UnexpectedBinding,
+            "unexpected transition",
+            &transition.span(),
+        )
     }
 }
 

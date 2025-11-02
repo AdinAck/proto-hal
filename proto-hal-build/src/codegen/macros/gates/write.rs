@@ -17,31 +17,31 @@ use crate::codegen::macros::{
     Args, BindingArgs, Override, RegisterArgs, StateArgs, get_field, get_register,
 };
 
-type FieldItem<'args, 'hal> = (
-    &'hal Field,
-    &'args BindingArgs,
-    Option<(&'args StateArgs, WriteState<'args, 'hal>)>,
+type FieldItem<'input, 'model> = (
+    &'model Field,
+    &'input BindingArgs,
+    Option<(&'input StateArgs, WriteState<'input, 'model>)>,
 );
 
 /// A parsed unit of the provided tokens and corresponding model nodes which
 /// represents a single register.
-struct Parsed<'args, 'hal> {
+struct Parsed<'input, 'model> {
     prefix: Option<Path>,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-    items: IndexMap<Ident, FieldItem<'args, 'hal>>,
+    peripheral: &'model Peripheral,
+    register: &'model Register,
+    items: IndexMap<Ident, FieldItem<'input, 'model>>,
 }
 
-enum WriteState<'args, 'hal> {
-    Variant(&'hal Variant),
-    Expr(&'args Expr),
-    Lit(&'args LitInt),
+enum WriteState<'input, 'model> {
+    Variant(&'model Variant),
+    Expr(&'input Expr),
+    Lit(&'input LitInt),
 }
 
-fn parse<'args, 'hal>(
-    args: &'args Args,
-    model: &'hal Hal,
-) -> (IndexMap<Path, Parsed<'args, 'hal>>, Vec<syn::Error>) {
+fn parse<'input, 'model>(
+    args: &'input Args,
+    model: &'model Hal,
+) -> (IndexMap<Path, Parsed<'input, 'model>>, Vec<syn::Error>) {
     let mut out = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -67,17 +67,17 @@ fn parse<'args, 'hal>(
 }
 
 /// Lookup peripherals and registers from the model given provided register paths.
-fn parse_registers<'args, 'hal>(
-    args: &'args Args,
-    model: &'hal Hal,
+fn parse_registers<'input, 'model>(
+    args: &'input Args,
+    model: &'model Hal,
 ) -> (
     IndexMap<
         Path,
         (
             Option<Path>,
-            &'args RegisterArgs,
-            &'hal Peripheral,
-            &'hal Register,
+            &'input RegisterArgs,
+            &'model Peripheral,
+            &'model Register,
         ),
     >,
     Vec<syn::Error>,
@@ -111,10 +111,10 @@ fn parse_registers<'args, 'hal>(
 }
 
 /// Lookup fields from a register given provided field idents and transitions.
-fn parse_fields<'args, 'hal>(
-    register_args: &'args RegisterArgs,
-    register: &'hal Register,
-) -> (IndexMap<Ident, FieldItem<'args, 'hal>>, Vec<syn::Error>) {
+fn parse_fields<'input, 'model>(
+    register_args: &'input RegisterArgs,
+    register: &'model Register,
+) -> (IndexMap<Ident, FieldItem<'input, 'model>>, Vec<syn::Error>) {
     let mut items = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -205,9 +205,9 @@ fn parse_fields<'args, 'hal>(
     (items, errors)
 }
 
-fn validate<'args, 'hal>(
-    hal: &'hal Hal,
-    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
+fn validate<'input, 'model>(
+    hal: &'model Hal,
+    parsed: &IndexMap<Path, Parsed<'input, 'model>>,
 ) -> Vec<syn::Error> {
     let mut errors = Vec::new();
     let field_errors = parsed
@@ -355,15 +355,15 @@ fn validate<'args, 'hal>(
     errors
 }
 
-fn query_field<'args, 'hal, 'parsed>(
-    parsed: &'parsed IndexMap<Path, Parsed<'args, 'hal>>,
+fn query_field<'input, 'model, 'parsed>(
+    parsed: &'parsed IndexMap<Path, Parsed<'input, 'model>>,
     peripheral_ident: &Ident,
     register_ident: &Ident,
     field_ident: &Ident,
 ) -> Option<(
     &'parsed Path,
     &'parsed Ident,
-    &'parsed FieldItem<'args, 'hal>,
+    &'parsed FieldItem<'input, 'model>,
 )> {
     // peripheral/register is provided
     let Some((path, parsed_reg)) = parsed.iter().find(
@@ -396,9 +396,9 @@ fn make_unique_field_ident(peripheral: &Peripheral, register: &Register, field: 
     )
 }
 
-fn make_addr<'args, 'hal>(
+fn make_addr<'input, 'model>(
     path: &Path,
-    parsed: &Parsed<'args, 'hal>,
+    parsed: &Parsed<'input, 'model>,
     overridden_base_addrs: &HashMap<Ident, Expr>,
 ) -> TokenStream {
     let register_offset = parsed.register.offset as usize;
@@ -410,7 +410,7 @@ fn make_addr<'args, 'hal>(
     }
 }
 
-fn make_initial<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
+fn make_initial<'input, 'model>(parsed: &Parsed<'input, 'model>) -> u32 {
     // start with inert field values (or zero)
     let inert = parsed
         .register
@@ -452,13 +452,13 @@ fn make_initial<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> u32 {
     (inert & !mask) | statics
 }
 
-fn make_return_ty<'args, 'hal>(
-    path: &'args Path,
-    binding: &'args BindingArgs,
-    state_args: &'args StateArgs,
-    write_state: &'args WriteState<'args, 'hal>,
-    field: &'hal Field,
-    field_ident: &'args Ident,
+fn make_return_ty<'input, 'model>(
+    path: &'input Path,
+    binding: &'input BindingArgs,
+    state_args: &'input StateArgs,
+    write_state: &'input WriteState<'input, 'model>,
+    field: &'model Field,
+    field_ident: &'input Ident,
     output_generic: Option<&TokenStream>,
 ) -> Option<TokenStream> {
     if let Expr::Reference(..) = binding {
@@ -516,14 +516,14 @@ fn make_return_ty<'args, 'hal>(
     })
 }
 
-fn make_input_ty<'args, 'hal>(
-    path: &'args Path,
-    binding: &'args BindingArgs,
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-    field: &'hal Field,
-    field_ident: &'args Ident,
-    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
+fn make_input_ty<'input, 'model>(
+    path: &'input Path,
+    binding: &'input BindingArgs,
+    peripheral: &'model Peripheral,
+    register: &'model Register,
+    field: &'model Field,
+    field_ident: &'input Ident,
+    transition: Option<&(&'input StateArgs, WriteState<'input, 'model>)>,
 ) -> TokenStream {
     let ty_name = field.type_name();
     let generic = format_ident!(
@@ -551,9 +551,9 @@ fn make_input_ty<'args, 'hal>(
     }
 }
 
-fn make_parameter_ty<'args, 'hal>(
-    binding: &'args BindingArgs,
-    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
+fn make_parameter_ty<'input, 'model>(
+    binding: &'input BindingArgs,
+    transition: Option<&(&'input StateArgs, WriteState<'input, 'model>)>,
     input_ty: &TokenStream,
 ) -> TokenStream {
     if let Expr::Reference(r) = binding {
@@ -567,12 +567,12 @@ fn make_parameter_ty<'args, 'hal>(
     }
 }
 
-fn make_generics<'args, 'hal>(
-    binding: &'args BindingArgs,
+fn make_generics<'input, 'model>(
+    binding: &'input BindingArgs,
     peripheral: &Ident,
     register: &Ident,
     field: &Ident,
-    transition: Option<&(&'args StateArgs, WriteState<'args, 'hal>)>,
+    transition: Option<&(&'input StateArgs, WriteState<'input, 'model>)>,
 ) -> (Option<TokenStream>, Option<TokenStream>) {
     if let Expr::Reference(r) = binding
         && r.mutability.is_some()
@@ -597,13 +597,13 @@ fn make_generics<'args, 'hal>(
     (Some(quote! { #input_generic }), output_generic)
 }
 
-fn make_constraints<'args, 'hal>(
-    parsed: &IndexMap<Path, Parsed<'args, 'hal>>,
-    path: &'args Path,
+fn make_constraints<'input, 'model>(
+    parsed: &IndexMap<Path, Parsed<'input, 'model>>,
+    path: &'input Path,
     prefix: Option<&Path>,
-    binding: &'args BindingArgs,
-    field: &'hal Field,
-    field_ident: &'args Ident,
+    binding: &'input BindingArgs,
+    field: &'model Field,
+    field_ident: &'input Ident,
     input_generic: Option<&TokenStream>,
     output_generic: Option<&TokenStream>,
     input_ty: &TokenStream,
@@ -745,12 +745,12 @@ fn make_constraints<'args, 'hal>(
     Some(quote! { #(#constraints,)* })
 }
 
-fn make_argument<'args, 'hal>(
-    path: &'args Path,
-    binding: &'args BindingArgs,
-    transition: Option<&&'args StateArgs>,
-    field: &'hal Field,
-    field_ident: &'args Ident,
+fn make_argument<'input, 'model>(
+    path: &'input Path,
+    binding: &'input BindingArgs,
+    transition: Option<&&'input StateArgs>,
+    field: &'model Field,
+    field_ident: &'input Ident,
 ) -> TokenStream {
     if let Expr::Reference(r) = binding
         && r.mutability.is_some()
@@ -787,7 +787,7 @@ fn make_argument<'args, 'hal>(
     quote! { (#binding, #body) }
 }
 
-fn make_reg_write_value<'args, 'hal>(parsed: &Parsed<'args, 'hal>) -> Option<TokenStream> {
+fn make_reg_write_value<'input, 'model>(parsed: &Parsed<'input, 'model>) -> Option<TokenStream> {
     let values = parsed
         .items
         .iter()

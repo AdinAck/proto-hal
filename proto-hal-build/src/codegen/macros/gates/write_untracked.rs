@@ -20,16 +20,16 @@ enum Scheme {
 
 /// A parsed unit of the provided tokens and corresponding model nodes which
 /// represents a single register.
-struct Parsed<'args, 'hal> {
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-    items: IndexMap<Ident, (&'hal Field, &'args StateArgs)>,
+struct Parsed<'input, 'model> {
+    peripheral: &'model Peripheral,
+    register: &'model Register,
+    items: IndexMap<Ident, (&'model Field, &'input StateArgs)>,
 }
 
-fn parse<'args, 'hal>(
-    args: &'args Args,
-    model: &'hal Hal,
-) -> (IndexMap<Path, Parsed<'args, 'hal>>, Vec<syn::Error>) {
+fn parse<'input, 'model>(
+    args: &'input Args,
+    model: &'model Hal,
+) -> (IndexMap<Path, Parsed<'input, 'model>>, Vec<syn::Error>) {
     let mut out = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -54,11 +54,11 @@ fn parse<'args, 'hal>(
 }
 
 /// Lookup peripherals and registers from the model given provided register paths.
-fn parse_registers<'args, 'hal>(
-    args: &'args Args,
-    model: &'hal Hal,
+fn parse_registers<'input, 'model>(
+    args: &'input Args,
+    model: &'model Hal,
 ) -> (
-    IndexMap<Path, (&'args RegisterArgs, &'hal Peripheral, &'hal Register)>,
+    IndexMap<Path, (&'input RegisterArgs, &'model Peripheral, &'model Register)>,
     Vec<syn::Error>,
 ) {
     let mut registers = IndexMap::new();
@@ -90,11 +90,11 @@ fn parse_registers<'args, 'hal>(
 }
 
 /// Lookup fields from a register given provided field idents and transitions.
-fn parse_fields<'args, 'hal>(
-    register_args: &'args RegisterArgs,
-    register: &'hal Register,
+fn parse_fields<'input, 'model>(
+    register_args: &'input RegisterArgs,
+    register: &'model Register,
 ) -> (
-    IndexMap<Ident, (&'hal Field, &'args StateArgs)>,
+    IndexMap<Ident, (&'model Field, &'input StateArgs)>,
     Vec<syn::Error>,
 ) {
     let mut items = IndexMap::new();
@@ -135,7 +135,7 @@ fn parse_fields<'args, 'hal>(
     (items, errors)
 }
 
-fn validate<'args, 'hal>(parsed: &IndexMap<Path, Parsed<'args, 'hal>>) -> Vec<syn::Error> {
+fn validate<'input, 'model>(parsed: &IndexMap<Path, Parsed<'input, 'model>>) -> Vec<syn::Error> {
     parsed
         .values()
         .flat_map(|Parsed { items, .. }| items.iter())
@@ -161,9 +161,9 @@ fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Iden
     )
 }
 
-fn addrs<'args, 'hal>(
+fn addrs<'input, 'model>(
     path: &Path,
-    parsed: &Parsed<'args, 'hal>,
+    parsed: &Parsed<'input, 'model>,
     overridden_base_addrs: &HashMap<Ident, Expr>,
 ) -> TokenStream {
     let register_offset = parsed.register.offset as usize;
@@ -175,7 +175,7 @@ fn addrs<'args, 'hal>(
     }
 }
 
-fn initials<'args, 'hal>(scheme: &Scheme, parsed: &Parsed<'args, 'hal>) -> u32 {
+fn initials<'input, 'model>(scheme: &Scheme, parsed: &Parsed<'input, 'model>) -> u32 {
     match scheme {
         Scheme::FromZero => 0,
         Scheme::FromReset => {

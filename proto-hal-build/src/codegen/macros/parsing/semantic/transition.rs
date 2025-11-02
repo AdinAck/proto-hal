@@ -2,7 +2,8 @@ use ir::structures::{
     field::{Field, Numericity},
     variant::Variant,
 };
-use syn::{Expr, Ident, LitInt};
+use proc_macro2::Span;
+use syn::{Expr, Ident, LitInt, spanned::Spanned};
 
 use crate::codegen::macros::{diagnostic::Diagnostic, parsing::syntax};
 
@@ -11,21 +12,21 @@ use crate::codegen::macros::{diagnostic::Diagnostic, parsing::syntax};
 /// If the field being transitioned has an enumerated numericity and the specific variant being transitioned to is
 /// statically known, the corresponding variant element of the model will be the representation of the transition
 /// destination. Otherwise, the parsed tokens (expression or literal) will be preserved and used instead.
-pub enum Transition<'args, 'hal> {
+pub enum Transition<'cx> {
     /// The transition destination is statically known to be this variant.
-    Variant(&'hal Variant),
+    Variant(&'cx syntax::Transition, &'cx Variant),
     /// The transition destination is an expression.
-    Expr(&'args Expr),
+    Expr(&'cx Expr),
     /// The transition destination is a literal integer.
-    Lit(&'args LitInt),
+    Lit(&'cx LitInt),
 }
 
-impl<'args, 'hal> Transition<'args, 'hal> {
+impl<'cx> Transition<'cx> {
     /// Parse the transition input against the model to produce a semantic transition.
     pub fn parse(
-        transition: &'args syntax::Transition,
-        field: &'hal Field,
-        field_ident: &'args Ident,
+        transition: &'cx syntax::Transition,
+        field: &'cx Field,
+        field_ident: &'cx Ident,
     ) -> Result<Self, Diagnostic> {
         Ok(
             match (
@@ -39,7 +40,7 @@ impl<'args, 'hal> Transition<'args, 'hal> {
                 // a path is provided and the field is enumerated, so the transition tokens could be a variant
                 // identifier
                 (
-                    syntax::Transition::Expr(expr @ Expr::Path(path)),
+                    transition @ syntax::Transition::Expr(expr @ Expr::Path(path)),
                     Numericity::Enumerated { variants },
                 ) => {
                     if let Some(ident) = path.path.get_ident()
@@ -48,7 +49,7 @@ impl<'args, 'hal> Transition<'args, 'hal> {
                             .find(|variant| &variant.type_name() == ident)
                     {
                         // a variant with the provided identifier was found
-                        Self::Variant(variant)
+                        Self::Variant(transition, variant)
                     } else {
                         // a variant with the provided identifier was not found, so the expr is preserved
                         Self::Expr(expr)
@@ -62,17 +63,29 @@ impl<'args, 'hal> Transition<'args, 'hal> {
                 (syntax::Transition::Expr(expr), Numericity::Numeric) => Self::Expr(expr),
                 // a literal transition value was provided and the field is enumerated, so a variant with a
                 // corresponding bit value is searched for
-                (syntax::Transition::Lit(lit_int), Numericity::Enumerated { variants }) => {
+                (
+                    transition @ syntax::Transition::Lit(lit_int),
+                    Numericity::Enumerated { variants },
+                ) => {
                     let bits = lit_int.base10_parse::<u32>()?;
                     let variant = variants
                         .values()
                         .find(|variant| variant.bits == bits)
                         .ok_or(Diagnostic::no_corresponding_variant(lit_int, field_ident))?;
-                    Self::Variant(variant)
+                    Self::Variant(transition, variant)
                 }
                 // a literal transition value was provided and the field is numeric, so the literal is preserved
                 (syntax::Transition::Lit(lit_int), Numericity::Numeric) => Self::Lit(lit_int),
             },
         )
+    }
+
+    /// The span of the transition source tokens.
+    pub fn span(&self) -> Span {
+        match self {
+            Transition::Variant(transition, ..) => transition.span(),
+            Transition::Expr(expr) => expr.span(),
+            Transition::Lit(lit_int) => lit_int.span(),
+        }
     }
 }

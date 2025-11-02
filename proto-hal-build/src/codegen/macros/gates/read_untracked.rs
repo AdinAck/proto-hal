@@ -15,13 +15,16 @@ use crate::codegen::macros::{Args, Override, RegisterArgs, StateArgs, get_field,
 
 /// A parsed unit of the provided tokens and corresponding model nodes which
 /// represents a single register.
-struct Parsed<'hal> {
-    peripheral: &'hal Peripheral,
-    register: &'hal Register,
-    fields: IndexMap<Ident, &'hal Field>,
+struct Parsed<'model> {
+    peripheral: &'model Peripheral,
+    register: &'model Register,
+    fields: IndexMap<Ident, &'model Field>,
 }
 
-fn parse<'hal>(args: &Args, model: &'hal Hal) -> (IndexMap<Path, Parsed<'hal>>, Vec<syn::Error>) {
+fn parse<'model>(
+    args: &Args,
+    model: &'model Hal,
+) -> (IndexMap<Path, Parsed<'model>>, Vec<syn::Error>) {
     let mut out = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -46,11 +49,11 @@ fn parse<'hal>(args: &Args, model: &'hal Hal) -> (IndexMap<Path, Parsed<'hal>>, 
 }
 
 /// Lookup peripherals and registers from the model given provided register paths.
-fn parse_registers<'args, 'hal>(
-    args: &'args Args,
-    model: &'hal Hal,
+fn parse_registers<'input, 'model>(
+    args: &'input Args,
+    model: &'model Hal,
 ) -> (
-    HashMap<Path, (&'args RegisterArgs, &'hal Peripheral, &'hal Register)>,
+    HashMap<Path, (&'input RegisterArgs, &'model Peripheral, &'model Register)>,
     Vec<syn::Error>,
 ) {
     let mut registers = HashMap::new();
@@ -89,10 +92,10 @@ fn parse_registers<'args, 'hal>(
 }
 
 /// Lookup fields from a register given provided field idents.
-fn parse_fields<'args, 'hal>(
-    register_args: &'args RegisterArgs,
-    register: &'hal Register,
-) -> (IndexMap<Ident, &'hal Field>, Vec<syn::Error>) {
+fn parse_fields<'input, 'model>(
+    register_args: &'input RegisterArgs,
+    register: &'model Register,
+) -> (IndexMap<Ident, &'model Field>, Vec<syn::Error>) {
     let mut fields = IndexMap::new();
     let mut errors = Vec::new();
 
@@ -139,7 +142,7 @@ fn parse_fields<'args, 'hal>(
     (fields, errors)
 }
 
-fn validate<'hal>(parsed: &IndexMap<Path, Parsed<'hal>>) -> Vec<syn::Error> {
+fn validate<'model>(parsed: &IndexMap<Path, Parsed<'model>>) -> Vec<syn::Error> {
     parsed
         .values()
         .flat_map(|Parsed { fields, .. }| fields.iter())
@@ -160,9 +163,9 @@ fn unique_register_ident(peripheral: &Peripheral, register: &Register) -> Ident 
     format_ident!("{}_{}", peripheral.module_name(), register.module_name(),)
 }
 
-fn addrs<'hal>(
+fn addrs<'model>(
     path: &Path,
-    parsed: &Parsed<'hal>,
+    parsed: &Parsed<'model>,
     overridden_base_addrs: &HashMap<Ident, Expr>,
 ) -> TokenStream {
     let register_offset = parsed.register.offset as usize;
@@ -183,9 +186,9 @@ fn returns(path: &Path, ident: &Ident, field: &Field) -> Option<TokenStream> {
     })
 }
 
-fn read_values<'hal>(
+fn read_values<'model>(
     path: &Path,
-    parsed: &Parsed<'hal>,
+    parsed: &Parsed<'model>,
     ident: &Ident,
     field: &Field,
 ) -> Option<TokenStream> {
