@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 
 use indexmap::IndexMap;
 use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
-use syn::{Ident, Path};
+use syn::{Ident, Path, parse_quote};
 use ters::ters;
 
 use crate::codegen::macros::{
@@ -37,7 +37,7 @@ type FieldMap<'cx, EntryPolicy> = IndexMap<FieldKey, FieldItem<'cx, EntryPolicy>
 pub struct Gate<'cx, PeripheralPolicy, EntryPolicy>
 where
     PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     peripheral_map: PeripheralMap<'cx>,
     register_map: RegisterMap<'cx, EntryPolicy>,
@@ -47,7 +47,7 @@ where
 impl<'cx, 'model, PeripheralPolicy, EntryPolicy> Gate<'cx, PeripheralPolicy, EntryPolicy>
 where
     PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     /// Parse the gate input against the model to produce a semantic gate input.
     pub fn parse(args: &'cx syntax::Gate, model: &'cx Hal) -> (Self, Diagnostics) {
@@ -121,7 +121,7 @@ where
 
 impl<'cx, 'model, EntryPolicy> Gate<'cx, PermitPeripherals, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     /// Query for a peripheral-level item with the provided identifier.
     pub fn get_peripheral(&self, ident: impl Into<String>) -> Option<&PeripheralItem<'cx>> {
@@ -142,6 +142,8 @@ pub struct PeripheralItem<'cx> {
     #[get]
     path: Path,
     #[get]
+    ident: &'cx Ident,
+    #[get]
     peripheral: &'cx Peripheral,
     #[get]
     binding: Option<&'cx Binding>,
@@ -153,10 +155,12 @@ pub struct PeripheralItem<'cx> {
 #[ters]
 pub struct RegisterItem<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     #[get]
     peripheral_path: Path,
+    #[get]
+    ident: &'cx Ident,
     #[get]
     peripheral: &'cx Peripheral,
     #[get]
@@ -171,12 +175,29 @@ where
 #[ters]
 pub struct FieldItem<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
+    #[get]
+    ident: &'cx Ident,
     #[get]
     field: &'cx Field,
     #[get]
     entry: EntryPolicy,
+}
+
+/// The input context needed to apply refinement to a field entry.
+pub type FieldEntryRefinementInput<'cx> = (&'cx Ident, Entry<'cx>);
+
+impl<'cx, EntryPolicy> RegisterItem<'cx, EntryPolicy>
+where
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+{
+    /// The path to the register including segments *before* the peripheral.
+    pub fn path(&self) -> Path {
+        let peripheral_path = self.peripheral_path();
+        let ident = self.ident();
+        parse_quote! { #peripheral_path::#ident }
+    }
 }
 
 #[cfg(test)]

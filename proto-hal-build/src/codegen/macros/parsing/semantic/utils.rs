@@ -8,8 +8,8 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
         semantic::{
-            Entry, FieldItem, FieldKey, PeripheralItem, PeripheralKey, PeripheralMap, RegisterItem,
-            RegisterKey, RegisterMap,
+            Entry, FieldEntryRefinementInput, FieldItem, FieldKey, PeripheralItem, PeripheralKey,
+            PeripheralMap, RegisterItem, RegisterKey, RegisterMap,
             policies::{Filter, Refine},
         },
         syntax::Tree,
@@ -24,13 +24,14 @@ pub fn parse_peripheral<'cx, PeripheralPolicy, EntryPolicy>(
 ) -> Result<(), Diagnostics>
 where
     PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     let mut diagnostics = Diagnostics::new();
 
     let path = tree.local_path();
     let mut segments = path.segments.iter().map(|segment| &segment.ident);
-    let (peripheral, peripheral_path) = fuzzy_find_peripheral(&mut segments, path.span(), model)?;
+    let (peripheral, peripheral_path, peripheral_ident) =
+        fuzzy_find_peripheral(&mut segments, path.span(), model)?;
 
     let peripheral_path = {
         let leading_colon = path.leading_colon;
@@ -51,6 +52,7 @@ where
             field_segment,
             peripheral_path,
             peripheral,
+            register_segment,
             register,
         )?;
     } else {
@@ -76,6 +78,7 @@ where
                     PeripheralKey::from_model(&peripheral),
                     PeripheralItem {
                         path: path.clone(),
+                        ident: peripheral_ident,
                         peripheral,
                         binding: entry.binding.as_ref(),
                     },
@@ -100,7 +103,7 @@ fn parse_register<'cx, EntryPolicy>(
     peripheral: &'cx Peripheral,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     let mut diagnostics = Diagnostics::new();
 
@@ -119,6 +122,7 @@ where
             field_segment,
             peripheral_path.clone(),
             peripheral,
+            register_segment,
             register,
         )?;
     } else {
@@ -132,6 +136,7 @@ where
                         child,
                         peripheral_path.clone(),
                         peripheral,
+                        register_segment,
                         register,
                     ) {
                         diagnostics.extend(e);
@@ -155,10 +160,11 @@ fn parse_field<'cx, EntryPolicy>(
     tree: &'cx Tree,
     peripheral_path: Path,
     peripheral: &'cx Peripheral,
+    register_ident: &'cx Ident,
     register: &'cx Register,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     let field_segment = tree
         .local_path()
@@ -171,6 +177,7 @@ where
         field_segment,
         peripheral_path,
         peripheral,
+        register_ident,
         register,
     )
 }
@@ -181,10 +188,11 @@ fn put_field<'cx, EntryPolicy>(
     field_segment: &'cx Ident,
     peripheral_path: Path,
     peripheral: &'cx Peripheral,
+    register_ident: &'cx Ident,
     register: &'cx Register,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = (&'cx Ident, Entry<'cx>)>,
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     let field = find_field(field_segment, register)?;
 
@@ -195,6 +203,7 @@ where
                 .entry(RegisterKey::from_model(&peripheral, &register))
                 .or_insert(RegisterItem {
                     peripheral_path,
+                    ident: register_ident,
                     peripheral,
                     register,
                     fields: Default::default(),
@@ -203,6 +212,7 @@ where
                 .insert(
                     FieldKey::from_model(field),
                     FieldItem {
+                        ident: field_segment,
                         field,
                         entry: EntryPolicy::refine((
                             field_segment,
@@ -223,13 +233,13 @@ fn fuzzy_find_peripheral<'input, 'model>(
     path: &mut impl Iterator<Item = &'input Ident>,
     span: Span,
     model: &'model Hal,
-) -> Result<(&'model Peripheral, Path), Diagnostic> {
+) -> Result<(&'model Peripheral, Path, &'input Ident), Diagnostic> {
     let mut peripheral_path = Punctuated::<_, PathSep>::new();
 
     for ident in path {
         peripheral_path.push(ident);
         if let Some(peripheral) = model.peripherals.get(ident) {
-            return Ok((peripheral, parse_quote! { #peripheral_path }));
+            return Ok((peripheral, parse_quote! { #peripheral_path }, ident));
         }
     }
 

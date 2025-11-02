@@ -15,6 +15,7 @@ pub enum Kind {
     RegisterNotFound,
     FieldNotFound,
     PathCannotContinue,
+    FieldMustBeReadable,
     FieldMustBeWritable,
     NoCorrespondingVariant,
     UnexpectedBinding,
@@ -114,6 +115,15 @@ impl Diagnostic {
                 "paths cannot continue after a field has been reached. reached field \"{field_ident}\"",
             ),
             path,
+        )
+    }
+
+    /// field "foo" must be readable
+    pub fn field_must_be_readable(field_ident: &Ident) -> Self {
+        Self::new(
+            Kind::FieldMustBeReadable,
+            format!("field \"{field_ident}\" must be readable",),
+            field_ident,
         )
     }
 

@@ -67,8 +67,8 @@ pub fn generate() -> Hal {
 mod tests {
     mod hal {
         use proto_hal_build::ir::{
+            diagnostic,
             structures::{hal::Hal, peripheral::Peripheral, register::Register},
-            utils::diagnostic,
         };
 
         /// Create an empty HAL.
@@ -161,8 +161,8 @@ mod tests {
 
     mod peripherals {
         use proto_hal_build::ir::{
+            diagnostic::{self, Context},
             structures::{peripheral::Peripheral, register::Register},
-            utils::diagnostic::{self, Context},
         };
 
         #[test]

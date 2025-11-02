@@ -56,8 +56,8 @@ mod tests {
                             read_untracked! {
                                 foo::foo0 {
                                     a,
-                                }
-                                @base_addr foo addr_of_foo()
+                                },
+                                @base_addr(foo, addr_of_foo())
                             }
                         }
                         .is_v1()

@@ -7,7 +7,7 @@ use syn::Ident;
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
-        semantic::{Entry, Transition},
+        semantic::{Entry, FieldEntryRefinementInput, Transition},
         syntax::Binding,
     },
 };
@@ -52,7 +52,7 @@ impl Filter for PermitPeripherals {
 pub struct ForbidEntry;
 
 impl<'cx> Refine<'cx> for ForbidEntry {
-    type Input = (&'cx Ident, Entry<'cx>);
+    type Input = FieldEntryRefinementInput<'cx>;
 
     fn refine((.., entry): Self::Input) -> Result<Self, Diagnostics> {
         match entry {
@@ -75,7 +75,7 @@ impl<'cx> Refine<'cx> for ForbidEntry {
 pub struct PermitTransition<'cx>(Option<Transition<'cx>>);
 
 impl<'cx> Refine<'cx> for PermitTransition<'cx> {
-    type Input = (&'cx Ident, Entry<'cx>);
+    type Input = FieldEntryRefinementInput<'cx>;
 
     fn refine((.., entry): Self::Input) -> Result<Self, Diagnostics> {
         match entry {
@@ -100,7 +100,7 @@ pub enum RequireBinding<'cx> {
 }
 
 impl<'cx> Refine<'cx> for RequireBinding<'cx> {
-    type Input = (&'cx Ident, Entry<'cx>);
+    type Input = FieldEntryRefinementInput<'cx>;
 
     fn refine((ident, entry): Self::Input) -> Result<Self, Diagnostics> {
         match entry {
