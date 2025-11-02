@@ -1,15 +1,9 @@
 use ir::structures::{peripheral::Peripheral, register::Register};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, quote_spanned};
-use syn::{Ident, spanned::Spanned as _};
+use quote::{format_ident, quote};
+use syn::Ident;
 
-use crate::codegen::macros::{
-    diagnostic::Diagnostics,
-    parsing::semantic::{
-        self, FieldEntryRefinementInput,
-        policies::{Filter, Refine},
-    },
-};
+use crate::codegen::macros::{diagnostic::Diagnostics, parsing::syntax};
 
 pub fn unique_register_ident(peripheral: &Peripheral, register: &Register) -> Ident {
     format_ident!("{}_{}", peripheral.module_name(), register.module_name(),)
@@ -27,33 +21,38 @@ pub fn render_diagnostics(diagnostics: Diagnostics) -> TokenStream {
     }
 }
 
-pub fn suggestions<'cx, PeripheralPolicy, EntryPolicy>(
-    input: &semantic::Gate<'cx, PeripheralPolicy, EntryPolicy>,
-    diagnostics: &Diagnostics,
-) -> Option<TokenStream>
-where
-    PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>> + 'cx,
-{
+pub fn suggestions<'cx>(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<TokenStream> {
+    fn tree_to_import(tree: &syntax::Tree) -> TokenStream {
+        let path = &tree.path;
+        match &tree.node {
+            syntax::Node::Branch(children) => {
+                let paths = children.iter().map(|child| tree_to_import(child));
+
+                quote! {
+                    #path::{#(#paths),*}
+                }
+            }
+            syntax::Node::Leaf(..) => quote! {
+                #path as _
+            },
+        }
+    }
+
     if diagnostics.is_empty() {
         None
     } else {
-        let imports = input
-            .visit_registers()
-            .map(|register| {
-                let path = &register.peripheral_path();
-                let fields = register.fields().values().map(|field| field.ident());
+        Some(
+            args.trees
+                .iter()
+                .map(|tree| {
+                    let path = tree_to_import(tree);
 
-                let span = path.span();
-
-                quote_spanned! { span =>
-                    #[allow(unused_imports)]
-                    use #path::{#(
-                        #fields as _,
-                    )*};
-                }
-            })
-            .collect::<TokenStream>();
-        Some(imports)
+                    quote! {
+                        #[allow(unused_imports)]
+                        use #path;
+                    }
+                })
+                .collect(),
+        )
     }
 }

@@ -7,7 +7,7 @@ use crate::codegen::macros::parsing::{semantic::Transition, syntax::Binding};
 
 #[derive(Debug)]
 pub enum Kind {
-    Syntax,
+    Erased,
     UnexpectedRegister,
     UnexpectedPeripheral,
     ItemAlreadySpecified,
@@ -202,7 +202,7 @@ impl From<Diagnostic> for syn::Error {
 impl From<syn::Error> for Diagnostic {
     fn from(err: syn::Error) -> Self {
         Self {
-            kind: Kind::Syntax,
+            kind: Kind::Erased,
             message: err.to_string(),
             span: err.span(),
         }

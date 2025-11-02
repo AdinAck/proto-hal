@@ -65,6 +65,8 @@ mod tests {
     use quote::quote;
     use syn::parse_quote;
 
+    use crate::codegen::macros::parsing::syntax::tree::Node;
+
     use super::{
         super::{Entry, Transition, Tree},
         Gate,
@@ -112,80 +114,80 @@ mod tests {
         let gate: Gate = parse_quote! { #tokens };
 
         let expected_trees = [
-            Tree::Leaf {
+            Tree {
                 path: parse_quote!(foo),
-                entry: Entry {
+                node: Node::Leaf(Entry {
                     binding: None,
                     transition: None,
-                },
+                }),
             },
-            Tree::Leaf {
+            Tree {
                 path: parse_quote!(::foo),
-                entry: Entry {
+                node: Node::Leaf(Entry {
                     binding: None,
                     transition: None,
-                },
+                }),
             },
-            Tree::Branch {
+            Tree {
                 path: parse_quote!(foo),
-                children: vec![Tree::Leaf {
+                node: Node::Branch(vec![Tree {
                     path: parse_quote!(bar),
-                    entry: Entry {
+                    node: Node::Leaf(Entry {
                         binding: None,
                         transition: None,
-                    },
-                }],
+                    }),
+                }]),
             },
-            Tree::Branch {
+            Tree {
                 path: parse_quote!(foo::bar),
-                children: vec![Tree::Leaf {
+                node: Node::Branch(vec![Tree {
                     path: parse_quote!(baz),
-                    entry: Entry {
+                    node: Node::Leaf(Entry {
                         binding: None,
                         transition: None,
-                    },
-                }],
+                    }),
+                }]),
             },
-            Tree::Leaf {
+            Tree {
                 path: parse_quote!(::foo::bar::baz),
-                entry: Entry {
+                node: Node::Leaf(Entry {
                     binding: None,
                     transition: None,
-                },
+                }),
             },
-            Tree::Branch {
+            Tree {
                 path: parse_quote!(foo::bar),
-                children: vec![Tree::Leaf {
+                node: Node::Branch(vec![Tree {
                     path: parse_quote!(baz),
-                    entry: Entry {
+                    node: Node::Leaf(Entry {
                         binding: None,
                         transition: Some(Transition::Expr(parse_quote!(_))),
-                    },
-                }],
+                    }),
+                }]),
             },
-            Tree::Leaf {
+            Tree {
                 path: parse_quote!(::foo::bar::baz),
-                entry: Entry {
+                node: Node::Leaf(Entry {
                     binding: None,
                     transition: Some(Transition::Expr(parse_quote!(_))),
-                },
+                }),
             },
-            Tree::Leaf {
+            Tree {
                 path: parse_quote!(foo),
-                entry: Entry {
+                node: Node::Leaf(Entry {
                     binding: Some(parse_quote!(_)),
                     transition: None,
-                },
+                }),
             },
-            Tree::Branch {
+            Tree {
                 path: parse_quote!(foo),
-                children: vec![Tree::Leaf {
+                node: Node::Branch(vec![Tree {
                     path: parse_quote!(bar),
-                    entry: Entry {
+                    node: Node::Leaf(Entry {
                         binding: Some(parse_quote!(_)),
                         transition: Some(Transition::Expr(parse_quote!(_))),
-                    },
-                }],
+                    }),
+                }]),
             },
         ];
 
@@ -206,15 +208,15 @@ mod tests {
 
         assert_eq!(
             gate.trees[0],
-            Tree::Branch {
+            Tree {
                 path: parse_quote!(foo),
-                children: vec![Tree::Leaf {
+                node: Node::Branch(vec![Tree {
                     path: parse_quote!(bar),
-                    entry: Entry {
+                    node: Node::Leaf(Entry {
                         binding: Some(parse_quote!(_)),
                         transition: Some(Transition::Expr(parse_quote!(_))),
-                    },
-                }],
+                    }),
+                }]),
             },
         );
         assert_eq!(gate.overrides[0], parse_quote! { base_addr(foo, 0) });

@@ -2,7 +2,6 @@
 //! parsing behavior.
 
 use derive_more::Deref;
-use syn::Ident;
 
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},

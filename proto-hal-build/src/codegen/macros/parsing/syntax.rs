@@ -13,4 +13,4 @@ pub use entry::Entry;
 pub use gate::Gate;
 pub use overrides::Override;
 pub use transition::Transition;
-pub use tree::Tree;
+pub use tree::{Node, Tree};

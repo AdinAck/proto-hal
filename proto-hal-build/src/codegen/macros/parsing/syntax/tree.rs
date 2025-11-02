@@ -6,37 +6,26 @@ use syn::{
 
 use super::Entry;
 
+/// A syntax tree for gates, containing a [`Path`] and a [`Node`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct Tree {
+    /// The path of the node.
+    pub path: Path,
+    /// The [`Node`], either a branch or leaf.
+    pub node: Node,
+}
+
 /// A node of a path tree, which can either be a branch, or a leaf.
 ///
 /// A branch contains a comma separated list of child nodes.
 ///
 /// A leaf contains an [`Entry`].
 #[derive(Debug, PartialEq, Eq)]
-pub enum Tree {
+pub enum Node {
     /// The tree node is a branch with children.
-    Branch {
-        /// The local path to this node.
-        path: Path,
-        /// The children of this node.
-        children: Vec<Tree>,
-    },
+    Branch(Vec<Tree>),
     /// The tree node is a leaf, terminating the branch.
-    Leaf {
-        /// The local path to this node.
-        path: Path,
-        /// The entry provided at the end of this branch.
-        entry: Entry,
-    },
-}
-
-impl Tree {
-    /// Get the local path of this tree node.
-    pub fn local_path(&self) -> &Path {
-        match self {
-            Tree::Branch { path, .. } => path,
-            Tree::Leaf { path, .. } => path,
-        }
-    }
+    Leaf(Entry),
 }
 
 impl Parse for Tree {
@@ -56,13 +45,16 @@ impl Parse for Tree {
                 .into_iter()
                 .collect();
 
-            Ok(Self::Branch { path, children })
+            Ok(Self {
+                path,
+                node: Node::Branch(children),
+            })
         } else {
             // foo::bar::baz ...
 
-            Ok(Self::Leaf {
-                path: path,
-                entry: input.parse()?,
+            Ok(Self {
+                path,
+                node: Node::Leaf(input.parse()?),
             })
         }
     }
@@ -73,6 +65,8 @@ mod tests {
     use quote::quote;
     use syn::parse_quote;
 
+    use crate::codegen::macros::parsing::syntax::tree::Node;
+
     use super::Tree;
 
     #[test]
@@ -80,9 +74,9 @@ mod tests {
         let tokens = quote! { ::foo::bar::baz(&mut foo) => 0xdeadbeef };
         let tree: Tree = parse_quote! { #tokens };
 
-        assert!(matches!(tree, Tree::Leaf { path, entry }
-                if path == parse_quote! { ::foo::bar::baz }
-                && entry == parse_quote! { (&mut foo) => 0xdeadbeef }
+        assert_eq!(tree.path, parse_quote! { ::foo::bar::baz });
+        assert!(matches!(tree.node, Node::Leaf (entry)
+                if entry == parse_quote! { (&mut foo) => 0xdeadbeef }
         ))
     }
 
@@ -91,10 +85,10 @@ mod tests {
         let tokens = quote! { ::foo::bar { baz(&mut foo) => 0xdeadbeef, booz(dead) => beef } };
         let tree: Tree = parse_quote! { #tokens };
 
-        assert!(matches!(tree, Tree::Branch { path, children }
-            if path == parse_quote! { ::foo::bar }
-            && children.first().is_some_and(|node| node == &parse_quote! { baz(&mut foo) => 0xdeadbeef })
-            && children.iter().nth(1).is_some_and(|node| node == &parse_quote! { booz(dead) => beef })
+        assert_eq!(tree.path, parse_quote! { ::foo::bar });
+        assert!(matches!(tree.node, Node::Branch (children)
+            if children.first().is_some_and(|child| child == &parse_quote! { baz(&mut foo) => 0xdeadbeef })
+            && children.iter().nth(1).is_some_and(|child| child == &parse_quote! { booz(dead) => beef })
         ))
     }
 
@@ -111,9 +105,9 @@ mod tests {
         };
         let tree: Tree = parse_quote! { #tokens };
 
-        assert!(matches!(tree, Tree::Branch { path, children }
-            if path == parse_quote! { ::foo }
-            && children.first().is_some_and(|node| node == &parse_quote! {
+        assert_eq!(tree.path, parse_quote! { ::foo });
+        assert!(matches!(tree.node, Node::Branch(children)
+            if children.first().is_some_and(|node| node == &parse_quote! {
                 bar {
                     baz(&mut foo) => 0xdeadbeef,
                     booz(dead) => beef

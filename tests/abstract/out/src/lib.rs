@@ -54,9 +54,7 @@ mod tests {
                     assert!(
                         unsafe {
                             read_untracked! {
-                                foo::foo0 {
-                                    a,
-                                },
+                                foo::foo0::a,
                                 @base_addr(foo, addr_of_foo())
                             }
                         }
@@ -78,10 +76,8 @@ mod tests {
                     };
                     assert!(unsafe {
                         read_untracked! {
-                            foo::foo0 {
-                                a,
-                            }
-                            @base_addr foo addr_of_foo()
+                            foo::foo0::a,
+                            @base_addr(foo, addr_of_foo())
                         }
                         .is_v2()
                     });
@@ -112,10 +108,8 @@ mod tests {
 
                     assert!(unsafe {
                         read_untracked! {
-                            foo::foo0 {
-                                a,
-                            }
-                            @base_addr foo addr_of_foo()
+                            foo::foo0::a,
+                            @base_addr(foo, addr_of_foo())
                         }
                         .is_v4()
                     });
@@ -154,10 +148,8 @@ mod tests {
             assert!(
                 unsafe {
                     read_untracked! {
-                        foo::foo0 {
-                            a,
-                        }
-                        @base_addr foo addr_of_foo()
+                        foo::foo0::a,
+                        @base_addr(foo, addr_of_foo())
                     }
                 }
                 .is_v5()
