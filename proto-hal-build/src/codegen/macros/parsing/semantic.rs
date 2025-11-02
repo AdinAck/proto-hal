@@ -3,7 +3,7 @@
 
 mod entry;
 mod keys;
-mod policies;
+pub mod policies;
 mod transition;
 mod utils;
 

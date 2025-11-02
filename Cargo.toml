@@ -5,6 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 colored = "3.0.0"
+derive_more = { version = "2.0.1", features = ["as_ref", "deref", "deref_mut"] }
 indexmap = "2.11.4"
 Inflector = "0.11.4"
 proc-macro2 = { version = "1.0.101", features = ["span-locations"] }

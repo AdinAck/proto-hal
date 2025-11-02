@@ -1,5 +1,4 @@
-use std::ops::Deref;
-
+use derive_more::{AsRef, Deref};
 use syn::{Expr, parse::Parse};
 
 /// A binding is the first entry component, delineating the resource passed to the gate.
@@ -9,22 +8,8 @@ use syn::{Expr, parse::Parse};
 /// //      ^^^^^^^^^^
 /// //      binding
 /// ```
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AsRef, Deref)]
 pub struct Binding(Expr);
-
-impl Deref for Binding {
-    type Target = Expr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<Expr> for Binding {
-    fn as_ref(&self) -> &Expr {
-        &self.0
-    }
-}
 
 impl Binding {
     /// The binding provides a view to the resource.

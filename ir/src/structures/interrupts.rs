@@ -1,9 +1,7 @@
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::collections::HashMap;
 
 use colored::Colorize;
+use derive_more::{Deref, DerefMut};
 use proc_macro2::Span;
 use quote::{ToTokens, quote};
 use syn::{Ident, Index};
@@ -53,23 +51,9 @@ impl Interrupt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deref, DerefMut)]
 pub struct Interrupts {
     interrupts: Vec<Interrupt>,
-}
-
-impl Deref for Interrupts {
-    type Target = Vec<Interrupt>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.interrupts
-    }
-}
-
-impl DerefMut for Interrupts {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.interrupts
-    }
 }
 
 impl Interrupts {

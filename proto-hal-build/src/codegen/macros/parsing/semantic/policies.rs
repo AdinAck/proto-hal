@@ -1,3 +1,7 @@
+//! Policies employed by semantic parsing structures for altering the
+//! parsing behavior.
+
+use derive_more::Deref;
 use syn::Ident;
 
 use crate::codegen::macros::{
@@ -67,6 +71,7 @@ impl<'cx> Refine<'cx> for ForbidEntry {
 }
 
 /// Only the transition component of the entry may be specified.
+#[derive(Deref)]
 pub struct PermitTransition<'cx>(Option<Transition<'cx>>);
 
 impl<'cx> Refine<'cx> for PermitTransition<'cx> {
@@ -86,8 +91,11 @@ impl<'cx> Refine<'cx> for PermitTransition<'cx> {
 
 /// The binding component of the entry must be specified.
 pub enum RequireBinding<'cx> {
+    /// The entry is a view (see [`Entry`]).
     View(&'cx Binding),
+    /// The entry is dynnamic (see [`Entry`]).
     Dynamic(&'cx Binding, Transition<'cx>),
+    /// The entry is static (see [`Entry`]).
     Static(&'cx Binding, Transition<'cx>),
 }
 

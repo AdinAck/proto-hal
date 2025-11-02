@@ -14,3 +14,4 @@ quote = { workspace = true }
 syn = { workspace = true }
 ters = { workspace = true }
 tiva = { workspace = true }
+derive_more.workspace = true
