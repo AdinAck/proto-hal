@@ -23,6 +23,7 @@ pub enum Kind {
     BindingMustBeView,
     BindingCannotBeView,
     UnexpectedTransition,
+    ExpectedTransition,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -184,6 +185,11 @@ impl Diagnostic {
             "unexpected transition",
             &transition.span(),
         )
+    }
+
+    /// expected transition
+    pub fn expected_transition(ident: &Ident) -> Self {
+        Self::new(Kind::ExpectedTransition, "expected transition", ident)
     }
 }
 

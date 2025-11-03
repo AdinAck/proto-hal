@@ -1,4 +1,4 @@
-use ir::structures::{peripheral::Peripheral, register::Register};
+use ir::structures::{field::Field, peripheral::Peripheral, register::Register};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::Ident;
@@ -7,6 +7,15 @@ use crate::codegen::macros::{diagnostic::Diagnostics, parsing::syntax};
 
 pub fn unique_register_ident(peripheral: &Peripheral, register: &Register) -> Ident {
     format_ident!("{}_{}", peripheral.module_name(), register.module_name(),)
+}
+
+pub fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Field) -> Ident {
+    format_ident!(
+        "{}_{}_{}",
+        peripheral.module_name(),
+        register.module_name(),
+        field.module_name()
+    )
 }
 
 pub fn render_diagnostics(diagnostics: Diagnostics) -> TokenStream {

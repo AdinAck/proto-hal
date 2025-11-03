@@ -62,6 +62,7 @@ pub fn read_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
 
     for register_item in input.visit_registers() {
         let register_path = register_item.path();
+
         reg_idents.push(unique_register_ident(
             register_item.peripheral(),
             register_item.register(),
