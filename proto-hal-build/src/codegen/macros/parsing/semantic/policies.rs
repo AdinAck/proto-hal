@@ -69,6 +69,25 @@ impl<'cx> Refine<'cx> for ForbidEntry {
     }
 }
 
+/// Only the transition component of the entry may be specified.
+#[derive(Deref)]
+pub struct PermitTransition<'cx>(Option<Transition<'cx>>);
+
+impl<'cx> Refine<'cx> for PermitTransition<'cx> {
+    type Input = FieldEntryRefinementInput<'cx>;
+
+    fn refine((.., entry): Self::Input) -> Result<Self, Diagnostics> {
+        match entry {
+            Entry::Empty => Ok(Self(None)),
+            Entry::View(binding) => Err(vec![Diagnostic::unexpected_binding(binding)]),
+            Entry::BoundDynamicTransition(binding, ..) | Entry::StaticTransition(binding, ..) => {
+                Err(vec![Diagnostic::unexpected_binding(binding)])
+            }
+            Entry::UnboundDynamicTransition(transition) => Ok(Self(Some(transition))),
+        }
+    }
+}
+
 /// The entry solely consists of a transition.
 #[derive(Deref)]
 pub struct TransitionOnly<'cx>(Transition<'cx>);

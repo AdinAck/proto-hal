@@ -3,7 +3,13 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::Ident;
 
-use crate::codegen::macros::{diagnostic::Diagnostics, parsing::syntax};
+use crate::codegen::macros::{
+    diagnostic::Diagnostics,
+    parsing::{
+        semantic::{FieldEntryRefinementInput, FieldItem, policies::Refine},
+        syntax,
+    },
+};
 
 pub fn unique_register_ident(peripheral: &Peripheral, register: &Register) -> Ident {
     format_ident!("{}_{}", peripheral.module_name(), register.module_name(),)
@@ -64,4 +70,14 @@ pub fn suggestions<'cx>(args: &syntax::Gate, diagnostics: &Diagnostics) -> Optio
                 .collect(),
         )
     }
+}
+
+pub fn mask<'cx, EntryPolicy>(fields: impl Iterator<Item = &'cx FieldItem<'cx, EntryPolicy>>) -> u32
+where
+    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>> + 'cx,
+{
+    fields.fold(0, |acc, field_item| {
+        let field = field_item.field();
+        acc | ((u32::MAX >> (32 - field.width)) << field.offset)
+    })
 }
