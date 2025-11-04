@@ -342,7 +342,7 @@ use syn::{Expr, Ident};
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
-        fragments::{register_address, write_value},
+        fragments::{parameter_write_value, register_address, shift},
         utils::{render_diagnostics, suggestions, unique_field_ident},
     },
     parsing::{
@@ -360,6 +360,7 @@ enum Scheme {
 }
 
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, TransitionOnly<'cx>>;
+type RegisterItem<'cx> = semantic::RegisterItem<'cx, TransitionOnly<'cx>>;
 
 pub fn write_from_zero_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
     write_untracked(Scheme::FromZero, model, tokens)
@@ -402,12 +403,15 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
     let suggestions = suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
-    let parameter_idents = Vec::new();
+    let mut parameter_idents = Vec::new();
     let mut addrs = Vec::new();
-    let mut write_values = Vec::new();
+    let mut parameter_write_values = Vec::new();
+    let mut reg_write_values = Vec::new();
 
     for register_item in input.visit_registers() {
         let register_path = register_item.path();
+
+        reg_write_values.push(reg_write_value(&scheme, register_item));
 
         addrs.push(register_address(
             register_item.peripheral(),
@@ -422,9 +426,10 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                 field_item.field(),
             ));
 
-            write_values.push(write_value(
+            parameter_write_values.push(parameter_write_value(
                 &register_path,
                 field_item.ident(),
+                field_item.field(),
                 field_item.entry(),
             ));
         }
@@ -446,7 +451,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                 )*
             }
 
-            gate(#(#write_values),*)
+            gate(#(#parameter_write_values),*)
         }
     }
 }
@@ -462,4 +467,30 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
             }
         })
         .collect()
+}
+
+fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> TokenStream {
+    let initial = match scheme {
+        Scheme::FromZero => 0,
+        Scheme::FromReset => {
+            let mask = register_item.fields().values().fold(0, |acc, field_item| {
+                let field = field_item.field();
+                acc | ((u32::MAX >> (32 - field.width)) << field.offset)
+            });
+
+            register_item.register().reset.unwrap_or(0) & !mask
+        }
+    };
+
+    let values = register_item.fields().values().map(|field_item| {
+        let field = field_item.field();
+        let ident = unique_field_ident(register_item.peripheral(), register_item.register(), field);
+        let shift = shift(field.offset);
+
+        quote! { #ident #shift }
+    });
+
+    quote! {
+        #initial #(| (#values) )*
+    }
 }

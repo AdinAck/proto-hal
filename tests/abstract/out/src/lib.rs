@@ -68,10 +68,8 @@ mod tests {
                 critical_section::with(|_| {
                     unsafe {
                         write_from_zero_untracked! {
-                            foo::foo0 {
-                                a => V2,
-                            }
-                            @base_addr foo addr_of_foo()
+                            foo::foo0::a => V2,
+                            @base_addr(foo, addr_of_foo())
                         }
                     };
                     assert!(unsafe {
@@ -89,10 +87,8 @@ mod tests {
                 critical_section::with(|cs| {
                     unsafe {
                         write_from_zero_untracked! {
-                            foo::foo0 {
-                                a => V3,
-                            }
-                            @base_addr foo addr_of_foo()
+                            foo::foo0::a => V3,
+                            @base_addr(foo, addr_of_foo())
                         }
                     }
 

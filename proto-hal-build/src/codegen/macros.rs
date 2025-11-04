@@ -13,7 +13,7 @@ pub use gates::{
     //     read::read,
     read_untracked::read_untracked,
     //     write::{write, write_in_place},
-    //     write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
+    write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
 };
 pub use scaffolding::scaffolding;
 
@@ -24,8 +24,8 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         "read_untracked",
         // "write",
         // "write_in_place",
-        // "write_from_reset_untracked",
-        // "write_from_zero_untracked",
+        "write_from_reset_untracked",
+        "write_from_zero_untracked",
     ];
 
     let idents = idents_raw
