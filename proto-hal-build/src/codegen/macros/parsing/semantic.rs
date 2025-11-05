@@ -34,13 +34,16 @@ type RegisterMap<'cx, EntryPolicy> = IndexMap<RegisterKey, RegisterItem<'cx, Ent
 type FieldMap<'cx, EntryPolicy> = IndexMap<FieldKey, FieldItem<'cx, EntryPolicy>>;
 
 /// The semantically parsed gate input, with corresponding model elements.
+#[ters]
 pub struct Gate<'cx, PeripheralPolicy, EntryPolicy>
 where
     PeripheralPolicy: Filter,
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
-    peripheral_map: PeripheralMap<'cx>,
-    register_map: RegisterMap<'cx, EntryPolicy>,
+    #[get]
+    peripherals: PeripheralMap<'cx>,
+    #[get]
+    registers: RegisterMap<'cx, EntryPolicy>,
     _p: PhantomData<PeripheralPolicy>,
 }
 
@@ -52,13 +55,13 @@ where
     /// Parse the gate input against the model to produce a semantic gate input.
     pub fn parse(args: &'cx syntax::Gate, model: &'cx Hal) -> (Self, Diagnostics) {
         let mut diagnostics = Diagnostics::new();
-        let mut peripheral_map = Default::default();
-        let mut register_map = Default::default();
+        let mut peripherals = Default::default();
+        let mut registers = Default::default();
 
         for tree in &args.trees {
             if let Err(e) = parse_peripheral::<PeripheralPolicy, _>(
-                &mut peripheral_map,
-                &mut register_map,
+                &mut peripherals,
+                &mut registers,
                 tree,
                 model,
             ) {
@@ -68,8 +71,8 @@ where
 
         (
             Self {
-                peripheral_map,
-                register_map,
+                peripherals,
+                registers,
                 _p: PhantomData,
             },
             diagnostics,
@@ -82,13 +85,13 @@ where
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
     ) -> Option<&RegisterItem<'cx, EntryPolicy>> {
-        self.register_map
+        self.registers
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
     }
 
     /// Visit all register-level items.
     pub fn visit_registers(&self) -> impl Iterator<Item = &RegisterItem<'cx, EntryPolicy>> {
-        self.register_map.values()
+        self.registers.values()
     }
 
     /// Query for a field-level item with the provided peripheral, register, and field identifiers.
@@ -101,7 +104,7 @@ where
         &RegisterItem<'cx, EntryPolicy>,
         &FieldItem<'cx, EntryPolicy>,
     )> {
-        self.register_map
+        self.registers
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
             .and_then(|register_item| {
                 register_item
@@ -113,7 +116,7 @@ where
 
     /// Visit all field-level items.
     pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'cx, EntryPolicy>> {
-        self.register_map
+        self.registers
             .values()
             .flat_map(|register_item| register_item.fields.values())
     }
@@ -125,12 +128,12 @@ where
 {
     /// Query for a peripheral-level item with the provided identifier.
     pub fn get_peripheral(&self, ident: impl Into<String>) -> Option<&PeripheralItem<'cx>> {
-        self.peripheral_map.get(&PeripheralKey::from_ident(ident))
+        self.peripherals.get(&PeripheralKey::from_ident(ident))
     }
 
     /// Visit all peripheral-level items.
     pub fn visit_peripherals(&self) -> impl Iterator<Item = &PeripheralItem<'cx>> {
-        self.peripheral_map.values()
+        self.peripherals.values()
     }
 }
 

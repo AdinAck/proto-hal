@@ -528,6 +528,7 @@ fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
     let errors = render_diagnostics(diagnostics);
 
     let mut write_parameter_idents = Vec::new();
+    let mut read_reg_idents = Vec::new();
     let mut read_addrs = Vec::new();
     let mut write_addrs = Vec::new();
     let mut parameter_write_values = Vec::new();
@@ -535,12 +536,15 @@ fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
 
     for register_item in input.visit_registers() {
         let register_path = register_item.path();
+        let register_ident =
+            unique_register_ident(register_item.peripheral(), register_item.register());
         let addr = register_address(
             register_item.peripheral(),
             register_item.register(),
             &overridden_base_addrs,
         );
 
+        read_reg_idents.push(register_ident);
         read_addrs.push(addr);
 
         if register_item
@@ -577,6 +581,10 @@ fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
                 let #read_reg_idents = unsafe {
                     ::core::ptr::read_volatile(#read_addrs as *const u32)
                 };
+            )*
+
+            #(
+                let #
             )*
 
             #(
