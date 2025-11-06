@@ -1,20 +1,21 @@
 use std::collections::HashMap;
 
 use indexmap::{IndexMap, IndexSet};
+use inflector::Inflector;
 use ir::structures::hal::Hal;
-use proc_macro2::TokenStream;
-use quote::quote;
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote};
 use syn::{Expr, Ident};
 
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments::{read_value_expr, read_value_ty, register_address},
-        utils::{render_diagnostics, suggestions, unique_register_ident},
+        utils::{render_diagnostics, return_rank::ReturnRank, suggestions, unique_register_ident},
     },
     parsing::{
         semantic::{
-            self, FieldItem, FieldKey, RegisterItem, RegisterKey,
+            self, FieldItem, FieldKey, RegisterItem,
             policies::{ForbidEntry, ForbidPeripherals},
         },
         syntax::Override,
@@ -59,11 +60,8 @@ pub fn read_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
 
     let mut reg_idents = Vec::new();
     let mut addrs = Vec::new();
-    let mut read_values = Vec::new();
 
     for register_item in input.visit_registers() {
-        let register_path = register_item.path();
-
         reg_idents.push(unique_register_ident(
             register_item.peripheral(),
             register_item.register(),
@@ -73,33 +71,28 @@ pub fn read_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
             register_item.register(),
             &overridden_base_addrs,
         ));
-
-        for field_item in register_item.fields().values() {
-            if let Some(read) = field_item.field().access.get_read() {
-                read_values.push(read_value_expr(
-                    &register_path,
-                    field_item.ident(),
-                    register_item.peripheral(),
-                    register_item.register(),
-                    field_item.field(),
-                ));
-            }
-        }
     }
+
+    let return_rank = get_return_rank(&input);
+    let return_def = make_return_definition(&return_rank);
+    let return_ty = make_return_ty(&return_rank).map(|return_ty| quote! { -> #return_ty });
+    let return_init = make_return_init(&return_rank);
 
     quote! {
         #suggestions
         #errors
 
         {
-            unsafe fn gate() -> #return_ty {
+            #return_def
+
+            unsafe fn gate() #return_ty {
                 #(
                     let #reg_idents = unsafe {
                         ::core::ptr::read_volatile(#addrs as *const u32)
                     };
                 )*
 
-                // todo...
+                #return_init
             }
 
             gate()
@@ -120,7 +113,7 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
         .collect()
 }
 
-fn make_return_ty<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
+fn make_return_ty<'cx>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream> {
     match rank {
         ReturnRank::Empty => None,
         ReturnRank::Field {
@@ -132,17 +125,198 @@ fn make_return_ty<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             field_item.ident(),
             &field_item.field().access.get_read()?.numericity,
         )),
-        ReturnRank::Register {
-            peripheral_key,
-            register_key,
-            register_item,
-            fields,
-        } => todo!(),
-        ReturnRank::Peripheral(index_map) => todo!(),
+        ReturnRank::Register { register_item, .. } => {
+            let ident = register_item.register().type_name();
+
+            Some(quote! { #ident })
+        }
+        ReturnRank::Peripheral(map) => {
+            let idents = IndexSet::<Ident>::from_iter(
+                map.values()
+                    .flat_map(|registers| registers.values())
+                    .map(|(register_item, ..)| register_item.peripheral().type_name()),
+            )
+            .into_iter();
+
+            Some(quote! { #(#idents),* })
+        }
     }
 }
 
-fn get_return_rank<'cx>(input: &'cx Input<'cx>) -> ReturnRank<'cx> {
+fn make_return_definition<'cx>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream> {
+    match rank {
+        ReturnRank::Empty | ReturnRank::Field { .. } => None,
+        ReturnRank::Register {
+            register_item,
+            fields,
+            ..
+        } => Some(register_return_definition(
+            register_item.register().type_name(),
+            register_item,
+            fields,
+        )),
+        ReturnRank::Peripheral(map) => {
+            let defs = map
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        Ident::new(k.to_string().to_pascal_case().as_str(), Span::call_site()),
+                        v,
+                    )
+                })
+                .map(|(ident, registers)| {
+                    let register_idents = registers
+                        .values()
+                        .map(|(register_item, ..)| register_item.register().module_name());
+
+                    let (register_tys, register_defs) = registers
+                        .values()
+                        .map(|(register_item, fields)| {
+                            let ident = format_ident!(
+                                "{}{}",
+                                register_item.peripheral().type_name(),
+                                register_item.register().type_name()
+                            );
+
+                            (
+                                ident.clone(),
+                                register_return_definition(ident, register_item, fields),
+                            )
+                        })
+                        .collect::<(Vec<_>, Vec<_>)>();
+
+                    quote! {
+                        struct #ident {
+                            #(#register_idents: #register_tys,)*
+                        }
+
+                        #(#register_defs)*
+                    }
+                });
+
+            Some(quote! { #(#defs)* })
+        }
+    }
+}
+
+fn make_return_init<'cx>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream> {
+    match rank {
+        ReturnRank::Empty => None,
+        ReturnRank::Field {
+            register_item,
+            field_item,
+            ..
+        } => read_value_expr(
+            &register_item.path(),
+            field_item.ident(),
+            register_item.peripheral(),
+            register_item.register(),
+            field_item.field(),
+        ),
+        ReturnRank::Register {
+            register_item,
+            fields,
+            ..
+        } => Some(register_return_init(
+            register_item.register().type_name(),
+            register_item,
+            fields,
+        )),
+        ReturnRank::Peripheral(map) => {
+            let values = map
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        Ident::new(k.to_string().to_pascal_case().as_str(), Span::call_site()),
+                        v,
+                    )
+                })
+                .map(|(ident, registers)| {
+                    let (register_idents, register_values) = registers
+                        .values()
+                        .map(|(register_item, fields)| {
+                            (
+                                register_item.register().module_name(),
+                                register_return_init(
+                                    format_ident!(
+                                        "{}{}",
+                                        register_item.peripheral().type_name(),
+                                        register_item.register().type_name()
+                                    ),
+                                    register_item,
+                                    fields,
+                                ),
+                            )
+                        })
+                        .collect::<(Vec<_>, Vec<_>)>();
+
+                    quote! {
+                        #ident {
+                            #(#register_idents: #register_values,)*
+                        }
+                    }
+                });
+
+            Some(quote! { (#(#values),*) })
+        }
+    }
+}
+
+fn register_return_definition<'cx>(
+    register_ident: Ident,
+    register_item: &RegisterItem<'cx, EntryPolicy>,
+    fields: &IndexMap<&FieldKey, &FieldItem<'cx, EntryPolicy>>,
+) -> TokenStream {
+    let field_idents = fields
+        .values()
+        .map(|field_item| field_item.field().module_name());
+
+    let field_tys = fields.values().filter_map(|field_item| {
+        Some(read_value_ty(
+            &register_item.path(),
+            field_item.ident(),
+            &field_item.field().access.get_read()?.numericity,
+        ))
+    });
+
+    quote! {
+        struct #register_ident {
+            #(
+                #field_idents: #field_tys,
+            )*
+        }
+    }
+}
+
+fn register_return_init<'cx>(
+    register_ident: Ident,
+    register_item: &RegisterItem<'cx, EntryPolicy>,
+    fields: &IndexMap<&FieldKey, &FieldItem<'cx, EntryPolicy>>,
+) -> TokenStream {
+    let field_idents = fields
+        .values()
+        .map(|field_item| field_item.field().module_name());
+
+    let field_values = fields.values().filter_map(|field_item| {
+        read_value_expr(
+            &register_item.path(),
+            field_item.ident(),
+            register_item.peripheral(),
+            register_item.register(),
+            field_item.field(),
+        )
+    });
+
+    quote! {
+        #register_ident {
+            #(
+                #field_idents: #field_values,
+            )*
+        }
+    }
+}
+
+fn get_return_rank<'cx>(input: &'cx Input<'cx>) -> ReturnRank<'cx, EntryPolicy> {
     let mut rank = ReturnRank::Empty;
 
     for (register_key, register_item) in input.registers() {
@@ -158,187 +332,4 @@ fn get_return_rank<'cx>(input: &'cx Input<'cx>) -> ReturnRank<'cx> {
     }
 
     rank
-}
-
-/// The rank of the structure to be returned from the gate.
-enum ReturnRank<'cx> {
-    /// The gate is empty.
-    Empty,
-    /// Only one field is present.
-    Field {
-        peripheral_key: Ident,
-        register_key: &'cx RegisterKey,
-        register_item: &'cx RegisterItem<'cx, EntryPolicy>,
-        field_key: &'cx FieldKey,
-        field_item: &'cx FieldItem<'cx, EntryPolicy>,
-    },
-    /// Only one register is present.
-    Register {
-        peripheral_key: Ident,
-        register_key: &'cx RegisterKey,
-        register_item: &'cx RegisterItem<'cx, EntryPolicy>,
-        fields: IndexMap<&'cx FieldKey, &'cx FieldItem<'cx, EntryPolicy>>,
-    },
-    /// Any number of peripherals are present.
-    Peripheral(
-        IndexMap<
-            Ident,
-            IndexMap<
-                &'cx RegisterKey,
-                (
-                    &'cx RegisterItem<'cx, EntryPolicy>,
-                    IndexMap<&'cx FieldKey, &'cx FieldItem<'cx, EntryPolicy>>,
-                ),
-            >,
-        >,
-    ),
-}
-
-impl<'cx> ReturnRank<'cx> {
-    pub fn next(
-        self,
-        peripheral_key: Ident,
-        register_key: &'cx RegisterKey,
-        register_item: &'cx RegisterItem<'cx, EntryPolicy>,
-        field_key: &'cx FieldKey,
-        field_item: &'cx FieldItem<'cx, EntryPolicy>,
-    ) -> Self {
-        match self {
-            ReturnRank::Empty => {
-                // clearly the gate is not empty, there is at least one field!
-
-                // record the peripheral, register, and field
-
-                ReturnRank::Field {
-                    peripheral_key,
-                    register_key,
-                    register_item,
-                    field_key,
-                    field_item,
-                }
-            }
-            ReturnRank::Field {
-                peripheral_key: existing_peripheral_key,
-                register_key: existing_register_key,
-                register_item: existing_register_item,
-                field_key: existing_field_key,
-                field_item: existing_field_item,
-            } => {
-                // the gate has more than one field, potentially even more than one register
-
-                if register_key == existing_register_key {
-                    // if the field is in the same register, promote to Kind::Register
-
-                    ReturnRank::Register {
-                        peripheral_key,
-                        register_key,
-                        register_item,
-                        fields: IndexMap::from([
-                            (existing_field_key, existing_field_item),
-                            (field_key, field_item),
-                        ]),
-                    }
-                } else {
-                    // if the field is in a different register, promote to Kind::Peripheral
-
-                    let mut map = IndexMap::new();
-
-                    // insert the existing peripheral, register, and field
-                    map.insert(
-                        existing_peripheral_key,
-                        IndexMap::from([(
-                            existing_register_key,
-                            (
-                                existing_register_item,
-                                IndexMap::from([(existing_field_key, existing_field_item)]),
-                            ),
-                        )]),
-                    );
-
-                    // insert the new peripheral (or don't if they are the same) and insert the new
-                    // register and field
-                    map.entry(peripheral_key)
-                        .or_insert_with(IndexMap::new)
-                        .insert(
-                            register_key,
-                            (register_item, IndexMap::from([(field_key, field_item)])),
-                        );
-
-                    ReturnRank::Peripheral(map)
-                }
-            }
-            ReturnRank::Register {
-                peripheral_key: existing_peripheral_key,
-                register_key: existing_register_key,
-                register_item: existing_register_item,
-                fields: mut existing_fields,
-            } => {
-                // the gate could have more than one register, or not
-
-                if register_key == existing_register_key {
-                    // if the field is in the existing register, stay in Kind::Register
-
-                    existing_fields.insert(field_key, field_item);
-
-                    ReturnRank::Register {
-                        peripheral_key: existing_peripheral_key,
-                        register_key: existing_register_key,
-                        register_item: existing_register_item,
-                        fields: existing_fields,
-                    }
-                } else {
-                    // if the field is in a new register, promote to Kind::Peripheral
-
-                    let mut map = IndexMap::new();
-
-                    // insert the existing peripheral, register, and fields
-                    map.insert(
-                        existing_peripheral_key,
-                        IndexMap::from([(existing_register_key, (register_item, existing_fields))]),
-                    );
-
-                    // insert the new peripheral (or don't if they are the same) and insert the new
-                    // register and fields
-                    map.entry(peripheral_key)
-                        .or_insert_with(IndexMap::new)
-                        .insert(
-                            register_key,
-                            (register_item, IndexMap::from([(field_key, field_item)])),
-                        );
-
-                    ReturnRank::Peripheral(map)
-                }
-            }
-            ReturnRank::Peripheral(mut map) => {
-                // the gate could have more than one peripheral, or not
-
-                // peripheral exists
-                let Some(existing_registers) = map.get_mut(&peripheral_key) else {
-                    map.insert(
-                        peripheral_key,
-                        IndexMap::from([(
-                            register_key,
-                            (register_item, IndexMap::from([(field_key, field_item)])),
-                        )]),
-                    );
-
-                    return ReturnRank::Peripheral(map);
-                };
-
-                // register exists
-                let Some((.., existing_fields)) = existing_registers.get_mut(register_key) else {
-                    existing_registers.insert(
-                        register_key,
-                        (register_item, IndexMap::from([(field_key, field_item)])),
-                    );
-
-                    return ReturnRank::Peripheral(map);
-                };
-
-                existing_fields.insert(field_key, field_item);
-
-                ReturnRank::Peripheral(map)
-            }
-        }
-    }
 }

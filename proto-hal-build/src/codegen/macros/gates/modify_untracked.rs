@@ -584,10 +584,6 @@ fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
             )*
 
             #(
-                let #
-            )*
-
-            #(
                 let #write_field_idents = #closure_idents(#closure_parameters);
             )*
 

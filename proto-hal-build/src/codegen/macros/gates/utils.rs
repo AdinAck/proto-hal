@@ -1,3 +1,5 @@
+pub mod return_rank;
+
 use ir::structures::{field::Field, peripheral::Peripheral, register::Register};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
