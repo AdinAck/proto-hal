@@ -2,7 +2,8 @@ use indexmap::IndexMap;
 use syn::Ident;
 
 use crate::codegen::macros::parsing::semantic::{
-    FieldEntryRefinementInput, FieldItem, FieldKey, RegisterItem, RegisterKey, policies::Refine,
+    self, FieldEntryRefinementInput, FieldItem, FieldKey, RegisterItem, RegisterKey,
+    policies::{Filter, Refine},
 };
 
 /// The rank of the structure to be returned from the gate.
@@ -191,5 +192,31 @@ where
                 ReturnRank::Peripheral(map)
             }
         }
+    }
+
+    pub fn from_input<PeripheralPolicy>(
+        input: &'cx semantic::Gate<'cx, PeripheralPolicy, EntryPolicy>,
+        filter: impl Fn(&FieldItem<'cx, EntryPolicy>) -> bool,
+    ) -> Self
+    where
+        PeripheralPolicy: Filter,
+    {
+        let mut rank = ReturnRank::Empty;
+
+        for (register_key, register_item) in input.registers() {
+            for (field_key, field_item) in register_item.fields() {
+                if filter(field_item) {
+                    rank = rank.next(
+                        register_item.peripheral().module_name(),
+                        register_key,
+                        register_item,
+                        field_key,
+                        field_item,
+                    );
+                }
+            }
+        }
+
+        rank
     }
 }

@@ -73,7 +73,7 @@ pub fn read_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
         ));
     }
 
-    let return_rank = get_return_rank(&input);
+    let return_rank = ReturnRank::from_input(&input, |_| true);
     let return_def = make_return_definition(&return_rank);
     let return_ty = make_return_ty(&return_rank).map(|return_ty| quote! { -> #return_ty });
     let return_init = make_return_init(&return_rank);
@@ -314,22 +314,4 @@ fn register_return_init<'cx>(
             )*
         }
     }
-}
-
-fn get_return_rank<'cx>(input: &'cx Input<'cx>) -> ReturnRank<'cx, EntryPolicy> {
-    let mut rank = ReturnRank::Empty;
-
-    for (register_key, register_item) in input.registers() {
-        for (field_key, field_item) in register_item.fields() {
-            rank = rank.next(
-                register_item.peripheral().module_name(),
-                register_key,
-                register_item,
-                field_key,
-                field_item,
-            );
-        }
-    }
-
-    rank
 }
