@@ -77,9 +77,7 @@ where
         };
     };
 
-    println!("before");
     let register = find_register(register_ident, peripheral)?;
-    println!("after");
 
     let Some(field_ident) = segments.next() else {
         // path ends on register item

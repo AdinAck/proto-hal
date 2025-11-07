@@ -6,9 +6,9 @@ use quote::quote;
 use syn::{Expr, Ident};
 
 use crate::codegen::macros::{
-    diagnostic::{Diagnostic, Diagnostics},
+    diagnostic::Diagnostics,
     gates::{
-        fragments::{parameter_write_value, register_address, shift},
+        fragments,
         utils::{mask, render_diagnostics, suggestions, unique_field_ident},
     },
     parsing::{
@@ -70,6 +70,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
     let errors = render_diagnostics(diagnostics);
 
     let mut parameter_idents = Vec::new();
+    let mut parameter_tys = Vec::new();
     let mut addrs = Vec::new();
     let mut parameter_write_values = Vec::new();
     let mut reg_write_values = Vec::new();
@@ -79,25 +80,33 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
 
         reg_write_values.push(reg_write_value(&scheme, register_item));
 
-        addrs.push(register_address(
+        addrs.push(fragments::register_address(
             register_item.peripheral(),
             register_item.register(),
             &overridden_base_addrs,
         ));
 
         for field_item in register_item.fields().values() {
-            parameter_idents.push(unique_field_ident(
-                register_item.peripheral(),
-                register_item.register(),
-                field_item.field(),
-            ));
+            if let Some(write) = field_item.field().access.get_write() {
+                parameter_idents.push(unique_field_ident(
+                    register_item.peripheral(),
+                    register_item.register(),
+                    field_item.field(),
+                ));
 
-            parameter_write_values.push(parameter_write_value(
-                &register_path,
-                field_item.ident(),
-                field_item.field(),
-                field_item.entry(),
-            ));
+                parameter_tys.push(fragments::write_value_ty(
+                    &register_path,
+                    field_item.ident(),
+                    &write.numericity,
+                ));
+
+                parameter_write_values.push(fragments::parameter_write_value(
+                    &register_path,
+                    field_item.ident(),
+                    field_item.field(),
+                    field_item.entry(),
+                ));
+            }
         }
     }
 
@@ -106,7 +115,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
         #errors
 
         {
-            unsafe fn gate(#(#parameter_idents: u32),*) {
+            unsafe fn gate(#(#parameter_idents: #parameter_tys),*) {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
@@ -122,17 +131,21 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
     }
 }
 
-fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
-    input
-        .visit_fields()
-        .filter_map(|field_item| {
-            if !field_item.field().access.is_write() {
-                Some(Diagnostic::field_must_be_writable(field_item.ident()))
-            } else {
-                None
-            }
-        })
-        .collect()
+fn validate<'cx>(_input: &Input<'cx>) -> Diagnostics {
+    // Q: since transitions probe the model for write numericity, is this validation step necessary?
+
+    Diagnostics::new()
+
+    // input
+    //     .visit_fields()
+    //     .filter_map(|field_item| {
+    //         if !field_item.field().access.is_write() {
+    //             Some(Diagnostic::field_must_be_writable(field_item.ident()))
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect()
 }
 
 fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> TokenStream {
@@ -148,9 +161,9 @@ fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> T
     let values = register_item.fields().values().map(|field_item| {
         let field = field_item.field();
         let ident = unique_field_ident(register_item.peripheral(), register_item.register(), field);
-        let shift = shift(field.offset);
+        let shift = fragments::shift(field.offset);
 
-        quote! { #ident #shift }
+        quote! { #ident as u32 #shift }
     });
 
     quote! {

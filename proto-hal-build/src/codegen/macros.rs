@@ -9,7 +9,7 @@ use quote::quote;
 use syn::Ident;
 
 pub use gates::{
-    //     modify_untracked::modify_untracked,
+    modify_untracked::modify_untracked,
     //     read::read,
     read_untracked::read_untracked,
     //     write::{write, write_in_place},
@@ -19,7 +19,7 @@ pub use scaffolding::scaffolding;
 
 pub fn reexports(args: TokenStream) -> TokenStream {
     let idents_raw = vec![
-        // "modify_untracked",
+        "modify_untracked",
         // "read",
         "read_untracked",
         // "write",
