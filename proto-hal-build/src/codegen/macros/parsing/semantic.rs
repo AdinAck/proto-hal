@@ -47,7 +47,7 @@ where
     _p: PhantomData<PeripheralPolicy>,
 }
 
-impl<'cx, 'model, PeripheralPolicy, EntryPolicy> Gate<'cx, PeripheralPolicy, EntryPolicy>
+impl<'cx, PeripheralPolicy, EntryPolicy> Gate<'cx, PeripheralPolicy, EntryPolicy>
 where
     PeripheralPolicy: Filter,
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
@@ -122,7 +122,7 @@ where
     }
 }
 
-impl<'cx, 'model, EntryPolicy> Gate<'cx, PermitPeripherals, EntryPolicy>
+impl<'cx, EntryPolicy> Gate<'cx, PermitPeripherals, EntryPolicy>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {

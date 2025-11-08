@@ -47,15 +47,18 @@ where
                     Err(Diagnostic::unexpected_peripheral(&peripheral.module_name()))?
                 }
 
-                if let Some(..) = peripheral_map.insert(
-                    PeripheralKey::from_model(peripheral),
-                    PeripheralItem {
-                        path: path.clone(),
-                        ident: peripheral_ident,
-                        peripheral,
-                        binding: entry.binding.as_ref(),
-                    },
-                ) {
+                if peripheral_map
+                    .insert(
+                        PeripheralKey::from_model(peripheral),
+                        PeripheralItem {
+                            path: path.clone(),
+                            ident: peripheral_ident,
+                            peripheral,
+                            binding: entry.binding.as_ref(),
+                        },
+                    )
+                    .is_some()
+                {
                     Err(Diagnostic::item_already_specified(path))?
                 }
             }
@@ -227,7 +230,7 @@ where
     match &tree.node {
         Node::Branch(..) => Err(Diagnostic::path_cannot_contine(&tree.path, field_ident))?,
         Node::Leaf(entry) => {
-            if let Some(..) = register_map
+            if register_map
                 .entry(RegisterKey::from_model(peripheral, register))
                 .or_insert(RegisterItem {
                     peripheral_path,
@@ -248,6 +251,7 @@ where
                         ))?,
                     },
                 )
+                .is_some()
             {
                 Err(Diagnostic::item_already_specified(field_ident))?
             }

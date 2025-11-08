@@ -38,7 +38,7 @@ pub fn render_diagnostics(diagnostics: Diagnostics) -> TokenStream {
     }
 }
 
-pub fn suggestions<'cx>(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<TokenStream> {
+pub fn suggestions(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<TokenStream> {
     fn tree_to_import(tree: &syntax::Tree) -> TokenStream {
         let path = &tree.path;
         match &tree.node {

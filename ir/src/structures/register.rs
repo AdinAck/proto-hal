@@ -80,7 +80,7 @@ impl Register {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.module_name().to_string());
 
-        if self.offset % 4 != 0 {
+        if !self.offset.is_multiple_of(4) {
             diagnostics.insert(
                 Diagnostic::error(format!(
                     "register offset must be word aligned. (offset {} does not satisfy: offset % 4 == 0)",

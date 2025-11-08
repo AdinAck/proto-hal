@@ -44,6 +44,12 @@ pub unsafe trait State<Parent>: Conjure {
 /// The interpretation of the bits in a register is not always fixed. In other words, the
 /// *fields* of a register can change. Some fields within the same register may be
 /// superpositioned if the fields themselves are entitled to complementary states.
+///
+/// # Safety
+/// Implementing this trait is a contract that the implementor is a resource in which said resource
+/// implementing this trait conforms to the device model.
+/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
+/// undefined behavior.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has entitlements, but `{Locus}` is not one of them",
     label = "must be an entitlement of `{Self}`",

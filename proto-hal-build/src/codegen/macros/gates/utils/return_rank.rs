@@ -6,6 +6,14 @@ use crate::codegen::macros::parsing::semantic::{
     policies::{Filter, Refine},
 };
 
+type RegisterMap<'cx, EntryPolicy> = IndexMap<
+    &'cx RegisterKey,
+    (
+        &'cx RegisterItem<'cx, EntryPolicy>,
+        IndexMap<&'cx FieldKey, &'cx FieldItem<'cx, EntryPolicy>>,
+    ),
+>;
+
 /// The rank of the structure to be returned from the gate.
 pub enum ReturnRank<'cx, EntryPolicy>
 where
@@ -29,18 +37,7 @@ where
         fields: IndexMap<&'cx FieldKey, &'cx FieldItem<'cx, EntryPolicy>>,
     },
     /// Any number of peripherals are present.
-    Peripheral(
-        IndexMap<
-            Ident,
-            IndexMap<
-                &'cx RegisterKey,
-                (
-                    &'cx RegisterItem<'cx, EntryPolicy>,
-                    IndexMap<&'cx FieldKey, &'cx FieldItem<'cx, EntryPolicy>>,
-                ),
-            >,
-        >,
-    ),
+    Peripheral(IndexMap<Ident, RegisterMap<'cx, EntryPolicy>>),
 }
 
 impl<'cx, EntryPolicy> ReturnRank<'cx, EntryPolicy>

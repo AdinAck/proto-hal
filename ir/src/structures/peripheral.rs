@@ -75,7 +75,7 @@ impl Peripheral {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone().to_string());
 
-        if self.base_addr % 4 != 0 {
+        if !self.base_addr.is_multiple_of(4) {
             diagnostics.insert(
                 Diagnostic::error("peripheral address must be word aligned.")
                     .with_context(new_context.clone()),
