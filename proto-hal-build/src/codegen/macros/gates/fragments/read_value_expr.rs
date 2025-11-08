@@ -25,8 +25,11 @@ pub fn read_value_expr(
         Some(quote! { >> #offset })
     };
 
-    let value = quote! {
-        (#reg #shift) & #mask
+    // if the field touches the end of the register, a mask is not needed
+    let value = if field.offset + field.width == 32 {
+        quote! { #reg #shift }
+    } else {
+        quote! { (#reg #shift) & #mask }
     };
 
     Some(match field.access.get_read()?.numericity {

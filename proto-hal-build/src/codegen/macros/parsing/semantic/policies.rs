@@ -132,3 +132,14 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
         }
     }
 }
+
+impl<'cx> RequireBinding<'cx> {
+    /// View the binding component of the entry.
+    pub fn binding(&self) -> &Binding {
+        match self {
+            RequireBinding::View(binding) => binding,
+            RequireBinding::Dynamic(binding, ..) => binding,
+            RequireBinding::Static(binding, ..) => binding,
+        }
+    }
+}

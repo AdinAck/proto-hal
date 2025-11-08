@@ -44,8 +44,8 @@ mod tests {
                 assert!({
                     let (func, scale) = unsafe {
                         read_untracked! {
-                            cordic::csr { func, scale }
-                            @base_addr cordic addr_of_cordic()
+                            cordic::csr { func, scale },
+                            @base_addr(cordic, addr_of_cordic())
                         }
                     };
 
@@ -54,16 +54,16 @@ mod tests {
 
                 unsafe {
                     write_from_reset_untracked! {
-                        cordic::csr
-                        @base_addr cordic addr_of_cordic()
+                        cordic::csr,
+                        @base_addr(cordic, addr_of_cordic())
                     }
                 };
 
                 assert!({
                     let (func, scale, precision) = unsafe {
                         read_untracked! {
-                            cordic::csr { func, scale, precision }
-                            @base_addr cordic addr_of_cordic()
+                            cordic::csr { func, scale, precision },
+                            @base_addr(cordic, addr_of_cordic())
                         }
                     };
 
@@ -127,15 +127,15 @@ mod tests {
                     cordic.rdata.res1.unmask(res1_nres_ent, res1_ressize_ent),
                 );
 
-                let (r0, r1) = read! {
+                let rdata = read! {
                     cordic::rdata {
-                        res0: &res0,
-                        res1: &res1,
+                        res0(&res0),
+                        res1(&res1),
                     }
                 };
 
-                assert_eq!(r0, 0xbeef);
-                assert_eq!(r1, 0xdead);
+                assert_eq!(rdata.res0, 0xbeef);
+                assert_eq!(rdata.res1, 0xdead);
             });
         }
     }
