@@ -41,13 +41,13 @@ pub fn read_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
             }
             Override::CriticalSection(expr) => diagnostics.push(
                 syn::Error::new_spanned(
-                    &expr,
+                    expr,
                     "stand-alone read access is atomic and doesn't require a critical section",
                 )
                 .into(),
             ),
             Override::Unknown(ident) => diagnostics.push(
-                syn::Error::new_spanned(&ident, format!("unexpected override \"{}\"", ident))
+                syn::Error::new_spanned(ident, format!("unexpected override \"{}\"", ident))
                     .into(),
             ),
         };

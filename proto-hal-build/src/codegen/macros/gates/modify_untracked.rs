@@ -47,7 +47,7 @@ pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
                 cs.replace(quote! { #expr; });
             }
             Override::Unknown(ident) => diagnostics.push(
-                syn::Error::new_spanned(&ident, format!("unexpected override \"{}\"", ident))
+                syn::Error::new_spanned(ident, format!("unexpected override \"{}\"", ident))
                     .into(),
             ),
         };

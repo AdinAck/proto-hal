@@ -48,7 +48,7 @@ where
                 }
 
                 if let Some(..) = peripheral_map.insert(
-                    PeripheralKey::from_model(&peripheral),
+                    PeripheralKey::from_model(peripheral),
                     PeripheralItem {
                         path: path.clone(),
                         ident: peripheral_ident,
@@ -228,7 +228,7 @@ where
         Node::Branch(..) => Err(Diagnostic::path_cannot_contine(&tree.path, field_ident))?,
         Node::Leaf(entry) => {
             if let Some(..) = register_map
-                .entry(RegisterKey::from_model(&peripheral, &register))
+                .entry(RegisterKey::from_model(peripheral, register))
                 .or_insert(RegisterItem {
                     peripheral_path,
                     ident: register_ident,
@@ -257,11 +257,11 @@ where
     Ok(())
 }
 
-fn fuzzy_find_peripheral<'input, 'model>(
-    path: &mut impl Iterator<Item = &'input Ident>,
+fn fuzzy_find_peripheral<'cx>(
+    path: &mut impl Iterator<Item = &'cx Ident>,
     span: Span,
-    model: &'model Hal,
-) -> Result<(&'model Peripheral, Path, &'input Ident), Diagnostic> {
+    model: &'cx Hal,
+) -> Result<(&'cx Peripheral, Path, &'cx Ident), Diagnostic> {
     let mut peripheral_path = Punctuated::<_, PathSep>::new();
 
     for ident in path {
@@ -274,20 +274,17 @@ fn fuzzy_find_peripheral<'input, 'model>(
     Err(Diagnostic::expected_peripheral_path(&span))
 }
 
-fn find_register<'input, 'model>(
-    ident: &'input Ident,
-    peripheral: &'model Peripheral,
-) -> Result<&'model Register, Diagnostic> {
+fn find_register<'cx>(
+    ident: &Ident,
+    peripheral: &'cx Peripheral,
+) -> Result<&'cx Register, Diagnostic> {
     peripheral
         .registers
         .get(ident)
         .ok_or(Diagnostic::register_not_found(ident, peripheral))
 }
 
-fn find_field<'input, 'model>(
-    ident: &'input Ident,
-    register: &'model Register,
-) -> Result<&'model Field, Diagnostic> {
+fn find_field<'cx>(ident: &Ident, register: &'cx Register) -> Result<&'cx Field, Diagnostic> {
     register
         .fields
         .get(ident)

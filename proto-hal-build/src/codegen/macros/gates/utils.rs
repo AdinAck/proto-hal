@@ -43,7 +43,7 @@ pub fn suggestions<'cx>(args: &syntax::Gate, diagnostics: &Diagnostics) -> Optio
         let path = &tree.path;
         match &tree.node {
             syntax::Node::Branch(children) => {
-                let paths = children.iter().map(|child| tree_to_import(child));
+                let paths = children.iter().map(tree_to_import);
 
                 quote! {
                     #path::{#(#paths),*}

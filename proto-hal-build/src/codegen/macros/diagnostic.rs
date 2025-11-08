@@ -70,7 +70,7 @@ impl Diagnostic {
     pub fn item_already_specified(item: &impl Spanned) -> Self {
         Self::new(
             Kind::ItemAlreadySpecified,
-            format!("this item has already been specified"),
+            "this item has already been specified",
             item,
         )
     }
