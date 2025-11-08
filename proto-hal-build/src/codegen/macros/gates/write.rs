@@ -772,7 +772,7 @@ fn make_argument<'input, 'model>(
         (StateArgs::Expr(expr), Numericity::Enumerated { .. }) => {
             quote! {{
                 #[allow(unused_imports)]
-                use #path::#field_ident::write::Variant::*;
+                use #path::#field_ident::WriteVariant::*;
                 #expr as u32
             }}
         }

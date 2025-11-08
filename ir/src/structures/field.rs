@@ -426,7 +426,7 @@ impl Field {
     }
 
     fn generate_repr(access: &Access) -> Option<TokenStream> {
-        let variant_enum = |variants: &IndexMap<Ident, Variant>| {
+        let variant_enum = |variants: &IndexMap<Ident, Variant>, ident| {
             let variant_idents = variants
                 .values()
                 .map(|variant| variant.type_name())
@@ -443,13 +443,13 @@ impl Field {
             quote! {
                 #[derive(Clone, Copy)]
                 #[repr(u32)]
-                pub enum Variant {
+                pub enum #ident {
                     #(
                         #variant_idents = #variant_bits,
                     )*
                 }
 
-                impl Variant {
+                impl #ident {
                     /// # Safety
                     /// If the source bits do not correspond to any variants of this field,
                     /// the behavior of any code dependent on the value of this field state
@@ -475,12 +475,12 @@ impl Field {
         match access {
             Access::Read(read) => {
                 if let Numericity::Enumerated { variants } = &read.numericity {
-                    let variant_enum = variant_enum(variants);
+                    let variant_enum = variant_enum(variants, format_ident!("ReadVariant"));
 
                     Some(quote! {
-                        pub mod read {
-                            #variant_enum
-                        }
+                        pub use ReadVariant as Variant;
+
+                        #variant_enum
                     })
                 } else {
                     None
@@ -488,12 +488,12 @@ impl Field {
             }
             Access::Write(write) => {
                 if let Numericity::Enumerated { variants } = &write.numericity {
-                    let variant_enum = variant_enum(variants);
+                    let variant_enum = variant_enum(variants, format_ident!("WriteVariant"));
 
                     Some(quote! {
-                        pub mod write {
-                            #variant_enum
-                        }
+                        pub use WriteVariant as Variant;
+
+                        #variant_enum
                     })
                 } else {
                     None
@@ -502,18 +502,13 @@ impl Field {
             Access::ReadWrite(read_write) => match read_write {
                 ReadWrite::Symmetrical(access) => {
                     if let Numericity::Enumerated { variants } = &access.numericity {
-                        let variant_enum = variant_enum(variants);
+                        let variant_enum = variant_enum(variants, format_ident!("Variant"));
 
                         Some(quote! {
+                            pub use Variant as ReadVariant;
+                            pub use Variant as WriteVariant;
+
                             #variant_enum
-
-                            pub mod read {
-                                pub use super::Variant;
-                            }
-
-                            pub mod write {
-                                pub use super::Variant;
-                            }
                         })
                     } else {
                         None
@@ -521,18 +516,13 @@ impl Field {
                 }
                 ReadWrite::Asymmetrical { read, write } if read.numericity == write.numericity => {
                     if let Numericity::Enumerated { variants } = &read.numericity {
-                        let variant_enum = variant_enum(variants);
+                        let variant_enum = variant_enum(variants, format_ident!("Variant"));
 
                         Some(quote! {
+                            pub use Variant as ReadVariant;
+                            pub use Variant as WriteVariant;
+
                             #variant_enum
-
-                            pub mod read {
-                                pub use super::Variant;
-                            }
-
-                            pub mod write {
-                                pub use super::Variant;
-                            }
                         })
                     } else {
                         None
@@ -540,26 +530,21 @@ impl Field {
                 }
                 ReadWrite::Asymmetrical { read, write } => {
                     let read_enum = if let Numericity::Enumerated { variants } = &read.numericity {
-                        Some(variant_enum(variants))
+                        Some(variant_enum(variants, format_ident!("ReadVariant")))
                     } else {
                         None
                     };
 
                     let write_enum = if let Numericity::Enumerated { variants } = &write.numericity
                     {
-                        Some(variant_enum(variants))
+                        Some(variant_enum(variants, format_ident!("WriteVariant")))
                     } else {
                         None
                     };
 
                     Some(quote! {
-                        pub mod read {
-                            #read_enum
-                        }
-
-                        pub mod write {
-                            #write_enum
-                        }
+                        #read_enum
+                        #write_enum
                     })
                 }
             },

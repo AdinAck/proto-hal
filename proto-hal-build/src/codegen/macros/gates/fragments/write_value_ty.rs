@@ -11,7 +11,7 @@ pub fn write_value_ty(
     match write_numericity {
         Numericity::Numeric => quote! { u32 },
         Numericity::Enumerated { .. } => quote! {
-            #register_path::#field_ident::write::Variant
+            #register_path::#field_ident::WriteVariant
         },
     }
 }

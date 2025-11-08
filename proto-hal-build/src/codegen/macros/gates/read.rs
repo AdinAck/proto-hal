@@ -182,7 +182,7 @@ fn returns(path: &Path, ident: &Ident, field: &Field) -> Option<TokenStream> {
     Some(match field.access.get_read()?.numericity {
         Numericity::Numeric => quote! { u32 },
         Numericity::Enumerated { .. } => quote! {
-            #path::#ident::read::Variant
+            #path::#ident::ReadVariant
         },
     })
 }
@@ -209,7 +209,7 @@ fn read_values<'input, 'model>(
     Some(match field.access.get_read()?.numericity {
         Numericity::Numeric => value,
         Numericity::Enumerated { .. } => quote! {
-            unsafe { #path::#ident::read::Variant::from_bits(#value) }
+            unsafe { #path::#ident::ReadVariant::from_bits(#value) }
         },
     })
 }

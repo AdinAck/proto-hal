@@ -26,7 +26,7 @@ pub fn parameter_write_value(
     {
         quote! {{
             #[allow(unused_imports)]
-            use #register_path::#field_ident::write::Variant::{self, *};
+            use #register_path::#field_ident::WriteVariant::{self as Variant, *};
             #block
         }}
     } else {

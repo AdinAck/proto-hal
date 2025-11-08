@@ -122,9 +122,9 @@ mod tests {
     }
 
     // mod entitlements {
-    //     use macros::{read_untracked, write_in_place};
+    //     use macros::{read_untracked, write, write_in_place};
 
-    //     use crate::{foo, tests::addr_of_foo, write};
+    //     use crate::{foo, tests::addr_of_foo};
 
     //     #[test]
     //     fn access() {

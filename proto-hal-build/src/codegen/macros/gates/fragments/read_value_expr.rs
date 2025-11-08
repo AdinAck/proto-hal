@@ -32,7 +32,7 @@ pub fn read_value_expr(
     Some(match field.access.get_read()?.numericity {
         Numericity::Numeric => value,
         Numericity::Enumerated { .. } => quote! {
-            unsafe { #register_path::#field_ident::read::Variant::from_bits(#value) }
+            unsafe { #register_path::#field_ident::ReadVariant::from_bits(#value) }
         },
     })
 }

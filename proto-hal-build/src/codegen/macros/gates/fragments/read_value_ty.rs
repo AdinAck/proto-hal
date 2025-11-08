@@ -12,7 +12,7 @@ pub fn read_value_ty(
     match read_numericity {
         Numericity::Numeric => quote! { u32 },
         Numericity::Enumerated { .. } => quote! {
-            #register_path::#field_ident::read::Variant
+            #register_path::#field_ident::ReadVariant
         },
     }
 }
