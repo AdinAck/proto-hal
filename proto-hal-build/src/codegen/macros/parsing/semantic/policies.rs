@@ -121,15 +121,15 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
     type Input = FieldEntryRefinementInput<'cx>;
 
     fn refine((ident, entry): Self::Input) -> Result<Self, Diagnostics> {
-        match entry {
-            Entry::Empty => Err(vec![Diagnostic::expected_binding(ident)]),
-            Entry::View(binding) => Ok(Self::View(binding)),
+        Ok(match entry {
+            Entry::Empty => Err(Diagnostic::expected_binding(ident))?,
+            Entry::View(binding) => Self::View(binding),
             Entry::BoundDynamicTransition(binding, transition) => {
-                Ok(Self::Dynamic(binding, transition))
+                Self::Dynamic(binding, transition)
             }
-            Entry::StaticTransition(binding, transition) => Ok(Self::Static(binding, transition)),
-            Entry::UnboundDynamicTransition(..) => Err(vec![Diagnostic::expected_binding(ident)]),
-        }
+            Entry::StaticTransition(binding, transition) => Self::Static(binding, transition),
+            Entry::UnboundDynamicTransition(..) => Err(Diagnostic::expected_binding(ident))?,
+        })
     }
 }
 
@@ -141,5 +141,25 @@ impl<'cx> RequireBinding<'cx> {
             RequireBinding::Dynamic(binding, ..) => binding,
             RequireBinding::Static(binding, ..) => binding,
         }
+    }
+}
+
+/// The entry solely consists of a binding.
+#[derive(Deref)]
+pub struct BindingOnly<'cx>(&'cx Binding);
+
+impl<'cx> Refine<'cx> for BindingOnly<'cx> {
+    type Input = FieldEntryRefinementInput<'cx>;
+
+    fn refine((ident, entry): Self::Input) -> Result<Self, Diagnostics> {
+        Ok(Self(match entry {
+            Entry::Empty => Err(Diagnostic::expected_binding(ident))?,
+            Entry::View(binding) => binding,
+            Entry::BoundDynamicTransition(.., transition)
+            | Entry::UnboundDynamicTransition(transition)
+            | Entry::StaticTransition(.., transition) => {
+                Err(Diagnostic::unexpected_transition(&transition))?
+            }
+        }))
     }
 }

@@ -361,13 +361,13 @@ use crate::codegen::macros::{
     parsing::{
         semantic::{
             self, FieldItem, RegisterItem,
-            policies::{ForbidPeripherals, RequireBinding},
+            policies::{BindingOnly, ForbidPeripherals},
         },
         syntax::Override,
     },
 };
 
-type EntryPolicy<'cx> = RequireBinding<'cx>;
+type EntryPolicy<'cx> = BindingOnly<'cx>;
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, EntryPolicy<'cx>>;
 
 pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
@@ -425,7 +425,7 @@ pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
 
         for field_item in register_item.fields().values() {
             parameters.push(make_parameter(register_item, field_item));
-            bindings.push(field_item.entry().binding().deref());
+            bindings.push(field_item.entry().deref().deref().deref());
         }
     }
 
