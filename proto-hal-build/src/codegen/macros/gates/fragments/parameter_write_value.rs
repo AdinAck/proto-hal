@@ -25,7 +25,6 @@ pub fn parameter_write_value(
         field.access.get_read().map(|read| &read.numericity)
     {
         quote! {{
-            #[allow(unused_imports)]
             use #register_path::#field_ident::WriteVariant::{self as Variant, *};
             #block
         }}

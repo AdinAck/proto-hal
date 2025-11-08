@@ -13,7 +13,11 @@ pub fn register_address(
 ) -> TokenStream {
     if let Some(expr) = overridden_base_addrs.get(&peripheral.module_name()) {
         let offset = register.offset as usize;
-        quote! { (#expr + #offset) }
+        if offset == 0 {
+            quote! { #expr }
+        } else {
+            quote! { (#expr + #offset) }
+        }
     } else {
         (peripheral.base_addr + register.offset).to_token_stream()
     }
