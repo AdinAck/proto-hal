@@ -5,7 +5,7 @@ use syn::{Ident, Path, spanned::Spanned as _};
 
 use crate::codegen::macros::parsing::semantic;
 
-pub fn parameter_write_value(
+pub fn write_argument_value(
     register_path: &Path,
     field_ident: &Ident,
     field: &Field,
@@ -22,7 +22,7 @@ pub fn parameter_write_value(
     };
 
     if let Some(Numericity::Enumerated { .. }) =
-        field.access.get_read().map(|read| &read.numericity)
+        field.access.get_write().map(|write| &write.numericity)
     {
         quote! {{
             use #register_path::#field_ident::WriteVariant::{self as Variant, *};

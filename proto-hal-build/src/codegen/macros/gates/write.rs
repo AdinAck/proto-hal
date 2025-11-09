@@ -1082,7 +1082,7 @@ use crate::codegen::macros::{
     diagnostic::Diagnostics,
     gates::{
         fragments,
-        utils::{mask, render_diagnostics, suggestions, unique_field_ident},
+        utils::{render_diagnostics, suggestions, unique_field_ident},
     },
     parsing::{
         semantic::{
@@ -1092,11 +1092,6 @@ use crate::codegen::macros::{
         syntax::Override,
     },
 };
-
-enum Scheme {
-    FromZero,
-    FromReset,
-}
 
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, RequireBinding<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
@@ -1140,16 +1135,28 @@ fn write_inner(model: &Hal, tokens: TokenStream, in_place: bool) -> TokenStream 
     let suggestions = suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
+    let mut generics = Vec::new();
     let mut parameter_idents = Vec::new();
     let mut parameter_tys = Vec::new();
+    let mut return_tys = Vec::new();
+    let mut constraints = Vec::new();
     let mut addrs = Vec::new();
-    let mut parameter_write_values = Vec::new();
     let mut reg_write_values = Vec::new();
+    let mut arguments = Vec::new();
+    let mut conjures = Vec::new();
+    let mut rebinds = Vec::new();
 
     for register_item in input.visit_registers() {
         let register_path = register_item.path();
 
-        reg_write_values.push(reg_write_value(&scheme, register_item));
+        if register_item.fields().values().any(|field_item| {
+            matches!(
+                field_item.entry(),
+                RequireBinding::Dynamic(..) | RequireBinding::Static(..)
+            )
+        }) {
+            reg_write_values.push(reg_write_value(register_item));
+        }
 
         addrs.push(fragments::register_address(
             register_item.peripheral(),
@@ -1158,35 +1165,109 @@ fn write_inner(model: &Hal, tokens: TokenStream, in_place: bool) -> TokenStream 
         ));
 
         for field_item in register_item.fields().values() {
-            if let Some(write) = field_item.field().access.get_write() {
-                parameter_idents.push(unique_field_ident(
-                    register_item.peripheral(),
-                    register_item.register(),
-                    field_item.field(),
-                ));
-
-                parameter_tys.push(fragments::write_value_ty(
-                    &register_path,
-                    field_item.ident(),
-                    &write.numericity,
-                ));
-
-                parameter_write_values.push(fragments::parameter_write_value(
-                    &register_path,
-                    field_item.ident(),
-                    field_item.field(),
-                    field_item.entry(),
-                ));
+            let binding = field_item.entry().binding();
+            if binding.is_moved() {
+                rebinds.push(binding.as_ref());
             }
+
+            let (input_generic, output_generic) = fragments::generics(register_item, field_item);
+
+            let input_ty = fragments::input_ty(
+                &register_path,
+                field_item.ident(),
+                field_item.field(),
+                input_generic.as_ref(),
+            );
+
+            let return_ty = fragments::transition_return_ty(
+                &register_path,
+                field_item.entry(),
+                field_item.field(),
+                field_item.ident(),
+                output_generic.as_ref(),
+            );
+
+            if let Some(local_constraints) = fragments::constraints(
+                &input,
+                &register_path,
+                binding,
+                field_item.ident(),
+                field_item.field(),
+                input_generic.as_ref(),
+                output_generic.as_ref(),
+                &input_ty,
+                return_ty.as_ref(),
+            ) {
+                constraints.push(local_constraints);
+            }
+
+            if let Some(return_ty) = return_ty {
+                return_tys.push(return_ty);
+                conjures.push(fragments::conjure());
+            }
+
+            if let Some(generic) = input_generic {
+                generics.push(generic);
+            }
+
+            if let Some(generic) = output_generic {
+                generics.push(generic);
+            }
+
+            parameter_idents.push(unique_field_ident(
+                register_item.peripheral(),
+                register_item.register(),
+                field_item.field(),
+            ));
+
+            let value_ty = field_item.field().access.get_write().map(|write| {
+                fragments::write_value_ty(&register_path, field_item.ident(), &write.numericity)
+            });
+
+            parameter_tys.push(fragments::write_parameter_ty(
+                binding,
+                &input_ty,
+                value_ty.as_ref(),
+            ));
+
+            arguments.push(fragments::write_argument(
+                &register_path,
+                field_item.ident(),
+                field_item.field(),
+                field_item.entry(),
+            ));
         }
     }
 
-    quote! {
-        #suggestions
-        #errors
+    let generics = (!generics.is_empty()).then_some(quote! {
+        <#(#generics,)*>
+    });
 
-        {
-            unsafe fn gate(#(#parameter_idents: #parameter_tys),*) {
+    let conjures = (!return_tys.is_empty()).then_some(quote! {
+        unsafe {(
+            #(
+                #conjures
+            ),*
+        )}
+    });
+
+    let return_tys = (!return_tys.is_empty()).then_some(quote! {
+        -> (#(#return_tys),*)
+    });
+
+    let constraints = (!constraints.is_empty()).then_some(quote! {
+        where #(#constraints)*
+    });
+
+    let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });
+    let semicolon = in_place.then_some(quote! { ; });
+
+    quote! {
+        #rebinds {
+            #suggestions
+            #errors
+
+            fn gate #generics (#(#parameter_idents: #parameter_tys,)*) #return_tys #constraints {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
@@ -1195,10 +1276,12 @@ fn write_inner(model: &Hal, tokens: TokenStream, in_place: bool) -> TokenStream 
                         )
                     };
                 )*
+
+                #conjures
             }
 
-            gate(#(#parameter_write_values),*)
-        }
+            gate(#(#arguments,)*)
+        } #semicolon
     }
 }
 
@@ -1219,25 +1302,80 @@ fn validate<'cx>(_input: &Input<'cx>) -> Diagnostics {
     //     .collect()
 }
 
-fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> TokenStream {
-    let initial = match scheme {
-        Scheme::FromZero => 0,
-        Scheme::FromReset => {
-            let mask = mask(register_item.fields().values());
+fn reg_write_value<'cx>(register_item: &RegisterItem<'cx>) -> TokenStream {
+    // start with inert field values (or zero)
+    let initial = {
+        let inert = register_item
+            .register()
+            .fields
+            .values()
+            .filter_map(|field| Some((field, field.access.get_write()?.numericity.some_inert()?)))
+            .fold(0, |acc, (field, variant)| {
+                acc | (variant.bits << field.offset)
+            });
 
-            register_item.register().reset.unwrap_or(0) & !mask
-        }
+        // mask out values to be filled in by user
+        let mask = register_item.fields().values().fold(0, |acc, field_item| {
+            let field = field_item.field();
+
+            acc | ((u32::MAX >> (32 - field.width)) << field.offset)
+        });
+
+        // fill in statically known values from fields being statically transitioned
+        let statics = register_item
+            .fields()
+            .values()
+            .flat_map(|field_item| {
+                let bits = match field_item.entry() {
+                    RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,
+                    RequireBinding::Static(.., transition) => match transition {
+                        semantic::Transition::Variant(.., variant) => variant.bits,
+                        semantic::Transition::Expr(..) => None?,
+                        semantic::Transition::Lit(lit_int) => lit_int
+                            .base10_parse::<u32>()
+                            .expect("lit int should be valid"),
+                    },
+                };
+
+                Some(bits << field_item.field().offset)
+            })
+            .reduce(|acc, value| acc | value)
+            .unwrap_or(0);
+
+        (inert & !mask) | statics
     };
 
-    let values = register_item.fields().values().map(|field_item| {
-        let field = field_item.field();
-        let ident = unique_field_ident(register_item.peripheral(), register_item.register(), field);
-        let shift = fragments::shift(field.offset);
+    let values = register_item
+        .fields()
+        .values()
+        .filter_map(|field_item| {
+            let field = field_item.field();
+            let shift = fragments::shift(field.offset);
 
-        quote! { #ident as u32 #shift }
-    });
+            let (input_generic, output_generic) = fragments::generics(register_item, field_item);
 
-    quote! {
-        #initial #(| (#values) )*
+            Some(match (field_item.entry(), input_generic, output_generic) {
+                (RequireBinding::Dynamic(..), ..) => {
+                    let ident = unique_field_ident(
+                        register_item.peripheral(),
+                        register_item.register(),
+                        &field,
+                    );
+
+                    quote! { (#ident.1 #shift) as u32 }
+                }
+                (RequireBinding::View(..), Some(generic), ..)
+                | (RequireBinding::Static(..), .., Some(generic)) => {
+                    quote! { #generic::VALUE #shift }
+                }
+                (..) => None?,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    match (initial == 0, values.is_empty()) {
+        (false, false) => quote! { #initial #(| #values)* },
+        (true, false) => quote! { #(#values)|* },
+        (.., true) => quote! { #initial },
     }
 }

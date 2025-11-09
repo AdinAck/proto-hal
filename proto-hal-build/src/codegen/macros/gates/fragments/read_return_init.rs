@@ -5,13 +5,15 @@ use syn::Ident;
 
 use crate::codegen::macros::{
     gates::{
-        fragments::{read_value_expr, register_return_init},
+        fragments::{read_value_expr, register_read_return_init},
         utils::return_rank::ReturnRank,
     },
     parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
 };
 
-pub fn return_init<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
+pub fn read_return_init<'cx, EntryPolicy>(
+    rank: &ReturnRank<'cx, EntryPolicy>,
+) -> Option<TokenStream>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
@@ -32,7 +34,7 @@ where
             register_item,
             fields,
             ..
-        } => Some(register_return_init(
+        } => Some(register_read_return_init(
             register_item.register().type_name(),
             register_item,
             fields,
@@ -52,7 +54,7 @@ where
                         .map(|(register_item, fields)| {
                             (
                                 register_item.register().module_name(),
-                                register_return_init(
+                                register_read_return_init(
                                     format_ident!(
                                         "{}{}",
                                         register_item.peripheral().type_name(),

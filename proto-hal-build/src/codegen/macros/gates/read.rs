@@ -342,7 +342,7 @@
 //     }
 // }
 
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use ir::structures::hal::Hal;
 use proc_macro2::TokenStream;
@@ -403,9 +403,9 @@ pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input(&input, |_| true);
-    let return_def = fragments::return_def(&return_rank);
-    let return_ty = fragments::return_ty(&return_rank);
-    let return_init = fragments::return_init(&return_rank);
+    let return_def = fragments::read_return_def(&return_rank);
+    let return_ty = fragments::read_return_ty(&return_rank);
+    let return_init = fragments::read_return_init(&return_rank);
 
     let mut reg_idents = Vec::new();
     let mut addrs = Vec::new();
@@ -425,7 +425,7 @@ pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
 
         for field_item in register_item.fields().values() {
             parameters.push(make_parameter(register_item, field_item));
-            bindings.push(field_item.entry().deref().deref().deref());
+            bindings.push(field_item.entry().as_ref());
         }
     }
 

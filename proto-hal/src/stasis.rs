@@ -52,7 +52,7 @@ pub unsafe trait State<Parent>: Conjure {
 /// undefined behavior.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has entitlements, but `{Locus}` is not one of them",
-    label = "must be an entitlement of `{Self}`",
+    label = "not entitled to `{Locus}`",
     // note = "learn more: <docs link>"
 )]
 pub unsafe trait Entitled<Locus> {}

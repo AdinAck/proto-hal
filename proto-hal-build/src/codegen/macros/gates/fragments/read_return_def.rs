@@ -4,13 +4,13 @@ use quote::format_ident;
 use quote::quote;
 use syn::Ident;
 
-use crate::codegen::macros::gates::fragments::register_return_def;
+use crate::codegen::macros::gates::fragments::register_read_return_def;
 use crate::codegen::macros::{
     gates::utils::return_rank::ReturnRank,
     parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
 };
 
-pub fn return_def<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
+pub fn read_return_def<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
@@ -20,7 +20,7 @@ where
             register_item,
             fields,
             ..
-        } => Some(register_return_def(
+        } => Some(register_read_return_def(
             register_item.register().type_name(),
             register_item,
             fields,
@@ -50,7 +50,7 @@ where
 
                             (
                                 ident.clone(),
-                                register_return_def(ident, register_item, fields),
+                                register_read_return_def(ident, register_item, fields),
                             )
                         })
                         .collect::<(Vec<_>, Vec<_>)>();

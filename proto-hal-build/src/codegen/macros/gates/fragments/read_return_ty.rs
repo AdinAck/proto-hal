@@ -8,7 +8,7 @@ use crate::codegen::macros::{
     parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
 };
 
-pub fn return_ty<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
+pub fn read_return_ty<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {

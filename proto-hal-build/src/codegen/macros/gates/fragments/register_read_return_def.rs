@@ -10,7 +10,7 @@ use crate::codegen::macros::{
     },
 };
 
-pub fn register_return_def<'cx, EntryPolicy>(
+pub fn register_read_return_def<'cx, EntryPolicy>(
     register_ident: Ident,
     register_item: &RegisterItem<'cx, EntryPolicy>,
     fields: &IndexMap<&FieldKey, &FieldItem<'cx, EntryPolicy>>,

@@ -60,8 +60,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                 .into(),
             ),
             Override::Unknown(ident) => diagnostics.push(
-                syn::Error::new_spanned(ident, format!("unexpected override \"{}\"", ident))
-                    .into(),
+                syn::Error::new_spanned(ident, format!("unexpected override \"{}\"", ident)).into(),
             ),
         };
     }
@@ -100,7 +99,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                     &write.numericity,
                 ));
 
-                parameter_write_values.push(fragments::parameter_write_value(
+                parameter_write_values.push(fragments::write_argument_value(
                     &register_path,
                     field_item.ident(),
                     field_item.field(),
