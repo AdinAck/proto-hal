@@ -1,4 +1,5 @@
 use colored::Colorize;
+use derive_more::Deref;
 use indexmap::IndexMap;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -6,27 +7,227 @@ use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::interrupts::{Interrupt, Interrupts},
+    structures::{
+        field::Field,
+        interrupts::{Interrupt, Interrupts},
+        register::Register,
+        variant::Variant,
+    },
 };
 
-use super::{entitlement::Entitlement, field::Numericity, peripheral::Peripheral};
+use super::peripheral::Peripheral;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
+pub struct PeripheralIndex(Ident);
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct RegisterIndex(usize);
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct FieldIndex(usize);
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct VariantIndex(usize);
+
+pub trait HasChildren {
+    type ChildIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident);
+}
+
+#[derive(Debug, Clone, Deref)]
+pub struct PeripheralNode {
+    #[deref]
+    peripheral: Peripheral,
+    registers: IndexMap<Ident, RegisterIndex>,
+}
+
+#[derive(Debug, Clone, Deref)]
+pub struct RegisterNode {
+    parent: PeripheralIndex,
+    #[deref]
+    register: Register,
+    fields: IndexMap<Ident, FieldIndex>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum Numericity {
+    #[default]
+    Numeric,
+    Enumerated {
+        variants: IndexMap<Ident, VariantIndex>,
+    },
+}
+
+#[derive(Debug, Clone, Deref)]
+pub struct FieldNode {
+    parent: RegisterIndex,
+    #[deref]
+    field: Field,
+    numericity: Numericity,
+}
+
+#[derive(Debug, Clone, Deref)]
+pub struct VariantNode {
+    parent: FieldIndex,
+    #[deref]
+    variant: Variant,
+}
+
+impl HasChildren for PeripheralNode {
+    type ChildIndex = RegisterIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        self.registers.insert(child_ident, index);
+    }
+}
+
+impl HasChildren for RegisterNode {
+    type ChildIndex = FieldIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        self.fields.insert(child_ident, index);
+    }
+}
+
+impl HasChildren for FieldNode {
+    type ChildIndex = VariantIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        match &mut self.numericity {
+            // the field was inferred as numeric before any variants were (now) added
+            numericity @ Numericity::Numeric => {
+                *numericity = Numericity::Enumerated {
+                    variants: IndexMap::from([(child_ident, index)]),
+                };
+            }
+            // the field is already inferred as enumerated
+            Numericity::Enumerated { variants } => {
+                variants.insert(child_ident, index);
+            }
+        };
+    }
+}
+
+pub struct Entitlement(VariantIndex);
+
+pub struct Entry<'cx, Index> {
+    model: &'cx mut Hal,
+    index: Index,
+}
+
+impl<'cx> Entry<'cx, PeripheralIndex> {
+    pub fn add_register(&'cx mut self, register: Register) -> Entry<'cx, RegisterIndex> {
+        let index = RegisterIndex(self.model.registers.len());
+
+        // update parent
+        self.model
+            .peripherals
+            .get_mut(&self.index)
+            .unwrap()
+            .add_child_index(index.clone(), register.module_name());
+
+        // insert child
+        self.model.registers.push(RegisterNode {
+            parent: self.index.clone(),
+            register,
+            fields: Default::default(),
+        });
+
+        Entry {
+            model: self.model,
+            index,
+        }
+    }
+}
+
+impl<'cx> Entry<'cx, RegisterIndex> {
+    pub fn add_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex> {
+        let index = FieldIndex(self.model.fields.len());
+
+        // update parent
+        self.model
+            .registers
+            .get_mut(*self.index)
+            .unwrap()
+            .add_child_index(index.clone(), field.module_name());
+
+        // insert child
+        self.model.fields.push(FieldNode {
+            parent: self.index.clone(),
+            field,
+            numericity: Default::default(),
+        });
+
+        Entry {
+            model: self.model,
+            index,
+        }
+    }
+}
+
+impl<'cx> Entry<'cx, FieldIndex> {
+    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex> {
+        let index = VariantIndex(self.model.variants.len());
+
+        // update parent
+        self.model
+            .fields
+            .get_mut(*self.index)
+            .unwrap()
+            .add_child_index(index.clone(), variant.module_name());
+
+        // insert child
+        self.model.variants.push(VariantNode {
+            parent: self.index.clone(),
+            variant,
+        });
+
+        Entry {
+            model: self.model,
+            index,
+        }
+    }
+}
+
+impl<'cx> Entry<'cx, VariantIndex> {
+    pub fn make_entitlement(&self) -> Entitlement {
+        Entitlement(self.index)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Hal {
-    pub peripherals: IndexMap<Ident, Peripheral>,
-    pub interrupts: Interrupts,
+    peripherals: IndexMap<PeripheralIndex, PeripheralNode>,
+    registers: Vec<RegisterNode>,
+    fields: Vec<FieldNode>,
+    variants: Vec<VariantNode>,
+    interrupts: Interrupts,
 }
 
 impl Hal {
-    pub fn new(peripherals: impl IntoIterator<Item = Peripheral>) -> Self {
+    pub fn new() -> Self {
         Self {
-            peripherals: IndexMap::from_iter(
-                peripherals
-                    .into_iter()
-                    .map(|peripheral| (peripheral.ident.clone(), peripheral)),
-            ),
+            peripherals: Default::default(),
+            registers: Default::default(),
+            fields: Default::default(),
+            variants: Default::default(),
             interrupts: Interrupts::empty(),
         }
+    }
+
+    pub fn add_peripheral(&mut self, peripheral: Peripheral) -> PeripheralIndex {
+        let index = PeripheralIndex(peripheral.module_name());
+
+        self.peripherals.insert(
+            index.clone(),
+            PeripheralNode {
+                peripheral,
+                registers: Default::default(),
+            },
+        );
+
+        index
     }
 
     pub fn interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {

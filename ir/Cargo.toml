@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 colored = { workspace = true }
+derive_more = { workspace = true }
 indexmap = { workspace = true }
 Inflector = { workspace = true }
 log = "0.4.27"
@@ -14,4 +15,3 @@ quote = { workspace = true }
 syn = { workspace = true }
 ters = { workspace = true }
 tiva = { workspace = true }
-derive_more.workspace = true
