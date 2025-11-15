@@ -1,4 +1,5 @@
 use colored::Colorize;
+use derive_more::Deref;
 use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
@@ -7,16 +8,38 @@ use syn::{Ident, parse_quote};
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::peripheral::Peripheral,
+    structures::{
+        ParentNode,
+        field::FieldIndex,
+        peripheral::{Peripheral, PeripheralIndex},
+    },
 };
 
 use super::{entitlement::Entitlement, field::Field};
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct RegisterIndex(pub(super) usize);
+
+#[derive(Debug, Clone, Deref)]
+pub struct RegisterNode {
+    pub(super) parent: PeripheralIndex,
+    #[deref]
+    pub(super) register: Register,
+    pub(super) fields: IndexMap<Ident, FieldIndex>,
+}
+
+impl ParentNode for RegisterNode {
+    type ChildIndex = FieldIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        self.fields.insert(child_ident, index);
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Register {
     pub ident: Ident,
     pub offset: u32,
-    pub fields: IndexMap<Ident, Field>,
     pub reset: Option<u32>,
     pub docs: Vec<String>,
 }

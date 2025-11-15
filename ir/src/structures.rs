@@ -1,4 +1,3 @@
-use std::ops::{Deref, DerefMut};
 pub mod entitlement;
 pub mod field;
 pub mod hal;
@@ -7,20 +6,10 @@ pub mod peripheral;
 pub mod register;
 pub mod variant;
 
-pub struct Validated<S> {
-    structure: S,
-}
+use syn::Ident;
 
-impl<S> Deref for Validated<S> {
-    type Target = S;
+pub trait ParentNode {
+    type ChildIndex;
 
-    fn deref(&self) -> &Self::Target {
-        &self.structure
-    }
-}
-
-impl<S> DerefMut for Validated<S> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.structure
-    }
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident);
 }

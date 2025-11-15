@@ -1,14 +1,28 @@
-use inflector::Inflector;
+use derive_more::Deref;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{entitlement::Entitlements, field::Field},
+    structures::{
+        entitlement::Entitlements,
+        field::{Field, FieldIndex},
+        hal::Hal,
+    },
 };
 
 use super::entitlement::Entitlement;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct VariantIndex(pub(super) usize);
+
+#[derive(Debug, Clone, Deref)]
+pub struct VariantNode {
+    pub(super) parent: FieldIndex,
+    #[deref]
+    pub(super) variant: Variant,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
@@ -101,7 +115,7 @@ impl Variant {
         }
     }
 
-    pub fn generate_entitlement_impls(&self, field: &Field) -> TokenStream {
+    pub fn generate_entitlement_impls(&self, model: &Hal, field: &Field) -> TokenStream {
         let ident = self.type_name();
         let entitlements = &self.entitlements;
         let field_ty = field.type_name();
@@ -116,12 +130,9 @@ impl Variant {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
             let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let field_ty = Ident::new(
-                    entitlement.field().to_string().to_pascal_case().as_str(),
-                    Span::call_site(),
-                );
-                let prefix = entitlement.render_up_to_field();
-                let state = entitlement.render_entirely();
+                let field_ty = entitlement.field(model).type_name();
+                let prefix = entitlement.render_up_to_field(model);
+                let state = entitlement.render_entirely(model);
                 quote! { #prefix::#field_ty<#state> }
             });
 
@@ -135,11 +146,11 @@ impl Variant {
 }
 
 impl Variant {
-    pub fn generate(&self, parent: &Field) -> TokenStream {
+    pub fn generate(&self, model: &Hal, parent: &Field) -> TokenStream {
         let mut body = quote! {};
 
         body.extend(self.generate_state());
-        body.extend(self.generate_entitlement_impls(parent));
+        body.extend(self.generate_entitlement_impls(model, parent));
 
         body
     }

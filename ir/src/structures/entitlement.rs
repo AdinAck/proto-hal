@@ -1,66 +1,55 @@
-use std::fmt::Display;
-
 use indexmap::IndexSet;
-use proc_macro2::Span;
-use syn::{Ident, Path, parse_quote};
-use ters::ters;
+use proc_macro2::TokenStream;
+use quote::quote;
 
-#[ters]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Entitlement {
-    #[get]
-    peripheral: Ident,
-    #[get]
-    register: Ident,
-    #[get]
-    field: Ident,
-    #[get]
-    variant: Ident,
-}
+use crate::structures::{
+    field::{FieldIndex, FieldNode},
+    hal::Hal,
+    peripheral::PeripheralIndex,
+    variant::VariantIndex,
+};
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Entitlement(pub(super) VariantIndex);
 
 impl Entitlement {
-    pub fn to(path: impl AsRef<str>) -> Self {
-        let mut path = path.as_ref().split("::");
+    pub fn field<'cx>(&self, model: &'cx Hal) -> &'cx FieldNode {
+        let variant = model.get_variant(self.0);
+        model.get_field(variant.parent)
+    }
 
-        Self {
-            peripheral: Ident::new(path.next().unwrap_or("unknown"), Span::call_site()),
-            register: Ident::new(path.next().unwrap_or("unknown"), Span::call_site()),
-            field: Ident::new(path.next().unwrap_or("unknown"), Span::call_site()),
-            variant: Ident::new(path.next().unwrap_or("unknown"), Span::call_site()),
+    pub fn render_up_to_field(&self, model: &Hal) -> TokenStream {
+        let field = self.field(model);
+        let register = model.get_register(field.parent);
+        let peripheral = model.get_peripheral(&register.parent);
+
+        let peripheral_ident = peripheral.module_name();
+        let register_ident = register.module_name();
+        let field_ident = field.module_name();
+
+        quote! {
+            #peripheral_ident::#register_ident::#field_ident
         }
     }
 
-    pub fn render_up_to_field(&self) -> Path {
-        let peripheral = self.peripheral();
-        let register = self.register();
-        let field = self.field();
+    pub fn render_entirely(&self, model: &Hal) -> TokenStream {
+        let prefix = self.render_up_to_field(model);
+        let variant = model.get_variant(self.0);
 
-        parse_quote! {
-            crate::#peripheral::#register::#field
+        let variant_ident = variant.type_name();
+
+        quote! {
+            #prefix::#variant_ident
         }
-    }
-
-    pub fn render_entirely(&self) -> Path {
-        let prefix = self.render_up_to_field();
-        let variant = self.variant();
-
-        parse_quote! {
-            #prefix::#variant
-        }
-    }
-}
-
-impl Display for Entitlement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}::{}::{}::{}",
-            self.peripheral(),
-            self.register(),
-            self.field(),
-            self.variant()
-        )
     }
 }
 
 pub type Entitlements = IndexSet<Entitlement>;
+
+#[derive(Debug, Clone)]
+pub enum EntitlementKey {
+    Peripheral(PeripheralIndex),
+    Field(FieldIndex),
+    Affordance(FieldIndex),
+    Variant(VariantIndex),
+}

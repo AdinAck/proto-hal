@@ -1,19 +1,39 @@
+use derive_more::Deref;
 use indexmap::{IndexMap, IndexSet};
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
-use crate::diagnostic::{Context, Diagnostic, Diagnostics};
+use crate::{
+    diagnostic::{Context, Diagnostic, Diagnostics},
+    structures::{ParentNode, register::RegisterIndex},
+};
 
 use super::{entitlement::Entitlement, register::Register};
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
+pub struct PeripheralIndex(pub(super) Ident);
+
+#[derive(Debug, Clone, Deref)]
+pub struct PeripheralNode {
+    #[deref]
+    pub(super) peripheral: Peripheral,
+    pub(super) registers: IndexMap<Ident, RegisterIndex>,
+}
+
+impl ParentNode for PeripheralNode {
+    type ChildIndex = RegisterIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        self.registers.insert(child_ident, index);
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Peripheral {
     pub ident: Ident,
     pub base_addr: u32,
-    pub entitlements: IndexSet<Entitlement>,
-    pub registers: IndexMap<Ident, Register>,
     pub docs: Vec<String>,
 }
 

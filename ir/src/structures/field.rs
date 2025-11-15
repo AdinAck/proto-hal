@@ -1,7 +1,8 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use colored::Colorize;
-use indexmap::IndexMap;
+use derive_more::Deref;
+use indexmap::{IndexMap, IndexSet};
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -10,48 +11,87 @@ use syn::{Ident, Index, Path, Type, parse_quote};
 use crate::{
     access::{Access, AccessProperties, HardwareAccess, ReadWrite},
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::entitlement::{Entitlement, Entitlements},
+    structures::{
+        ParentNode,
+        entitlement::{Entitlement, Entitlements},
+        hal::Hal,
+        register::RegisterIndex,
+        variant::{VariantIndex, VariantNode},
+    },
 };
 
 use super::variant::Variant;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Numericity {
-    Numeric,
-    Enumerated { variants: IndexMap<Ident, Variant> },
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct FieldIndex(pub(super) usize);
+
+#[derive(Debug, Clone, Deref)]
+pub struct FieldNode {
+    pub(super) parent: RegisterIndex,
+    #[deref]
+    pub(super) field: Field,
+    pub(super) numericity: Numericity,
 }
 
-impl Numericity {
-    pub fn enumerated(variants: impl IntoIterator<Item = Variant>) -> Self {
-        Self::Enumerated {
-            variants: IndexMap::from_iter(
-                variants
-                    .into_iter()
-                    .map(|variant| (variant.type_name(), variant)),
-            ),
+impl ParentNode for FieldNode {
+    type ChildIndex = VariantIndex;
+
+    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+        match &mut self.numericity {
+            // the field was inferred as numeric before any variants were (now) added
+            numericity @ Numericity::Numeric(..) => {
+                *numericity = Numericity::Enumerated(Enumerated {
+                    variants: IndexMap::from([(child_ident, index)]),
+                });
+            }
+            // the field is already inferred as enumerated
+            Numericity::Enumerated(Enumerated { variants }) => {
+                variants.insert(child_ident, index);
+            }
+        };
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Numericity {
+    Numeric(Numeric),
+    Enumerated(Enumerated),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Numeric;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Enumerated {
+    variants: IndexMap<Ident, VariantIndex>,
+}
+
+impl Numeric {
+    pub fn ty(&self, width: u8) -> (Ident, Ident) {
+        match width {
+            1 => (parse_quote! { bool }, parse_quote! { Bool }),
+            2..9 => (parse_quote! { u8 }, parse_quote! { UInt8 }),
+            9..17 => (parse_quote! { u16 }, parse_quote! { UInt16 }),
+            17..33 => (parse_quote! { u32 }, parse_quote! { UInt32 }),
+            _unreachable => unreachable!("fields cannot be greater than 32 bits wide"),
         }
+    }
+}
+
+impl Enumerated {
+    fn variants<'cx>(&self, model: &'cx Hal) -> impl Iterator<Item = &'cx VariantNode> {
+        self.variants
+            .values()
+            .map(|index| model.get_variant(*index))
     }
 
     /// View an inert variant if one exists. If there is more than one, the variant returned
     /// is not guaranteed to be any particular one, nor consistent. If the numericity is
     /// [`Numeric`](Numericity::Numeric), [`None`] is returned.
-    pub fn some_inert(&self) -> Option<&Variant> {
-        let Numericity::Enumerated { variants } = self else {
-            None?
-        };
-        variants.values().find(|variant| variant.inert)
-    }
-
-    pub fn numeric_ty(&self, width: u8) -> Option<(Ident, Ident)> {
-        let Self::Numeric = self else { None? };
-
-        Some(match width {
-            1 => (parse_quote! { bool }, parse_quote! { Bool }),
-            2..9 => (parse_quote! { u8 }, parse_quote! { UInt8 }),
-            9..17 => (parse_quote! { u16 }, parse_quote! { UInt16 }),
-            17..33 => (parse_quote! { u32 }, parse_quote! { UInt32 }),
-            _unreachable => None?,
-        })
+    pub fn some_inert<'cx>(&self, model: &'cx Hal) -> Option<&'cx Variant> {
+        self.variants(model)
+            .map(Deref::deref)
+            .find(|variant| variant.inert)
     }
 }
 
@@ -138,7 +178,7 @@ impl Field {
                 Access::ReadWrite(ReadWrite::Asymmetrical { read, write }),
                 HardwareAccess::ReadOnly,
             ) if read.numericity == write.numericity
-                && !(matches!(read.numericity, Numericity::Numeric)
+                && !(matches!(read.numericity, Numericity::Numeric(..))
                     && read.entitlements.is_empty()
                     && write.entitlements.is_empty()) =>
             {
@@ -153,7 +193,7 @@ impl Field {
         }
     }
 
-    pub(crate) fn reset_ty(&self, path: Path, register_reset: Option<u32>) -> Type {
+    pub(crate) fn reset_ty(&self, model: &Hal, path: Path, register_reset: Option<u32>) -> Type {
         let Some(read) = self.access.get_read() else {
             return parse_quote! { ::proto_hal::stasis::Dynamic };
         };
@@ -169,17 +209,15 @@ impl Field {
         let reset = (register_reset >> self.offset) & mask;
 
         match &read.numericity {
-            numericity @ Numericity::Numeric => {
-                let (.., ty) = numericity
-                    .numeric_ty(self.width)
-                    .expect("numeric ty expected to exist");
+            Numericity::Numeric(numeric) => {
+                let (.., ty) = numeric.ty(self.width);
                 let reset = Index::from(reset as usize);
 
                 parse_quote! { ::proto_hal::stasis::#ty<#reset> }
             }
-            Numericity::Enumerated { variants } => {
-                let ty = variants
-                    .values()
+            Numericity::Enumerated(enumerated) => {
+                let ty = enumerated
+                    .variants(model)
                     .find(|variant| variant.bits == reset)
                     .expect("exactly one variant must correspond to the reset value")
                     .type_name();
@@ -194,19 +232,22 @@ impl Field {
         self.offset..(self.offset + self.width)
     }
 
-    pub fn validate(&self, context: &Context) -> Diagnostics {
+    pub fn validate(&self, model: &Hal, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
 
         let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
             match numericity {
-                Numericity::Numeric => (),
-                Numericity::Enumerated { variants } => {
+                Numericity::Numeric(..) => {}
+                Numericity::Enumerated(enumerated) => {
+                    let mut sorted_variants = enumerated.variants(model).collect::<Vec<_>>();
+                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+
                     if let Some(largest_variant) =
-                        variants.values().map(|variant| variant.bits).max()
+                        sorted_variants.iter().map(|variant| variant.bits).max()
                     {
-                        let variant_limit = (1 << self.width) - 1; // note: this will break if a 32 bit enumerated field were described but that is not likely
-                        if largest_variant > variant_limit {
+                        let variant_limit = (1u64 << self.width) - 1;
+                        if largest_variant as u64 > variant_limit {
                             diagnostics.insert(
                                 Diagnostic::error(format!(
                             "field variants exceed field width. (largest variant: {largest_variant}, largest possible: {variant_limit})",
@@ -215,9 +256,6 @@ impl Field {
                             );
                         }
                     }
-
-                    let mut sorted_variants = variants.values().collect::<Vec<_>>();
-                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
 
                     // validate variant adjacency
                     for window in sorted_variants.windows(2) {
@@ -245,8 +283,8 @@ impl Field {
         {
             validate_numericity(&access.numericity, &mut diagnostics);
 
-            if let Numericity::Enumerated { variants } = &access.numericity {
-                for variant in variants.values() {
+            if let Numericity::Enumerated(enumerated) = &access.numericity {
+                for variant in enumerated.variants(model) {
                     diagnostics.extend(variant.validate(&new_context));
                 }
             }
