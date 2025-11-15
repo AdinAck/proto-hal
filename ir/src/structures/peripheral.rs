@@ -7,7 +7,7 @@ use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::register::RegisterIndex,
+    structures::{Node, register::RegisterIndex},
 };
 
 use super::{entitlement::Entitlement, register::Register};
@@ -20,6 +20,10 @@ pub struct PeripheralNode {
     #[deref]
     pub(super) peripheral: Peripheral,
     pub(super) registers: IndexMap<Ident, RegisterIndex>,
+}
+
+impl Node for PeripheralNode {
+    type Index = PeripheralIndex;
 }
 
 impl PeripheralNode {

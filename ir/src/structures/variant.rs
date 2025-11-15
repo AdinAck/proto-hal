@@ -6,6 +6,7 @@ use syn::Ident;
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
+        Node,
         entitlement::Entitlements,
         field::{Field, FieldIndex},
         hal::Hal,
@@ -22,6 +23,10 @@ pub struct VariantNode {
     pub(super) parent: FieldIndex,
     #[deref]
     pub(super) variant: Variant,
+}
+
+impl Node for VariantNode {
+    type Index = VariantIndex;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,7 +135,8 @@ impl Variant {
             // exactly this finite set of states satisfy this state's entitlement requirements
 
             let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let field_ty = entitlement.field(model).type_name();
+                let field = entitlement.field(model);
+                let field_ty = field.type_name();
                 let prefix = entitlement.render_up_to_field(model);
                 let state = entitlement.render_entirely(model);
                 quote! { #prefix::#field_ty<#state> }

@@ -5,3 +5,7 @@ pub mod interrupts;
 pub mod peripheral;
 pub mod register;
 pub mod variant;
+
+pub trait Node {
+    type Index;
+}

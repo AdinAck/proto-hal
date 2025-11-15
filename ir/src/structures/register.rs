@@ -9,6 +9,7 @@ use syn::{Ident, parse_quote};
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
+        Node,
         field::FieldIndex,
         peripheral::{Peripheral, PeripheralIndex},
     },
@@ -25,6 +26,10 @@ pub struct RegisterNode {
     #[deref]
     pub(super) register: Register,
     pub(super) fields: IndexMap<Ident, FieldIndex>,
+}
+
+impl Node for RegisterNode {
+    type Index = RegisterIndex;
 }
 
 impl RegisterNode {

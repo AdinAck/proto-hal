@@ -3,8 +3,9 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::structures::{
+    Node,
     field::{FieldIndex, FieldNode},
-    hal::Hal,
+    hal::{Hal, View},
     peripheral::PeripheralIndex,
     variant::VariantIndex,
 };
@@ -13,15 +14,19 @@ use crate::structures::{
 pub struct Entitlement(pub(super) VariantIndex);
 
 impl Entitlement {
-    pub fn field<'cx>(&self, model: &'cx Hal) -> &'cx FieldNode {
+    pub fn field<'cx>(&self, model: &'cx Hal) -> View<'cx, FieldNode> {
         let variant = model.get_variant(self.0);
         model.get_field(variant.parent)
+    }
+
+    pub fn index<'cx>(&self) -> VariantIndex {
+        self.0
     }
 
     pub fn render_up_to_field(&self, model: &Hal) -> TokenStream {
         let field = self.field(model);
         let register = model.get_register(field.parent);
-        let peripheral = model.get_peripheral(&register.parent);
+        let peripheral = model.get_peripheral(register.parent.clone());
 
         let peripheral_ident = peripheral.module_name();
         let register_ident = register.module_name();
@@ -46,8 +51,12 @@ impl Entitlement {
 
 pub type Entitlements = IndexSet<Entitlement>;
 
+impl Node for Entitlements {
+    type Index = EntitlementIndex;
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum EntitlementKey {
+pub enum EntitlementIndex {
     Peripheral(PeripheralIndex),
     Field(FieldIndex),
     Write(FieldIndex),

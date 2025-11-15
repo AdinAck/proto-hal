@@ -1,14 +1,17 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData, ops::Deref};
 
 use colored::Colorize;
-use indexmap::IndexMap;
+use derive_more::Deref;
+use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+use ters::ters;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
-        entitlement::{Entitlement, EntitlementKey, Entitlements},
+        Node,
+        entitlement::{Entitlement, EntitlementIndex, Entitlements},
         field::{
             Field, FieldIndex, FieldNode,
             access::{self, Access},
@@ -29,7 +32,7 @@ pub struct Hal {
     fields: Vec<FieldNode>,
     variants: Vec<VariantNode>,
 
-    entitlements: HashMap<EntitlementKey, Entitlements>,
+    entitlements: HashMap<EntitlementIndex, Entitlements>,
 
     interrupts: Interrupts,
 }
@@ -90,20 +93,44 @@ impl Hal {
         }
     }
 
-    pub fn get_peripheral(&self, index: &PeripheralIndex) -> &PeripheralNode {
-        &self.peripherals[index]
+    pub fn get_peripheral(&self, index: PeripheralIndex) -> View<'_, PeripheralNode> {
+        View {
+            model: self,
+            node: &self.peripherals[&index],
+            index,
+        }
     }
 
-    pub fn get_register(&self, index: RegisterIndex) -> &RegisterNode {
-        &self.registers[*index]
+    pub fn get_register(&self, index: RegisterIndex) -> View<'_, RegisterNode> {
+        View {
+            model: self,
+            node: &self.registers[*index],
+            index,
+        }
     }
 
-    pub fn get_field(&self, index: FieldIndex) -> &FieldNode {
-        &self.fields[*index]
+    pub fn get_field(&self, index: FieldIndex) -> View<'_, FieldNode> {
+        View {
+            model: self,
+            node: &self.fields[*index],
+            index,
+        }
     }
 
-    pub fn get_variant(&self, index: VariantIndex) -> &VariantNode {
-        &self.variants[*index]
+    pub fn get_variant(&self, index: VariantIndex) -> View<'_, VariantNode> {
+        View {
+            model: self,
+            node: &self.variants[*index],
+            index,
+        }
+    }
+
+    pub fn get_entitlements(&self, index: EntitlementIndex) -> View<'_, Entitlements> {
+        View {
+            model: self,
+            node: &self.entitlements[&index],
+            index,
+        }
     }
 }
 
@@ -381,7 +408,7 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
-            EntitlementKey::Peripheral(self.index.clone()),
+            EntitlementIndex::Peripheral(self.index.clone()),
             entitlements.into_iter().collect(),
         );
     }
@@ -512,7 +539,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
-            EntitlementKey::Field(self.index),
+            EntitlementIndex::Field(self.index),
             entitlements.into_iter().collect(),
         );
     }
@@ -553,7 +580,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
-            EntitlementKey::HardwareWrite(self.index.clone()),
+            EntitlementIndex::HardwareWrite(self.index.clone()),
             entitlements.into_iter().collect(),
         );
     }
@@ -566,7 +593,7 @@ where
     /// Add [write access entitlements](TODO) to the field.
     pub fn write_entitlements(&'cx mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
         self.model.entitlements.insert(
-            EntitlementKey::Write(self.index.clone()),
+            EntitlementIndex::Write(self.index.clone()),
             entitlements.into_iter().collect(),
         );
     }
@@ -576,5 +603,53 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
     /// Produce an [entitlement](TODO) from the variant.
     pub fn make_entitlement(&self) -> Entitlement {
         Entitlement(self.index)
+    }
+
+    /// Add [statewise entitlements](TODO) to the variant.
+    pub fn statewise_entitlements(
+        &'cx mut self,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) {
+        let entitlements = entitlements.into_iter().collect::<IndexSet<Entitlement>>();
+
+        // reverse map
+        for entitlement in &entitlements {
+            self.model
+                .entitlements
+                .entry(EntitlementIndex::Variant(entitlement.index()))
+                .or_default()
+                .insert(Entitlement(self.index));
+        }
+
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::Variant(self.index), entitlements);
+    }
+}
+
+/// A view into the device model at a single node.
+#[derive(Debug, Deref)]
+pub struct View<'cx, N: Node> {
+    model: &'cx Hal,
+    index: N::Index,
+    #[deref]
+    node: &'cx N,
+}
+
+impl<'cx> View<'cx, PeripheralNode> {
+    pub fn registers(&self) -> impl Iterator<Item = View<'cx, RegisterNode>> {
+        self.node
+            .registers
+            .values()
+            .map(|index| self.model.get_register(*index))
+    }
+}
+
+impl<'cx> View<'cx, RegisterNode> {
+    pub fn fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> {
+        self.node
+            .fields
+            .values()
+            .map(|index| self.model.get_field(*index))
     }
 }

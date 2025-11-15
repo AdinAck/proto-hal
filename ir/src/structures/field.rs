@@ -1,6 +1,7 @@
 pub mod access;
+pub mod numericity;
 
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
 use colored::Colorize;
 use derive_more::Deref;
@@ -11,13 +12,13 @@ use quote::{format_ident, quote};
 use syn::{Ident, Index, Path, Type, parse_quote};
 
 use crate::{
-    access::{Access, ReadWrite},
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
-        entitlement::{Entitlement, Entitlements},
+        Node,
+        entitlement::EntitlementIndex,
+        field::{access::Access, numericity::Numericity},
         hal::Hal,
         register::RegisterIndex,
-        variant::{VariantIndex, VariantNode},
     },
 };
 
@@ -34,67 +35,26 @@ pub struct FieldNode {
     pub(super) access: Access,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Numericity {
-    Numeric(Numeric),
-    Enumerated(Enumerated),
+impl Node for FieldNode {
+    type Index = FieldIndex;
 }
 
-impl Default for Numericity {
-    fn default() -> Self {
-        Self::Numeric(Numeric)
+impl FieldNode {
+    pub fn is_resolvable(&self, model: &Hal) -> bool {
+        self.resolvable(model).is_some()
     }
-}
 
-impl Numericity {
-    pub(super) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
-        match self {
-            Numericity::Numeric(..) => {
-                *self = Numericity::Enumerated(Enumerated {
-                    variants: IndexMap::from([(variant.module_name(), index)]),
-                })
-            }
-            Numericity::Enumerated(enumerated) => {
-                enumerated.variants.insert(variant.module_name(), index);
+    pub fn resolvable(&self, model: &Hal) -> Option<&Numericity> {
+        // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
+        // TODO: so both possibilities are ignored for now
+
+        match &self.access {
+            Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
+            Access::Store(store) => Some(&store.numericity),
+            Access::VolatileStore(volatile_store) => {
+                model.get_entitlements(&EntitlementIndex::Field())
             }
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Numeric;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Enumerated {
-    variants: IndexMap<Ident, VariantIndex>,
-}
-
-impl Numeric {
-    pub fn ty(&self, width: u8) -> (Ident, Ident) {
-        match width {
-            1 => (parse_quote! { bool }, parse_quote! { Bool }),
-            2..9 => (parse_quote! { u8 }, parse_quote! { UInt8 }),
-            9..17 => (parse_quote! { u16 }, parse_quote! { UInt16 }),
-            17..33 => (parse_quote! { u32 }, parse_quote! { UInt32 }),
-            _unreachable => unreachable!("fields cannot be greater than 32 bits wide"),
-        }
-    }
-}
-
-impl Enumerated {
-    fn variants<'cx>(&self, model: &'cx Hal) -> impl Iterator<Item = &'cx VariantNode> {
-        self.variants
-            .values()
-            .map(|index| model.get_variant(*index))
-    }
-
-    /// View an inert variant if one exists. If there is more than one, the variant returned
-    /// is not guaranteed to be any particular one, nor consistent. If the numericity is
-    /// [`Numeric`](Numericity::Numeric), [`None`] is returned.
-    pub fn some_inert<'cx>(&self, model: &'cx Hal) -> Option<&'cx Variant> {
-        self.variants(model)
-            .map(Deref::deref)
-            .find(|variant| variant.inert)
     }
 }
 
@@ -107,21 +67,12 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn new(ident: impl AsRef<str>, offset: u8, width: u8, access: Access) -> Self {
+    pub fn new(ident: impl AsRef<str>, offset: u8, width: u8) -> Self {
         Self {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             offset,
             width,
-            access,
-            hardware_access: None,
             docs: Vec::new(),
-        }
-    }
-
-    pub fn hardware_access(self, access: HardwareAccess) -> Self {
-        Self {
-            hardware_access: Some(access),
-            ..self
         }
     }
 
@@ -148,43 +99,6 @@ impl Field {
             self.ident.to_string().to_pascal_case().as_str(),
             Span::call_site(),
         )
-    }
-
-    pub fn is_resolvable(&self) -> bool {
-        self.resolvable().is_some()
-    }
-
-    pub fn resolvable(&self) -> Option<&AccessProperties> {
-        // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
-        // TODO: so both possibilities are ignored for now
-
-        let hardware_access = self.hardware_access.unwrap_or(HardwareAccess::ReadOnly);
-
-        match (&self.access, hardware_access) {
-            (Access::ReadWrite(ReadWrite::Symmetrical(access)), HardwareAccess::ReadOnly) => {
-                // when hardware is read only, symmetrical fields are intrinsically resolvable because:
-                // 1. the values written are the values read (even numeric)
-                // 2. read/write access is unconditional
-
-                Some(access)
-            }
-            (
-                Access::ReadWrite(ReadWrite::Asymmetrical { read, write }),
-                HardwareAccess::ReadOnly,
-            ) if read.numericity == write.numericity
-                && !(matches!(read.numericity, Numericity::Numeric(..))
-                    && read.entitlements.is_empty()
-                    && write.entitlements.is_empty()) =>
-            {
-                // asymmetrical fields *can be* resolvable if:
-                // 1. the read/write numericities are equal
-                // 2. the numericity is not numeric with unconditional read/write access (would have been symmetrical)
-                // 3. hardware access is read only
-
-                Some(read)
-            }
-            _ => None,
-        }
     }
 
     pub(crate) fn reset_ty(&self, model: &Hal, path: Path, register_reset: Option<u32>) -> Type {
