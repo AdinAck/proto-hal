@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -8,9 +8,11 @@ use quote::{ToTokens, quote};
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
-        ParentNode as _,
         entitlement::{Entitlement, EntitlementKey, Entitlements},
-        field::{Field, FieldIndex, FieldNode},
+        field::{
+            Field, FieldIndex, FieldNode,
+            access::{self, Access},
+        },
         interrupts::{Interrupt, Interrupts},
         peripheral::{PeripheralIndex, PeripheralNode},
         register::{Register, RegisterIndex, RegisterNode},
@@ -341,13 +343,14 @@ impl ToTokens for Hal {
     }
 }
 
-pub struct Entry<'cx, Index> {
+pub struct Entry<'cx, Index, Meta> {
     model: &'cx mut Hal,
     index: Index,
+    _p: PhantomData<Meta>,
 }
 
-impl<'cx> Entry<'cx, PeripheralIndex> {
-    pub fn add_register(&'cx mut self, register: Register) -> Entry<'cx, RegisterIndex> {
+impl<'cx> Entry<'cx, PeripheralIndex, ()> {
+    pub fn add_register(&'cx mut self, register: Register) -> Entry<'_, RegisterIndex, ()> {
         let index = RegisterIndex(self.model.registers.len());
 
         // update parent
@@ -367,12 +370,13 @@ impl<'cx> Entry<'cx, PeripheralIndex> {
         Entry {
             model: self.model,
             index,
+            _p: PhantomData,
         }
     }
 }
 
-impl<'cx> Entry<'cx, RegisterIndex> {
-    pub fn add_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex> {
+impl<'cx> Entry<'cx, RegisterIndex, ()> {
+    fn new_index_and_add_to_parent(&mut self, field: &Field) -> FieldIndex {
         let index = FieldIndex(self.model.fields.len());
 
         // update parent
@@ -382,31 +386,82 @@ impl<'cx> Entry<'cx, RegisterIndex> {
             .unwrap()
             .add_child_index(index.clone(), field.module_name());
 
-        // insert child
+        index
+    }
+
+    fn insert_child_with_access(&mut self, field: Field, access: Access) {
         self.model.fields.push(FieldNode {
             parent: self.index.clone(),
             field,
-            numericity: Default::default(),
+            access,
         });
+    }
 
+    fn make_child_entry<Meta>(&'cx mut self, index: FieldIndex) -> Entry<'_, FieldIndex, Meta> {
         Entry {
             model: self.model,
             index,
+            _p: PhantomData,
         }
+    }
+
+    /// Add a field to the register with [`Read`](access::Read) access.
+    pub fn add_read_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Read> {
+        let index = self.new_index_and_add_to_parent(&field);
+        self.insert_child_with_access(field, Access::Read(Default::default()));
+        self.make_child_entry(index)
+    }
+
+    /// Add a field to the register with [`Write`](access::Write) access.
+    pub fn add_write_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Write> {
+        let index = self.new_index_and_add_to_parent(&field);
+        self.insert_child_with_access(field, Access::Write(Default::default()));
+        self.make_child_entry(index)
+    }
+
+    /// Add a field to the register with [`ReadWrite`](access::ReadWrite) access.
+    pub fn add_read_write_field(
+        &'cx mut self,
+        field: Field,
+    ) -> Entry<'cx, FieldIndex, access::ReadWrite> {
+        let index = self.new_index_and_add_to_parent(&field);
+        self.insert_child_with_access(field, Access::ReadWrite(Default::default()));
+        self.make_child_entry(index)
+    }
+
+    /// Add a field to the register with [`Store`](access::Store) access.
+    pub fn add_store_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Store> {
+        let index = self.new_index_and_add_to_parent(&field);
+        self.insert_child_with_access(field, Access::Store(Default::default()));
+        self.make_child_entry(index)
+    }
+
+    /// Add a field to the register with [`VolatileStore`](access::VolatileStore) access.
+    pub fn add_volatile_store_field(
+        &'cx mut self,
+        field: Field,
+    ) -> Entry<'cx, FieldIndex, access::VolatileStore> {
+        let index = self.new_index_and_add_to_parent(&field);
+        self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
+        self.make_child_entry(index)
     }
 }
 
-impl<'cx> Entry<'cx, FieldIndex> {
-    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex> {
+impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
+    fn new_index_and_get_access(&mut self) -> (VariantIndex, &mut Access) {
         let index = VariantIndex(self.model.variants.len());
 
-        // update parent
-        self.model
-            .fields
-            .get_mut(*self.index)
-            .unwrap()
-            .add_child_index(index.clone(), variant.module_name());
+        (
+            index,
+            &mut self.model.fields.get_mut(*self.index).unwrap().access,
+        )
+    }
 
+    fn insert_child_and_make_entry(
+        &mut self,
+        index: VariantIndex,
+        variant: Variant,
+    ) -> Entry<'_, VariantIndex, ()> {
         // insert child
         self.model.variants.push(VariantNode {
             parent: self.index.clone(),
@@ -416,11 +471,59 @@ impl<'cx> Entry<'cx, FieldIndex> {
         Entry {
             model: self.model,
             index,
+            _p: PhantomData,
         }
+    }
+
+    /// Add a variant to the field.
+    ///
+    /// If the field's access modality exposes both *read* and *write* access,
+    /// this will add the variant to *both*.
+    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'_, VariantIndex, ()> {
+        let (index, access) = self.new_index_and_get_access();
+
+        // update parent
+        if let Some(numericity) = access.get_read_mut() {
+            numericity.add_child(&variant, index);
+        }
+
+        if let Some(numericity) = access.get_write_mut() {
+            numericity.add_child(&variant, index);
+        }
+
+        self.insert_child_and_make_entry(index, variant)
     }
 }
 
-impl<'cx> Entry<'cx, VariantIndex> {
+impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
+    /// Add a variant to the field for read access **only**.
+    pub fn add_read_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
+        let (index, access) = self.new_index_and_get_access();
+
+        // update parent
+        access
+            .get_read_mut()
+            .expect("expected read access")
+            .add_child(&variant, index);
+
+        self.insert_child_and_make_entry(index, variant)
+    }
+
+    /// Add a variant to the field for write access **only**.
+    pub fn add_write_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
+        let (index, access) = self.new_index_and_get_access();
+
+        // update parent
+        access
+            .get_write_mut()
+            .expect("expected write access")
+            .add_child(&variant, index);
+
+        self.insert_child_and_make_entry(index, variant)
+    }
+}
+
+impl<'cx> Entry<'cx, VariantIndex, ()> {
     pub fn make_entitlement(&self) -> Entitlement {
         Entitlement(self.index)
     }

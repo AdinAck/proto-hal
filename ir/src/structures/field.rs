@@ -1,18 +1,19 @@
+pub mod access;
+
 use std::ops::{Deref, Range};
 
 use colored::Colorize;
 use derive_more::Deref;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Ident, Index, Path, Type, parse_quote};
 
 use crate::{
-    access::{Access, AccessProperties, HardwareAccess, ReadWrite},
+    access::{Access, ReadWrite},
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
-        ParentNode,
         entitlement::{Entitlement, Entitlements},
         hal::Hal,
         register::RegisterIndex,
@@ -30,32 +31,34 @@ pub struct FieldNode {
     pub(super) parent: RegisterIndex,
     #[deref]
     pub(super) field: Field,
-    pub(super) numericity: Numericity,
-}
-
-impl ParentNode for FieldNode {
-    type ChildIndex = VariantIndex;
-
-    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
-        match &mut self.numericity {
-            // the field was inferred as numeric before any variants were (now) added
-            numericity @ Numericity::Numeric(..) => {
-                *numericity = Numericity::Enumerated(Enumerated {
-                    variants: IndexMap::from([(child_ident, index)]),
-                });
-            }
-            // the field is already inferred as enumerated
-            Numericity::Enumerated(Enumerated { variants }) => {
-                variants.insert(child_ident, index);
-            }
-        };
-    }
+    pub(super) access: Access,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Numericity {
     Numeric(Numeric),
     Enumerated(Enumerated),
+}
+
+impl Default for Numericity {
+    fn default() -> Self {
+        Self::Numeric(Numeric)
+    }
+}
+
+impl Numericity {
+    pub(super) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
+        match self {
+            Numericity::Numeric(..) => {
+                *self = Numericity::Enumerated(Enumerated {
+                    variants: IndexMap::from([(variant.module_name(), index)]),
+                })
+            }
+            Numericity::Enumerated(enumerated) => {
+                enumerated.variants.insert(variant.module_name(), index);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,9 +103,6 @@ pub struct Field {
     pub ident: Ident,
     pub offset: u8,
     pub width: u8,
-    pub access: Access,
-    pub entitlements: Entitlements,
-    pub hardware_access: Option<HardwareAccess>,
     pub docs: Vec<String>,
 }
 
@@ -113,15 +113,9 @@ impl Field {
             offset,
             width,
             access,
-            entitlements: Entitlements::new(),
             hardware_access: None,
             docs: Vec::new(),
         }
-    }
-
-    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
-        self.entitlements.extend(entitlements);
-        self
     }
 
     pub fn hardware_access(self, access: HardwareAccess) -> Self {

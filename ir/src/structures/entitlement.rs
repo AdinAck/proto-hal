@@ -50,6 +50,7 @@ pub type Entitlements = IndexSet<Entitlement>;
 pub enum EntitlementKey {
     Peripheral(PeripheralIndex),
     Field(FieldIndex),
-    Affordance(FieldIndex),
+    Write(FieldIndex),
+    HardwareWrite(FieldIndex),
     Variant(VariantIndex),
 }

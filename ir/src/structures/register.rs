@@ -9,7 +9,6 @@ use syn::{Ident, parse_quote};
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
-        ParentNode,
         field::FieldIndex,
         peripheral::{Peripheral, PeripheralIndex},
     },
@@ -28,10 +27,8 @@ pub struct RegisterNode {
     pub(super) fields: IndexMap<Ident, FieldIndex>,
 }
 
-impl ParentNode for RegisterNode {
-    type ChildIndex = FieldIndex;
-
-    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+impl RegisterNode {
+    pub(super) fn add_child_index(&mut self, index: FieldIndex, child_ident: Ident) {
         self.fields.insert(child_ident, index);
     }
 }

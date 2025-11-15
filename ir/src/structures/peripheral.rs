@@ -7,7 +7,7 @@ use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{ParentNode, register::RegisterIndex},
+    structures::register::RegisterIndex,
 };
 
 use super::{entitlement::Entitlement, register::Register};
@@ -22,10 +22,8 @@ pub struct PeripheralNode {
     pub(super) registers: IndexMap<Ident, RegisterIndex>,
 }
 
-impl ParentNode for PeripheralNode {
-    type ChildIndex = RegisterIndex;
-
-    fn add_child_index(&mut self, index: Self::ChildIndex, child_ident: Ident) {
+impl PeripheralNode {
+    pub(super) fn add_child_index(&mut self, index: RegisterIndex, child_ident: Ident) {
         self.registers.insert(child_ident, index);
     }
 }
