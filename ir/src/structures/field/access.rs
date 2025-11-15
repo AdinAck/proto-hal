@@ -191,3 +191,11 @@ impl From<VolatileStore> for Access {
         Self::VolatileStore(volatile_store)
     }
 }
+
+/// Marker trait for access modalities that expose write access.
+pub(crate) trait IsWrite {}
+
+impl IsWrite for Write {}
+impl IsWrite for ReadWrite {}
+impl IsWrite for Store {}
+impl IsWrite for VolatileStore {}

@@ -350,6 +350,7 @@ pub struct Entry<'cx, Index, Meta> {
 }
 
 impl<'cx> Entry<'cx, PeripheralIndex, ()> {
+    /// Add a register to the peripheral.
     pub fn add_register(&'cx mut self, register: Register) -> Entry<'_, RegisterIndex, ()> {
         let index = RegisterIndex(self.model.registers.len());
 
@@ -372,6 +373,17 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
             index,
             _p: PhantomData,
         }
+    }
+
+    /// Add [presence entitlements](TODO) to the peripheral.
+    pub fn presence_entitlements(
+        &'cx mut self,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) {
+        self.model.entitlements.insert(
+            EntitlementKey::Peripheral(self.index.clone()),
+            entitlements.into_iter().collect(),
+        );
     }
 }
 
@@ -493,6 +505,17 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
 
         self.insert_child_and_make_entry(index, variant)
     }
+
+    /// Add [presence entitlements](TODO) to the field.
+    pub fn presence_entitlements(
+        &'cx mut self,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) {
+        self.model.entitlements.insert(
+            EntitlementKey::Field(self.index),
+            entitlements.into_iter().collect(),
+        );
+    }
 }
 
 impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
@@ -523,7 +546,34 @@ impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
     }
 }
 
+impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
+    /// Add [hardware write access entitlements](TODO) to the field.
+    pub fn hardware_write_entitlements(
+        &'cx mut self,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) {
+        self.model.entitlements.insert(
+            EntitlementKey::HardwareWrite(self.index.clone()),
+            entitlements.into_iter().collect(),
+        );
+    }
+}
+
+impl<'cx, Meta> Entry<'cx, FieldIndex, Meta>
+where
+    Meta: access::IsWrite,
+{
+    /// Add [write access entitlements](TODO) to the field.
+    pub fn write_entitlements(&'cx mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
+        self.model.entitlements.insert(
+            EntitlementKey::Write(self.index.clone()),
+            entitlements.into_iter().collect(),
+        );
+    }
+}
+
 impl<'cx> Entry<'cx, VariantIndex, ()> {
+    /// Produce an [entitlement](TODO) from the variant.
     pub fn make_entitlement(&self) -> Entitlement {
         Entitlement(self.index)
     }

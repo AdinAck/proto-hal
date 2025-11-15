@@ -46,7 +46,7 @@ impl Entitlement {
 
 pub type Entitlements = IndexSet<Entitlement>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum EntitlementKey {
     Peripheral(PeripheralIndex),
     Field(FieldIndex),
