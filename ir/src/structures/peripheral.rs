@@ -1,4 +1,4 @@
-use derive_more::Deref;
+use derive_more::{AsRef, Deref};
 use indexmap::{IndexMap, IndexSet};
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
@@ -15,9 +15,10 @@ use super::{entitlement::Entitlement, register::Register};
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
 pub struct PeripheralIndex(pub(super) Ident);
 
-#[derive(Debug, Clone, Deref)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct PeripheralNode {
     #[deref]
+    #[as_ref]
     pub(super) peripheral: Peripheral,
     pub(super) registers: IndexMap<Ident, RegisterIndex>,
 }

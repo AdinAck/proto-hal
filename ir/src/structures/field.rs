@@ -1,10 +1,10 @@
 pub mod access;
 pub mod numericity;
 
-use std::ops::Range;
+use std::{collections::HashSet, ops::Range};
 
 use colored::Colorize;
-use derive_more::Deref;
+use derive_more::{AsRef, Deref};
 use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
@@ -15,9 +15,9 @@ use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        entitlement::EntitlementIndex,
+        entitlement::{EntitlementIndex, Entitlements},
         field::{access::Access, numericity::Numericity},
-        hal::Hal,
+        hal::View,
         register::RegisterIndex,
     },
 };
@@ -27,10 +27,11 @@ use super::variant::Variant;
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct FieldIndex(pub(super) usize);
 
-#[derive(Debug, Clone, Deref)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct FieldNode {
     pub(super) parent: RegisterIndex,
     #[deref]
+    #[as_ref]
     pub(super) field: Field,
     pub(super) access: Access,
 }
@@ -39,12 +40,12 @@ impl Node for FieldNode {
     type Index = FieldIndex;
 }
 
-impl FieldNode {
-    pub fn is_resolvable(&self, model: &Hal) -> bool {
-        self.resolvable(model).is_some()
+impl<'cx> View<'cx, FieldNode> {
+    pub fn is_resolvable(&self) -> bool {
+        self.resolvable().is_some()
     }
 
-    pub fn resolvable(&self, model: &Hal) -> Option<&Numericity> {
+    pub fn resolvable(&self) -> Option<&Numericity> {
         // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
         // TODO: so both possibilities are ignored for now
 
@@ -52,9 +53,172 @@ impl FieldNode {
             Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
             Access::Store(store) => Some(&store.numericity),
             Access::VolatileStore(volatile_store) => {
-                model.get_entitlements(&EntitlementIndex::Field())
+                let write_entitlements = self
+                    .model
+                    .get_entitlements(EntitlementIndex::Write(self.index));
+
+                if write_entitlements.is_empty() {
+                    // no entitlements means all states are entitled to,
+                    // so they are exhaustive
+                    None?
+                }
+
+                let mut entitlement_fields = IndexMap::new();
+
+                for entitlement in *write_entitlements {
+                    let field = entitlement.field(&self.model);
+                    entitlement_fields
+                        .entry(field.index)
+                        .or_insert_with(|| (field, HashSet::new()))
+                        .1
+                        .insert(entitlement.0);
+                }
+
+                // if the write access entitlements are non-exhaustive
+                // (meaning some states exist in which hardware does *not*
+                // have write access) then the field is resolvable
+
+                for (field, entitlements) in entitlement_fields.values() {
+                    let Numericity::Enumerated(enumerated) = field.resolvable().unwrap() else {
+                        unreachable!("entitled field must be enumerated")
+                    };
+
+                    let total = enumerated
+                        .variants
+                        .values()
+                        .copied()
+                        .collect::<HashSet<_>>();
+
+                    if total.difference(entitlements).next().is_some() {
+                        // entitlements are not exhaustive!
+                        return Some(&volatile_store.numericity);
+                    }
+                }
+
+                // entitlements are exhaustive, so the field state can never be static
+                None
             }
         }
+    }
+
+    pub(crate) fn reset_ty(&self, path: Path, register_reset: Option<u32>) -> Type {
+        let Some(read) = self.access.get_read() else {
+            return parse_quote! { ::proto_hal::stasis::Dynamic };
+        };
+
+        if !self.is_resolvable() {
+            return parse_quote! { ::proto_hal::stasis::Dynamic };
+        }
+
+        let register_reset =
+            register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
+
+        let mask = u32::MAX >> (32 - self.width);
+        let reset = (register_reset >> self.offset) & mask;
+
+        match &read {
+            Numericity::Numeric(numeric) => {
+                let (.., ty) = numeric.ty(self.width);
+                let reset = Index::from(reset as usize);
+
+                parse_quote! { ::proto_hal::stasis::#ty<#reset> }
+            }
+            Numericity::Enumerated(enumerated) => {
+                let ty = enumerated
+                    .variants(self.model)
+                    .find(|variant| variant.bits == reset)
+                    .expect("exactly one variant must correspond to the reset value")
+                    .type_name();
+
+                parse_quote! { #path::#ty }
+            }
+        }
+    }
+
+    pub fn validate(&self, context: &Context) -> Diagnostics {
+        let new_context = context.clone().and(self.ident.clone().to_string());
+        let mut diagnostics = Diagnostics::new();
+
+        let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
+            match numericity {
+                Numericity::Numeric(..) => {}
+                Numericity::Enumerated(enumerated) => {
+                    let mut sorted_variants = enumerated.variants(self.model).collect::<Vec<_>>();
+                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+
+                    if let Some(largest_variant) =
+                        sorted_variants.iter().map(|variant| variant.bits).max()
+                    {
+                        let variant_limit = (1u64 << self.width) - 1;
+                        if largest_variant as u64 > variant_limit {
+                            diagnostics.insert(
+                                Diagnostic::error(format!(
+                            "field variants exceed field width. (largest variant: {largest_variant}, largest possible: {variant_limit})",
+                        ))
+                                .with_context(new_context.clone()),
+                            );
+                        }
+                    }
+
+                    // validate variant adjacency
+                    for window in sorted_variants.windows(2) {
+                        let lhs = &window[0];
+                        let rhs = &window[1];
+
+                        if lhs.bits == rhs.bits {
+                            diagnostics.insert(
+                                Diagnostic::error(format!(
+                                    "variants [{}] and [{}] have overlapping bit values",
+                                    lhs.ident.to_string().bold(),
+                                    rhs.ident.to_string().bold()
+                                ))
+                                .with_context(new_context.clone()),
+                            );
+                        }
+                    }
+                }
+            }
+        };
+
+        for access in [self.access.get_read(), self.access.get_write()]
+            .into_iter()
+            .flatten()
+        {
+            validate_numericity(access, &mut diagnostics);
+
+            if let Numericity::Enumerated(enumerated) = &access {
+                for variant in enumerated.variants(self.model) {
+                    diagnostics.extend(variant.validate(&new_context));
+                }
+            }
+        }
+
+        // inert doesn't make sense for read-only
+        if let Some(read) = self.access.get_read()
+            && !self.access.is_write()
+            && let Numericity::Enumerated(enumerated) = read
+            && enumerated.variants(self.model).any(|variant| variant.inert)
+        {
+            diagnostics.insert(
+                Diagnostic::error("read-only variants cannot be inert")
+                    .notes([
+                        "for more information, refer to the \"Inertness\" section in `notes.md`",
+                    ])
+                    .with_context(new_context.clone()),
+            );
+        }
+
+        let reserved = ["reset", "_new_state", "_old_state"];
+
+        if reserved.contains(&self.module_name().to_string().as_str()) {
+            diagnostics.insert(
+                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
+                    .notes([format!("reserved field keywords are: {reserved:?}")])
+                    .with_context(new_context.clone()),
+            );
+        }
+
+        diagnostics
     }
 }
 
@@ -101,212 +265,28 @@ impl Field {
         )
     }
 
-    pub(crate) fn reset_ty(&self, model: &Hal, path: Path, register_reset: Option<u32>) -> Type {
-        let Some(read) = self.access.get_read() else {
-            return parse_quote! { ::proto_hal::stasis::Dynamic };
-        };
-
-        if !self.is_resolvable() {
-            return parse_quote! { ::proto_hal::stasis::Dynamic };
-        }
-
-        let register_reset =
-            register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
-
-        let mask = u32::MAX >> (32 - self.width);
-        let reset = (register_reset >> self.offset) & mask;
-
-        match &read.numericity {
-            Numericity::Numeric(numeric) => {
-                let (.., ty) = numeric.ty(self.width);
-                let reset = Index::from(reset as usize);
-
-                parse_quote! { ::proto_hal::stasis::#ty<#reset> }
-            }
-            Numericity::Enumerated(enumerated) => {
-                let ty = enumerated
-                    .variants(model)
-                    .find(|variant| variant.bits == reset)
-                    .expect("exactly one variant must correspond to the reset value")
-                    .type_name();
-
-                parse_quote! { #path::#ty }
-            }
-        }
-    }
-
     /// The domain of the parent register in which the field occupies.
     pub fn domain(&self) -> Range<u8> {
         self.offset..(self.offset + self.width)
     }
-
-    pub fn validate(&self, model: &Hal, context: &Context) -> Diagnostics {
-        let new_context = context.clone().and(self.ident.clone().to_string());
-        let mut diagnostics = Diagnostics::new();
-
-        let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
-            match numericity {
-                Numericity::Numeric(..) => {}
-                Numericity::Enumerated(enumerated) => {
-                    let mut sorted_variants = enumerated.variants(model).collect::<Vec<_>>();
-                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
-
-                    if let Some(largest_variant) =
-                        sorted_variants.iter().map(|variant| variant.bits).max()
-                    {
-                        let variant_limit = (1u64 << self.width) - 1;
-                        if largest_variant as u64 > variant_limit {
-                            diagnostics.insert(
-                                Diagnostic::error(format!(
-                            "field variants exceed field width. (largest variant: {largest_variant}, largest possible: {variant_limit})",
-                        ))
-                                .with_context(new_context.clone()),
-                            );
-                        }
-                    }
-
-                    // validate variant adjacency
-                    for window in sorted_variants.windows(2) {
-                        let lhs = window[0];
-                        let rhs = window[1];
-
-                        if lhs.bits == rhs.bits {
-                            diagnostics.insert(
-                                Diagnostic::error(format!(
-                                    "variants [{}] and [{}] have overlapping bit values",
-                                    lhs.ident.to_string().bold(),
-                                    rhs.ident.to_string().bold()
-                                ))
-                                .with_context(new_context.clone()),
-                            );
-                        }
-                    }
-                }
-            }
-        };
-
-        for access in [self.access.get_read(), self.access.get_write()]
-            .into_iter()
-            .flatten()
-        {
-            validate_numericity(&access.numericity, &mut diagnostics);
-
-            if let Numericity::Enumerated(enumerated) = &access.numericity {
-                for variant in enumerated.variants(model) {
-                    diagnostics.extend(variant.validate(&new_context));
-                }
-            }
-        }
-
-        // validate access entitlements
-        if let (Some(read), Some(..)) = (self.access.get_read(), self.access.get_write())
-            && !read.entitlements.is_empty()
-        {
-            diagnostics.insert(
-                Diagnostic::error("writable fields cannot be conditionally readable")
-                    .notes(["for more information, refer to the \"Access Entitlement Quandaries\" section in `notes.md`"])
-                    .with_context(new_context.clone()),
-            );
-        }
-
-        // inert is write only
-        if let Some(read) = self.access.get_read()
-            && let Numericity::Enumerated { variants } = &read.numericity
-            && variants.values().any(|variant| variant.inert)
-        {
-            diagnostics.insert(
-                Diagnostic::error("readable variants cannot be inert")
-                    .notes([
-                        "for more information, refer to the \"Inertness\" section in `notes.md`",
-                    ])
-                    .with_context(new_context.clone()),
-            );
-        }
-
-        // TODO: this section can definitely be improved and likely has errors
-        // conditional writability requires hardware write to be specified
-        let ambiguous = self.access.get_read().is_some()
-            && self
-                .access
-                .get_write()
-                .is_some_and(|write| !write.entitlements.is_empty());
-
-        if ambiguous && self.hardware_access.is_none() {
-            diagnostics.insert(
-                Diagnostic::error("field value retainment is ambiguous")
-                    .notes(["specify the hardware field access with `.hardware_access(...)` to disambiguate how this field retains values"])
-                    .with_context(new_context.clone()),
-            );
-        }
-
-        if !ambiguous {
-            let inferred_hardware_access = match (
-                self.access.get_read().is_some(),
-                self.access.get_write().is_some(),
-            ) {
-                (true, true) => HardwareAccess::ReadOnly,
-                (true, false) => HardwareAccess::Write,
-                (false, true) => HardwareAccess::ReadOnly,
-                (false, false) => unreachable!(),
-            };
-
-            if let Some(hardware_access) = self.hardware_access
-                && hardware_access == inferred_hardware_access
-            {
-                diagnostics.insert(
-                Diagnostic::warning(format!("hardware access specified as {hardware_access:?} when it can be inferred as such"))
-                    .with_context(new_context.clone()),
-            );
-            }
-        }
-
-        let reserved = ["reset", "_new_state", "_old_state"];
-
-        if reserved.contains(&self.module_name().to_string().as_str()) {
-            diagnostics.insert(
-                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
-                    .notes([format!("reserved field keywords are: {reserved:?}")])
-                    .with_context(new_context.clone()),
-            );
-        }
-
-        diagnostics
-    }
 }
 
 // codegen
-impl Field {
+impl<'cx> View<'cx, FieldNode> {
     fn generate_states(&self) -> TokenStream {
-        // NOTE: if a field is resolvable and has split schemas,
-        // the schema that represents the resolvable aspect of the
-        // field must be from read access, as the value the field
-        // holds must represent the state to be resolved
-        //
-        // NOTE: states can only be generated for the resolvable component(s)
-        // of a field (since the definition of resolvability is that the state
-        // it holds is statically known)
-
         let mut out = quote! {};
 
         if let Some(access) = self.resolvable()
-            && let Numericity::Enumerated { variants } = &access.numericity
+            && let Numericity::Enumerated(enumerated) = &access
         {
-            let variants = variants.values();
-            variants.for_each(|variant| out.extend(variant.generate(self)));
+            let variants = enumerated.variants(self.model);
+            variants.for_each(|variant| out.extend(variant.generate(self.model, self)));
         }
 
         out
     }
 
-    fn generate_markers(offset: u8, width: u8) -> TokenStream {
-        quote! {
-            pub struct Field;
-            pub const OFFSET: u8 = #offset;
-            pub const WIDTH: u8 = #width;
-        }
-    }
-
-    fn generate_container(&self) -> TokenStream {
+    fn generate_container(&self, write_entitlements: &Entitlements) -> TokenStream {
         let ident = self.type_name();
 
         let into_dynamic = if self.is_resolvable() {
@@ -331,21 +311,12 @@ impl Field {
             None
         };
 
-        let entitlement_paths = self
-            .access
-            .get_write()
-            .map(|write| &write.entitlements)
-            .into_iter()
-            .flatten()
-            .map(|entitlement| {
-                let field_ty = Ident::new(
-                    entitlement.field().to_string().to_pascal_case().as_str(),
-                    Span::call_site(),
-                );
-                let prefix = entitlement.render_up_to_field();
-                let state = entitlement.render_entirely();
-                quote! { #prefix::#field_ty<#state> }
-            });
+        let entitlement_paths = write_entitlements.iter().map(|entitlement| {
+            let field_ty = entitlement.field(self.model).type_name();
+            let prefix = entitlement.render_up_to_field(self.model);
+            let state = entitlement.render_entirely(self.model);
+            quote! { #prefix::#field_ty<#state> }
+        });
 
         quote! {
             pub struct #ident<S> {
@@ -371,19 +342,19 @@ impl Field {
         }
     }
 
-    fn generate_repr(access: &Access) -> Option<TokenStream> {
-        let variant_enum = |variants: &IndexMap<Ident, Variant>, ident| {
+    fn generate_repr(&self) -> Option<TokenStream> {
+        let variant_enum = |variants: Vec<&Variant>, ident| {
             let variant_idents = variants
-                .values()
+                .iter()
                 .map(|variant| variant.type_name())
                 .collect::<Vec<_>>();
             let variant_bits = variants
-                .values()
+                .iter()
                 .map(|variant| variant.bits)
                 .collect::<Vec<_>>();
 
             let is_variant_idents = variants
-                .values()
+                .iter()
                 .map(|variant| format_ident!("is_{}", variant.module_name()));
 
             quote! {
@@ -418,87 +389,68 @@ impl Field {
             }
         };
 
-        match access {
-            Access::Read(read) => {
-                if let Numericity::Enumerated { variants } = &read.numericity {
-                    let variant_enum = variant_enum(variants, format_ident!("ReadVariant"));
+        match (self.access.get_read(), self.access.get_write()) {
+            (Some(Numericity::Enumerated(read)), None) => {
+                let variant_enum = variant_enum(
+                    read.variants(self.model).map(|view| &***view).collect(),
+                    format_ident!("ReadVariant"),
+                );
 
-                    Some(quote! {
-                        pub use ReadVariant as Variant;
+                Some(quote! {
+                    pub use ReadVariant as Variant;
 
-                        #variant_enum
-                    })
-                } else {
-                    None
-                }
+                    #variant_enum
+                })
             }
-            Access::Write(write) => {
-                if let Numericity::Enumerated { variants } = &write.numericity {
-                    let variant_enum = variant_enum(variants, format_ident!("WriteVariant"));
+            (None, Some(Numericity::Enumerated(write))) => {
+                let variant_enum = variant_enum(
+                    write.variants(self.model).map(|view| &***view).collect(),
+                    format_ident!("WriteVariant"),
+                );
 
-                    Some(quote! {
-                        pub use WriteVariant as Variant;
+                Some(quote! {
+                    pub use WriteVariant as Variant;
 
-                        #variant_enum
-                    })
-                } else {
-                    None
-                }
+                    #variant_enum
+                })
             }
-            Access::ReadWrite(read_write) => match read_write {
-                ReadWrite::Symmetrical(access) => {
-                    if let Numericity::Enumerated { variants } = &access.numericity {
-                        let variant_enum = variant_enum(variants, format_ident!("Variant"));
+            (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write)))
+                if read == write =>
+            {
+                let variant_enum = variant_enum(
+                    read.variants(self.model).map(|view| &***view).collect(),
+                    format_ident!("Variant"),
+                );
 
-                        Some(quote! {
-                            pub use Variant as ReadVariant;
-                            pub use Variant as WriteVariant;
+                Some(quote! {
+                    pub use Variant as ReadVariant;
+                    pub use Variant as WriteVariant;
 
-                            #variant_enum
-                        })
-                    } else {
-                        None
-                    }
-                }
-                ReadWrite::Asymmetrical { read, write } if read.numericity == write.numericity => {
-                    if let Numericity::Enumerated { variants } = &read.numericity {
-                        let variant_enum = variant_enum(variants, format_ident!("Variant"));
+                    #variant_enum
+                })
+            }
+            (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write))) => {
+                let read_variant_enum = variant_enum(
+                    read.variants(self.model).map(|view| &***view).collect(),
+                    format_ident!("ReadVariant"),
+                );
 
-                        Some(quote! {
-                            pub use Variant as ReadVariant;
-                            pub use Variant as WriteVariant;
+                let write_variant_enum = variant_enum(
+                    write.variants(self.model).map(|view| &***view).collect(),
+                    format_ident!("WriteVariant"),
+                );
 
-                            #variant_enum
-                        })
-                    } else {
-                        None
-                    }
-                }
-                ReadWrite::Asymmetrical { read, write } => {
-                    let read_enum = if let Numericity::Enumerated { variants } = &read.numericity {
-                        Some(variant_enum(variants, format_ident!("ReadVariant")))
-                    } else {
-                        None
-                    };
-
-                    let write_enum = if let Numericity::Enumerated { variants } = &write.numericity
-                    {
-                        Some(variant_enum(variants, format_ident!("WriteVariant")))
-                    } else {
-                        None
-                    };
-
-                    Some(quote! {
-                        #read_enum
-                        #write_enum
-                    })
-                }
-            },
+                Some(quote! {
+                    #read_variant_enum
+                    #write_variant_enum
+                })
+            }
+            (..) => None,
         }
     }
 
-    fn generate_masked(&self) -> Option<TokenStream> {
-        if self.entitlements.is_empty() {
+    fn generate_masked(&self, entitlements: &Entitlements) -> Option<TokenStream> {
+        if entitlements.is_empty() {
             None?
         }
 
@@ -518,10 +470,25 @@ impl Field {
     }
 
     fn generate_state_impls(&self) -> Option<TokenStream> {
-        if let Some(access) = self.resolvable() {
-            if let Numericity::Enumerated { variants } = &access.numericity {
-                let variant_values = variants.values().map(|variant| variant.bits);
-                let variants = variants.values().map(|variant| variant.type_name());
+        let Some(numericity) = self.resolvable() else {
+            None?
+        };
+
+        match numericity {
+            Numericity::Numeric(numeric) => {
+                let (raw_ty, ty) = numeric.ty(self.width);
+
+                Some(quote! {
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {
+                        const VALUE: u32 = V as _;
+                    }
+                })
+            }
+            Numericity::Enumerated(enumerated) => {
+                let variant_values = enumerated.variants(self.model).map(|variant| variant.bits);
+                let variants = enumerated
+                    .variants(self.model)
+                    .map(|variant| variant.type_name());
                 Some(quote! {
                     #(
                         impl ::proto_hal::stasis::Conjure for #variants {
@@ -537,30 +504,28 @@ impl Field {
                         }
                     )*
                 })
-            } else {
-                self.access.get_write().and_then(|write| write.numericity.numeric_ty(self.width)).map(|(raw_ty, ty)| quote! {
-                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {
-                        const VALUE: u32 = V as _;
-                    }
-                })
             }
-        } else {
-            None
         }
     }
 }
 
-impl Field {
+impl<'cx> View<'cx, FieldNode> {
     pub fn generate(&self) -> TokenStream {
         let ident = &self.ident;
+
+        let ontological_entitlements = self
+            .model
+            .get_entitlements(EntitlementIndex::Field(self.index));
+        let write_entitlements = self
+            .model
+            .get_entitlements(EntitlementIndex::Write(self.index));
 
         let mut body = quote! {};
 
         body.extend(self.generate_states());
-        body.extend(Self::generate_markers(self.offset, self.width));
-        body.extend(self.generate_container());
-        body.extend(Self::generate_repr(&self.access));
-        body.extend(self.generate_masked());
+        body.extend(self.generate_container(&write_entitlements));
+        body.extend(self.generate_repr());
+        body.extend(self.generate_masked(&ontological_entitlements));
         body.extend(self.generate_state_impls());
 
         let docs = &self.docs;

@@ -38,7 +38,7 @@ pub struct Numeric;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enumerated {
-    variants: IndexMap<Ident, VariantIndex>,
+    pub variants: IndexMap<Ident, VariantIndex>,
 }
 
 impl Numeric {
@@ -54,7 +54,7 @@ impl Numeric {
 }
 
 impl Enumerated {
-    fn variants<'cx>(&self, model: &'cx Hal) -> impl Iterator<Item = View<'cx, VariantNode>> {
+    pub fn variants<'cx>(&self, model: &'cx Hal) -> impl Iterator<Item = View<'cx, VariantNode>> {
         self.variants
             .values()
             .map(|index| model.get_variant(*index))

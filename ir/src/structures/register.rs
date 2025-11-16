@@ -1,5 +1,5 @@
 use colored::Colorize;
-use derive_more::Deref;
+use derive_more::{AsRef, Deref};
 use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
@@ -20,10 +20,11 @@ use super::{entitlement::Entitlement, field::Field};
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct RegisterIndex(pub(super) usize);
 
-#[derive(Debug, Clone, Deref)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct RegisterNode {
     pub(super) parent: PeripheralIndex,
     #[deref]
+    #[as_ref]
     pub(super) register: Register,
     pub(super) fields: IndexMap<Ident, FieldIndex>,
 }

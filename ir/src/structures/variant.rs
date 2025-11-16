@@ -1,4 +1,4 @@
-use derive_more::Deref;
+use derive_more::{AsRef, Deref};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
@@ -18,10 +18,11 @@ use super::entitlement::Entitlement;
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct VariantIndex(pub(super) usize);
 
-#[derive(Debug, Clone, Deref)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct VariantNode {
     pub(super) parent: FieldIndex,
     #[deref]
+    #[as_ref]
     pub(super) variant: Variant,
 }
 

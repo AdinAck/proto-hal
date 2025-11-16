@@ -1,7 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData, ops::Deref};
 
 use colored::Colorize;
-use derive_more::Deref;
+use derive_more::{AsRef, Deref};
 use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -402,8 +402,8 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         }
     }
 
-    /// Add [presence entitlements](TODO) to the peripheral.
-    pub fn presence_entitlements(
+    /// Add [ontological entitlements](TODO) to the peripheral.
+    pub fn ontological_entitlements(
         &'cx mut self,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
@@ -533,8 +533,8 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         self.insert_child_and_make_entry(index, variant)
     }
 
-    /// Add [presence entitlements](TODO) to the field.
-    pub fn presence_entitlements(
+    /// Add [ontological entitlements](TODO) to the field.
+    pub fn ontological_entitlements(
         &'cx mut self,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
@@ -628,11 +628,12 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
 }
 
 /// A view into the device model at a single node.
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, AsRef)]
 pub struct View<'cx, N: Node> {
-    model: &'cx Hal,
-    index: N::Index,
+    pub(super) model: &'cx Hal,
+    pub(super) index: N::Index,
     #[deref]
+    #[as_ref]
     node: &'cx N,
 }
 
@@ -651,5 +652,11 @@ impl<'cx> View<'cx, RegisterNode> {
             .fields
             .values()
             .map(|index| self.model.get_field(*index))
+    }
+}
+
+impl<'cx> View<'cx, Entitlements> {
+    pub fn entitlements(&self) -> impl Iterator<Item = &'cx Entitlement> {
+        self.node.iter().map(|entitlement| entitlement)
     }
 }
