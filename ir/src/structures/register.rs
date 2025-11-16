@@ -10,12 +10,12 @@ use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        field::FieldIndex,
-        peripheral::{Peripheral, PeripheralIndex},
+        entitlement::EntitlementIndex,
+        field::{FieldIndex, FieldNode},
+        hal::View,
+        peripheral::PeripheralIndex,
     },
 };
-
-use super::{entitlement::Entitlement, field::Field};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct RegisterIndex(pub(super) usize);
@@ -48,17 +48,10 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn new(
-        ident: impl AsRef<str>,
-        offset: u32,
-        fields: impl IntoIterator<Item = Field>,
-    ) -> Self {
+    pub fn new(ident: impl AsRef<str>, offset: u32) -> Self {
         Self {
             ident: Ident::new(ident.as_ref().to_lowercase().as_str(), Span::call_site()),
             offset,
-            fields: IndexMap::from_iter(
-                fields.into_iter().map(|field| (field.module_name(), field)),
-            ),
             reset: None,
             docs: Vec::new(),
         }
@@ -68,11 +61,6 @@ impl Register {
         self.reset = Some(reset);
 
         self
-    }
-
-    #[expect(unused)]
-    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
-        todo!()
     }
 
     pub fn docs<I>(mut self, docs: I) -> Self
@@ -96,10 +84,12 @@ impl Register {
             Span::call_site(),
         )
     }
+}
 
+impl<'cx> View<'cx, RegisterNode> {
     /// A register is resolvable if at least one field within it is resolvable.
     pub fn is_resolvable(&self) -> bool {
-        self.fields.values().any(|field| field.is_resolvable())
+        self.fields().any(|field| field.is_resolvable())
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
@@ -116,21 +106,28 @@ impl Register {
             );
         }
 
-        let mut fields = self.fields.values().collect::<Vec<_>>();
-        fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+        let mut sorted_fields = self.fields().collect::<Vec<_>>();
+        sorted_fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
 
-        for (i, field) in fields.iter().enumerate() {
-            let remaining = &fields[i + 1..];
+        for (i, field) in sorted_fields.iter().enumerate() {
+            let remaining = &sorted_fields[i + 1..];
 
             for other in remaining {
                 if field.offset + field.width <= other.offset {
                     break;
                 }
 
+                let ontological_entitlements = self
+                    .model
+                    .get_entitlements(EntitlementIndex::Field(field.index));
+                let other_ontological_entitlements = self
+                    .model
+                    .get_entitlements(EntitlementIndex::Field(other.index));
+
                 // unfortunate workaround for `is_disjoint` behavior when sets are empty
-                if !field.entitlements.is_empty()
-                    && !other.entitlements.is_empty()
-                    && field.entitlements.is_disjoint(&other.entitlements)
+                if !ontological_entitlements.is_empty()
+                    && !other_ontological_entitlements.is_empty()
+                    && ontological_entitlements.is_disjoint(&other_ontological_entitlements)
                 {
                     continue;
                 }
@@ -143,11 +140,11 @@ impl Register {
                     ))
                     .with_context(new_context.clone())
                     .notes(
-                        if !field.entitlements.is_empty() || !other.entitlements.is_empty() {
+                        if !ontological_entitlements.is_empty() || !other_ontological_entitlements.is_empty() {
                             vec![format!(
                                 "overlapping fields have non-trivial intersecting entitlement spaces {:?} and {:?}",
-                                field.entitlements.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                                other.entitlements.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                                ontological_entitlements.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>(),
+                                other_ontological_entitlements.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>(),
                             )]
                         } else {
                             vec![]
@@ -157,7 +154,7 @@ impl Register {
             }
         }
 
-        if let Some(field) = fields.last()
+        if let Some(field) = sorted_fields.last()
             && field.offset + field.width > 32
         {
             diagnostics.insert(
@@ -176,7 +173,7 @@ impl Register {
                 )
                 .notes([format!(
                     "resolvable fields: {}",
-                    fields
+                    sorted_fields
                         .iter()
                         .filter(|field| field.is_resolvable())
                         .map(|field| field.module_name().to_string().bold().to_string())
@@ -187,7 +184,7 @@ impl Register {
             );
         }
 
-        for field in fields {
+        for field in sorted_fields {
             diagnostics.extend(field.validate(&new_context));
         }
 
@@ -196,38 +193,33 @@ impl Register {
 }
 
 // codegen
-impl Register {
-    fn generate_fields(&self) -> TokenStream {
-        self.fields.values().fold(quote! {}, |mut acc, field| {
+impl<'cx> View<'cx, RegisterNode> {
+    fn generate_fields(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
+        fields.iter().fold(quote! {}, |mut acc, field| {
             acc.extend(field.generate());
 
             acc
         })
     }
 
-    fn generate_addr(base_addr: u32, offset: u32) -> TokenStream {
-        let addr = base_addr + offset;
-        quote! {
-            pub const ADDR: u32 = #addr;
-        }
-    }
-
-    fn generate_reset<'a>(
-        fields: impl Iterator<Item = &'a Field> + Clone,
-        reset: Option<u32>,
-    ) -> TokenStream {
+    fn generate_reset(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
         let field_idents = fields
-            .clone()
+            .iter()
             .map(|field| field.module_name())
             .collect::<Vec<_>>();
 
         let reset_tys = fields
+            .iter()
             .map(|field| {
                 let ident = field.module_name();
                 let ty = field.type_name();
 
-                let reset_ty = if field.entitlements.is_empty() {
-                    let reset_ty = field.reset_ty(parse_quote! { #ident }, reset);
+                let ontological_entitlements = self
+                    .model
+                    .get_entitlements(EntitlementIndex::Field(field.index));
+
+                let reset_ty = if ontological_entitlements.is_empty() {
+                    let reset_ty = field.reset_ty(parse_quote! { #ident }, self.reset);
 
                     quote! { #ident::#ty<#reset_ty> }
                 } else {
@@ -256,17 +248,15 @@ impl Register {
             }
         }
     }
-}
 
-impl Register {
-    pub fn generate(&self, parent: &Peripheral) -> TokenStream {
+    pub fn generate(&self) -> TokenStream {
         let mut body = quote! {};
 
         let module_name = self.module_name();
+        let fields = self.fields().collect();
 
-        body.extend(self.generate_fields());
-        body.extend(Self::generate_addr(parent.base_addr, self.offset));
-        body.extend(Self::generate_reset(self.fields.values(), self.reset));
+        body.extend(self.generate_fields(&fields));
+        body.extend(self.generate_reset(&fields));
 
         let docs = &self.docs;
         quote! {

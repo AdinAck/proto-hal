@@ -2,12 +2,15 @@ use indexmap::IndexSet;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::structures::{
-    Node,
-    field::{FieldIndex, FieldNode},
-    hal::{Hal, View},
-    peripheral::PeripheralIndex,
-    variant::VariantIndex,
+use crate::{
+    diagnostic::Context,
+    structures::{
+        Node,
+        field::{FieldIndex, FieldNode},
+        hal::{Hal, View},
+        peripheral::PeripheralIndex,
+        variant::VariantIndex,
+    },
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -62,4 +65,45 @@ pub enum EntitlementIndex {
     Write(FieldIndex),
     HardwareWrite(FieldIndex),
     Variant(VariantIndex),
+}
+
+impl EntitlementIndex {
+    pub fn into_context(&self, model: &Hal) -> Context {
+        Context::with_path(match self {
+            EntitlementIndex::Peripheral(peripheral_index) => {
+                vec![
+                    model
+                        .get_peripheral(peripheral_index.clone())
+                        .module_name()
+                        .to_string(),
+                ]
+            }
+            EntitlementIndex::Field(field_index)
+            | EntitlementIndex::Write(field_index)
+            | EntitlementIndex::HardwareWrite(field_index) => {
+                let field = model.get_field(*field_index);
+                let register = model.get_register(field.parent);
+                let peripheral = model.get_peripheral(register.parent.clone());
+
+                vec![
+                    peripheral.module_name().to_string(),
+                    register.module_name().to_string(),
+                    field.module_name().to_string(),
+                ]
+            }
+            EntitlementIndex::Variant(variant_index) => {
+                let variant = model.get_variant(*variant_index);
+                let field = model.get_field(variant.parent);
+                let register = model.get_register(field.parent);
+                let peripheral = model.get_peripheral(register.parent.clone());
+
+                vec![
+                    peripheral.module_name().to_string(),
+                    register.module_name().to_string(),
+                    field.module_name().to_string(),
+                    variant.module_name().to_string(),
+                ]
+            }
+        })
+    }
 }

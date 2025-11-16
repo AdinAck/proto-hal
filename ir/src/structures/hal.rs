@@ -15,6 +15,7 @@ use crate::{
         field::{
             Field, FieldIndex, FieldNode,
             access::{self, Access},
+            numericity::Numericity,
         },
         interrupts::{Interrupt, Interrupts},
         peripheral::{PeripheralIndex, PeripheralNode},
@@ -132,6 +133,14 @@ impl Hal {
             index,
         }
     }
+
+    pub fn peripherals<'cx>(&'cx self) -> impl Iterator<Item = View<'cx, PeripheralNode>> {
+        self.peripherals.iter().map(|(index, node)| View {
+            model: self,
+            index: index.clone(),
+            node,
+        })
+    }
 }
 
 impl Hal {
@@ -139,12 +148,12 @@ impl Hal {
         let mut diagnostics = Diagnostics::new();
         let new_context = Context::new();
 
-        let mut sorted_peripherals = self.peripherals.values().collect::<Vec<_>>();
+        let mut sorted_peripherals = self.peripherals().collect::<Vec<_>>();
         sorted_peripherals.sort_by(|lhs, rhs| lhs.base_addr.cmp(&rhs.base_addr));
 
         for window in sorted_peripherals.windows(2) {
-            let lhs = window[0];
-            let rhs = window[1];
+            let lhs = &window[0];
+            let rhs = &window[1];
 
             if lhs.base_addr + lhs.width() > rhs.base_addr {
                 diagnostics.insert(
@@ -157,125 +166,23 @@ impl Hal {
             }
         }
 
-        for peripheral in self.peripherals.values() {
+        for peripheral in &sorted_peripherals {
             diagnostics.extend(peripheral.validate(&Context::new()));
         }
 
-        // collect all entitlements
-        let mut entitlements = IndexMap::<Context, Vec<Entitlement>>::new();
-
-        let context = Context::new();
-
-        for peripheral in self.peripherals.values() {
-            let context = context.clone().and(peripheral.module_name().to_string());
-
-            entitlements
-                .entry(context.clone())
-                .or_default()
-                .extend(peripheral.entitlements.clone());
-
-            for register in peripheral.registers.values() {
-                let context = context.clone().and(register.module_name().to_string());
-
-                for field in register.fields.values() {
-                    let context = context.clone().and(field.module_name().to_string());
-
-                    entitlements
-                        .entry(context.clone())
-                        .or_default()
-                        .extend(field.entitlements.clone());
-
-                    let accesses = [field.access.get_read(), field.access.get_write()];
-
-                    for access in accesses.iter().flatten() {
-                        entitlements
-                            .entry(context.clone())
-                            .or_default()
-                            .extend(access.entitlements.clone());
-
-                        if let Numericity::Enumerated { variants } = &access.numericity {
-                            for variant in variants.values() {
-                                let context = context.clone().and(variant.type_name().to_string());
-
-                                entitlements
-                                    .entry(context)
-                                    .or_default()
-                                    .extend(variant.entitlements.clone());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // traverse the hal tree given the entitlement path and ensure the path exists
-        for (context, entitlements) in entitlements {
+        for (index, entitlements) in &self.entitlements {
             for entitlement in entitlements {
-                let Some(peripheral) = self.peripherals.get(entitlement.peripheral()) else {
-                    diagnostics.insert(
-                        Diagnostic::error(format!(
-                            "entitlement peripheral [{}] does not exist",
-                            entitlement.peripheral().to_string().bold()
-                        ))
-                        .with_context(context.clone()),
-                    );
+                let field = entitlement.field(self);
 
-                    continue;
-                };
-
-                let Some(register) = peripheral.registers.get(entitlement.register()) else {
-                    diagnostics.insert(
-                        Diagnostic::error(format!(
-                            "entitlement register [{}] does not exist",
-                            entitlement.register().to_string().bold()
-                        ))
-                        .with_context(context.clone()),
-                    );
-
-                    continue;
-                };
-
-                let Some(field) = register.fields.get(entitlement.field()) else {
-                    diagnostics.insert(
-                        Diagnostic::error(format!(
-                            "entitlement field [{}] does not exist",
-                            entitlement.field().to_string().bold()
-                        ))
-                        .with_context(context.clone()),
-                    );
-
-                    continue;
-                };
-
-                let Some(read) = field.resolvable() else {
+                if field.resolvable().is_none() {
                     diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement [{}] resides within unresolvable field [{}] and as such cannot be entitled to",
-                            entitlement.to_string().bold(),
-                            entitlement.field().to_string().bold()
+                            entitlement.render_entirely(self).to_string().bold(),
+                            field.module_name().to_string().bold()
                         ))
-                            .with_context(context.clone()),
-                    );
-
-                    continue;
-                };
-
-                let Numericity::Enumerated { variants } = &read.numericity else {
-                    diagnostics.insert(
-                        Diagnostic::error(format!("entitlement path [{}] targets numeric field which cannot be entitled to", entitlement.to_string().bold()))
-                            .with_context(context.clone()),
-                    );
-
-                    continue;
-                };
-
-                let Some(_variant) = variants.get(entitlement.variant()) else {
-                    diagnostics.insert(
-                        Diagnostic::error(format!(
-                            "entitlement variant [{}] does not exist",
-                            entitlement.variant().to_string().bold()
-                        ))
-                        .with_context(context.clone()),
+                            .with_context(index.into_context(self)),
                     );
 
                     continue;
@@ -292,13 +199,11 @@ impl Hal {
 // codegen
 impl Hal {
     fn generate_peripherals(&self) -> TokenStream {
-        self.peripherals
-            .values()
-            .fold(quote! {}, |mut acc, peripheral| {
-                acc.extend(peripheral.generate());
+        self.peripherals().fold(quote! {}, |mut acc, peripheral| {
+            acc.extend(peripheral.generate());
 
-                acc
-            })
+            acc
+        })
     }
 
     fn generate_peripherals_struct<'a>(
@@ -638,6 +543,7 @@ pub struct View<'cx, N: Node> {
 }
 
 impl<'cx> View<'cx, PeripheralNode> {
+    /// Use the model context to lookup all child registers.
     pub fn registers(&self) -> impl Iterator<Item = View<'cx, RegisterNode>> {
         self.node
             .registers
@@ -647,6 +553,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 }
 
 impl<'cx> View<'cx, RegisterNode> {
+    /// Use the model context to lookup all child fields.
     pub fn fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> {
         self.node
             .fields

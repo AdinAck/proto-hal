@@ -449,8 +449,8 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
-    fn generate_masked(&self, entitlements: &Entitlements) -> Option<TokenStream> {
-        if entitlements.is_empty() {
+    fn generate_masked(&self, ontological_entitlements: &Entitlements) -> Option<TokenStream> {
+        if ontological_entitlements.is_empty() {
             None?
         }
 
@@ -507,9 +507,7 @@ impl<'cx> View<'cx, FieldNode> {
             }
         }
     }
-}
 
-impl<'cx> View<'cx, FieldNode> {
     pub fn generate(&self) -> TokenStream {
         let ident = &self.ident;
 

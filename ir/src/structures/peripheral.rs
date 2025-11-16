@@ -1,5 +1,5 @@
 use derive_more::{AsRef, Deref};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -7,10 +7,13 @@ use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{Node, register::RegisterIndex},
+    structures::{
+        Node,
+        entitlement::{EntitlementIndex, Entitlements},
+        hal::View,
+        register::{RegisterIndex, RegisterNode},
+    },
 };
-
-use super::{entitlement::Entitlement, register::Register};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
 pub struct PeripheralIndex(pub(super) Ident);
@@ -41,35 +44,12 @@ pub struct Peripheral {
 }
 
 impl Peripheral {
-    pub fn new(
-        ident: impl AsRef<str>,
-        base_addr: u32,
-        registers: impl IntoIterator<Item = Register>,
-    ) -> Self {
+    pub fn new(ident: impl AsRef<str>, base_addr: u32) -> Self {
         Self {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             base_addr,
-            entitlements: IndexSet::new(),
-            registers: IndexMap::from_iter(
-                registers
-                    .into_iter()
-                    .map(|register| (register.ident.clone(), register)),
-            ),
             docs: Vec::new(),
         }
-    }
-
-    pub fn width(&self) -> u32 {
-        self.registers
-            .values()
-            .max_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset))
-            .map(|register| register.offset + 4)
-            .unwrap_or(0)
-    }
-
-    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
-        self.entitlements.extend(entitlements);
-        self
     }
 
     pub fn docs<I>(mut self, docs: I) -> Self
@@ -93,6 +73,15 @@ impl Peripheral {
             Span::call_site(),
         )
     }
+}
+
+impl<'cx> View<'cx, PeripheralNode> {
+    pub fn width(&self) -> u32 {
+        self.registers()
+            .max_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset))
+            .map(|register| register.offset + 4)
+            .unwrap_or(0)
+    }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
@@ -105,12 +94,12 @@ impl Peripheral {
             );
         }
 
-        let mut sorted_registers = self.registers.values().collect::<Vec<_>>();
+        let mut sorted_registers = self.registers().collect::<Vec<_>>();
         sorted_registers.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
 
         for window in sorted_registers.windows(2) {
-            let lhs = window[0];
-            let rhs = window[1];
+            let lhs = &window[0];
+            let rhs = &window[1];
 
             if lhs.offset + 4 > rhs.offset {
                 diagnostics.insert(
@@ -123,7 +112,7 @@ impl Peripheral {
             }
         }
 
-        for register in self.registers.values() {
+        for register in &sorted_registers {
             diagnostics.extend(register.validate(&new_context));
         }
 
@@ -132,25 +121,17 @@ impl Peripheral {
 }
 
 // codegen
-impl Peripheral {
-    fn generate_registers(&self) -> TokenStream {
-        self.registers
-            .values()
-            .fold(quote! {}, |mut acc, register| {
-                acc.extend(register.generate(self));
+impl<'cx> View<'cx, PeripheralNode> {
+    fn generate_registers(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
+        registers.iter().fold(quote! {}, |mut acc, register| {
+            acc.extend(register.generate());
 
-                acc
-            })
+            acc
+        })
     }
 
-    fn generate_base_addr(base_addr: u32) -> TokenStream {
-        quote! {
-            pub const BASE_ADDR: u32 = #base_addr;
-        }
-    }
-
-    fn generate_masked(&self) -> Option<TokenStream> {
-        if self.entitlements.is_empty() {
+    fn generate_masked(&self, ontological_entitlements: &Entitlements) -> Option<TokenStream> {
+        if ontological_entitlements.is_empty() {
             None?
         }
 
@@ -167,8 +148,9 @@ impl Peripheral {
         })
     }
 
-    fn generate_reset<'a>(registers: impl Iterator<Item = &'a Register>) -> TokenStream {
+    fn generate_reset(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
         let register_idents = registers
+            .iter()
             .map(|register| register.module_name())
             .collect::<Vec<_>>();
 
@@ -192,23 +174,27 @@ impl Peripheral {
     }
 }
 
-impl Peripheral {
+impl<'cx> View<'cx, PeripheralNode> {
     pub fn generate(&self) -> TokenStream {
         let mut body = quote! {};
 
-        let ident = self.module_name();
+        let module_name = self.module_name();
+        let registers = self.registers().collect();
 
-        body.extend(self.generate_registers());
-        body.extend(Self::generate_base_addr(self.base_addr));
-        body.extend(self.generate_masked());
-        body.extend(Self::generate_reset(self.registers.values()));
+        let ontological_entitlements = self
+            .model
+            .get_entitlements(EntitlementIndex::Peripheral(self.index.clone()));
+
+        body.extend(self.generate_registers(&registers));
+        body.extend(self.generate_masked(&ontological_entitlements));
+        body.extend(self.generate_reset(&registers));
 
         let docs = &self.docs;
 
         quote! {
             #(#[doc = #docs])*
             #[allow(clippy::module_inception)]
-            pub mod #ident {
+            pub mod #module_name {
                 #body
             }
         }
