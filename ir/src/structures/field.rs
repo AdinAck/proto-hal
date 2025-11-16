@@ -33,7 +33,7 @@ pub struct FieldNode {
     #[deref]
     #[as_ref]
     pub(super) field: Field,
-    pub(super) access: Access,
+    pub access: Access,
 }
 
 impl Node for FieldNode {

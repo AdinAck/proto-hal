@@ -51,7 +51,7 @@ impl Interrupt {
     }
 }
 
-#[derive(Debug, Clone, Deref, DerefMut)]
+#[derive(Debug, Clone, Default, Deref, DerefMut)]
 pub struct Interrupts {
     interrupts: Vec<Interrupt>,
 }

@@ -1,4 +1,9 @@
-use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
+use ir::structures::{
+    field::FieldNode,
+    hal::{Hal, View},
+    peripheral::PeripheralNode,
+    register::RegisterNode,
+};
 use proc_macro2::Span;
 use syn::{
     Ident, Path, parse_quote, punctuated::Punctuated, spanned::Spanned as _, token::PathSep,
@@ -17,10 +22,10 @@ use crate::codegen::macros::{
 };
 
 pub fn parse_peripheral<'cx, PeripheralPolicy, EntryPolicy>(
+    model: &'cx Hal,
     peripheral_map: &mut PeripheralMap<'cx>,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
-    model: &'cx Hal,
 ) -> Result<(), Diagnostics>
 where
     PeripheralPolicy: Filter,
@@ -31,7 +36,7 @@ where
     let path = &tree.path;
     let mut segments = path.segments.iter().map(|segment| &segment.ident);
     let (peripheral, peripheral_path, peripheral_ident) =
-        fuzzy_find_peripheral(&mut segments, path.span(), model)?;
+        fuzzy_find_peripheral(model, &mut segments, path.span())?;
 
     let peripheral_path: Path = {
         let leading_colon = path.leading_colon;
@@ -49,7 +54,7 @@ where
 
                 if peripheral_map
                     .insert(
-                        PeripheralKey::from_model(peripheral),
+                        PeripheralKey::from_model(&peripheral),
                         PeripheralItem {
                             path: path.clone(),
                             ident: peripheral_ident,
@@ -64,9 +69,13 @@ where
             }
             Node::Branch(children) => {
                 for child in children {
-                    if let Err(e) =
-                        parse_register(register_map, child, &peripheral_path, peripheral)
-                    {
+                    if let Err(e) = parse_register(
+                        model,
+                        register_map,
+                        child,
+                        &peripheral_path,
+                        peripheral.clone(),
+                    ) {
                         diagnostics.extend(e);
                     }
                 }
@@ -80,7 +89,7 @@ where
         };
     };
 
-    let register = find_register(register_ident, peripheral)?;
+    let register = find_register(register_ident, &peripheral)?;
 
     let Some(field_ident) = segments.next() else {
         // path ends on register item
@@ -90,12 +99,13 @@ where
             Node::Branch(children) => {
                 for child in children {
                     if let Err(e) = parse_field(
+                        model,
                         register_map,
                         child,
                         peripheral_path.clone(),
-                        peripheral,
+                        peripheral.clone(),
                         register_ident,
-                        register,
+                        register.clone(),
                     ) {
                         diagnostics.extend(e);
                     }
@@ -111,6 +121,7 @@ where
     };
 
     put_field(
+        model,
         register_map,
         tree,
         field_ident,
@@ -128,10 +139,11 @@ where
 }
 
 fn parse_register<'cx, EntryPolicy>(
+    model: &'cx Hal,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     peripheral_path: &Path,
-    peripheral: &'cx Peripheral,
+    peripheral: View<'cx, PeripheralNode>,
 ) -> Result<(), Diagnostics>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
@@ -143,11 +155,12 @@ where
 
     let register_ident = segments.next().expect("expected at least one path segment");
 
-    let register = find_register(register_ident, peripheral)?;
+    let register = find_register(register_ident, &peripheral)?;
 
     if let Some(field_ident) = segments.next() {
         // single field
         put_field(
+            model,
             register_map,
             tree,
             field_ident,
@@ -163,12 +176,13 @@ where
             Node::Branch(children) => {
                 for child in children {
                     if let Err(e) = parse_field(
+                        model,
                         register_map,
                         child,
                         peripheral_path.clone(),
-                        peripheral,
+                        peripheral.clone(),
                         register_ident,
-                        register,
+                        register.clone(),
                     ) {
                         diagnostics.extend(e);
                     }
@@ -187,12 +201,13 @@ where
 }
 
 fn parse_field<'cx, EntryPolicy>(
+    model: &'cx Hal,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     peripheral_path: Path,
-    peripheral: &'cx Peripheral,
+    peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
-    register: &'cx Register,
+    register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
@@ -203,6 +218,7 @@ where
         .map_err(Into::<Diagnostic>::into)?;
 
     put_field(
+        model,
         register_map,
         tree,
         field_segment,
@@ -214,24 +230,25 @@ where
 }
 
 fn put_field<'cx, EntryPolicy>(
+    model: &'cx Hal,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     field_ident: &'cx Ident,
     peripheral_path: Path,
-    peripheral: &'cx Peripheral,
+    peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
-    register: &'cx Register,
+    register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
-    let field = find_field(field_ident, register)?;
+    let field = find_field(field_ident, &register)?;
 
     match &tree.node {
         Node::Branch(..) => Err(Diagnostic::path_cannot_contine(&tree.path, field_ident))?,
         Node::Leaf(entry) => {
             if register_map
-                .entry(RegisterKey::from_model(peripheral, register))
+                .entry(RegisterKey::from_model(&peripheral, register.as_ref()))
                 .or_insert(RegisterItem {
                     peripheral_path,
                     ident: register_ident,
@@ -241,14 +258,14 @@ where
                 })
                 .fields
                 .insert(
-                    FieldKey::from_model(field),
+                    FieldKey::from_model(&field),
                     FieldItem {
                         ident: field_ident,
-                        field,
                         entry: EntryPolicy::refine((
                             field_ident,
-                            Entry::parse(entry, field, field_ident)?,
+                            Entry::parse(model, entry, &field, field_ident)?,
                         ))?,
+                        field,
                     },
                 )
                 .is_some()
@@ -262,15 +279,15 @@ where
 }
 
 fn fuzzy_find_peripheral<'cx>(
+    model: &'cx Hal,
     path: &mut impl Iterator<Item = &'cx Ident>,
     span: Span,
-    model: &'cx Hal,
-) -> Result<(&'cx Peripheral, Path, &'cx Ident), Diagnostic> {
+) -> Result<(View<'cx, PeripheralNode>, Path, &'cx Ident), Diagnostic> {
     let mut peripheral_path = Punctuated::<_, PathSep>::new();
 
     for ident in path {
         peripheral_path.push(ident);
-        if let Some(peripheral) = model.peripherals.get(ident) {
+        if let Some(peripheral) = model.try_get_peripheral(ident.clone().into()) {
             return Ok((peripheral, parse_quote! { #peripheral_path }, ident));
         }
     }
@@ -280,17 +297,18 @@ fn fuzzy_find_peripheral<'cx>(
 
 fn find_register<'cx>(
     ident: &Ident,
-    peripheral: &'cx Peripheral,
-) -> Result<&'cx Register, Diagnostic> {
+    peripheral: &View<'cx, PeripheralNode>,
+) -> Result<View<'cx, RegisterNode>, Diagnostic> {
     peripheral
-        .registers
-        .get(ident)
+        .try_get_register(ident)
         .ok_or(Diagnostic::register_not_found(ident, peripheral))
 }
 
-fn find_field<'cx>(ident: &Ident, register: &'cx Register) -> Result<&'cx Field, Diagnostic> {
+fn find_field<'cx>(
+    ident: &Ident,
+    register: &View<'cx, RegisterNode>,
+) -> Result<View<'cx, FieldNode>, Diagnostic> {
     register
-        .fields
-        .get(ident)
+        .try_get_field(ident)
         .ok_or(Diagnostic::field_not_found(ident, register))
 }

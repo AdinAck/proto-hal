@@ -1,4 +1,4 @@
-use ir::structures::field::Field;
+use ir::structures::{field::FieldNode, hal::Hal};
 use syn::Ident;
 
 use crate::codegen::macros::{
@@ -42,26 +42,31 @@ pub enum Entry<'cx> {
 impl<'cx> Entry<'cx> {
     /// Parse the entry input against the model to produce a semantic entry.
     pub fn parse(
+        model: &'cx Hal,
         entry: &'cx syntax::Entry,
-        field: &'cx Field,
+        field: &'cx FieldNode,
         field_ident: &'cx Ident,
     ) -> Result<Self, Diagnostic> {
         Ok(match (&entry.binding, &entry.transition) {
             (None, None) => Self::Empty,
-            (None, Some(transition)) => {
-                Self::UnboundDynamicTransition(Transition::parse(transition, field, field_ident)?)
-            }
+            (None, Some(transition)) => Self::UnboundDynamicTransition(Transition::parse(
+                model,
+                transition,
+                field,
+                field_ident,
+            )?),
             (Some(binding), None) if binding.is_viewed() => Self::View(binding),
             (Some(binding), None) => Err(Diagnostic::binding_must_be_view(binding))?,
             (Some(binding), Some(transition)) if binding.is_dynamic() => {
                 Self::BoundDynamicTransition(
                     binding,
-                    Transition::parse(transition, field, field_ident)?,
+                    Transition::parse(model, transition, field, field_ident)?,
                 )
             }
-            (Some(binding), Some(transition)) if binding.is_moved() => {
-                Self::StaticTransition(binding, Transition::parse(transition, field, field_ident)?)
-            }
+            (Some(binding), Some(transition)) if binding.is_moved() => Self::StaticTransition(
+                binding,
+                Transition::parse(model, transition, field, field_ident)?,
+            ),
             (Some(binding), Some(..)) => Err(Diagnostic::binding_cannot_be_view(binding))?,
         })
     }

@@ -5,6 +5,8 @@ use derive_more::{AsRef, Deref};
 use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+use syn::Ident;
+use ters::ters;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
@@ -24,7 +26,8 @@ use crate::{
 
 use super::peripheral::Peripheral;
 
-#[derive(Debug, Clone)]
+#[ters]
+#[derive(Debug, Clone, Default)]
 pub struct Hal {
     peripherals: IndexMap<PeripheralIndex, PeripheralNode>,
     registers: Vec<RegisterNode>,
@@ -33,6 +36,7 @@ pub struct Hal {
 
     entitlements: HashMap<EntitlementIndex, Entitlements>,
 
+    #[get]
     interrupts: Interrupts,
 }
 
@@ -48,7 +52,11 @@ impl Hal {
         }
     }
 
-    pub fn add_peripheral(&mut self, peripheral: Peripheral) -> PeripheralIndex {
+    /// Add a peripheral to the model.
+    pub fn add_peripheral<'cx>(
+        &'cx mut self,
+        peripheral: Peripheral,
+    ) -> Entry<'cx, PeripheralIndex, ()> {
         let index = PeripheralIndex(peripheral.module_name());
 
         self.peripherals.insert(
@@ -59,10 +67,14 @@ impl Hal {
             },
         );
 
-        index
+        Entry {
+            model: self,
+            index,
+            _p: PhantomData,
+        }
     }
 
-    pub fn interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
+    pub fn with_interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
         self.interrupts.extend(interrupts);
         self
     }
@@ -90,6 +102,18 @@ impl Hal {
                 Err(format!("{}:\n{lhs}{err}{rhs}", e))
             }
         }
+    }
+
+    pub fn try_get_peripheral(&self, index: PeripheralIndex) -> Option<View<'_, PeripheralNode>> {
+        let Some(node) = self.peripherals.get(&index) else {
+            None?
+        };
+
+        Some(View {
+            model: self,
+            index,
+            node,
+        })
     }
 
     pub fn get_peripheral(&self, index: PeripheralIndex) -> View<'_, PeripheralNode> {
@@ -138,6 +162,30 @@ impl Hal {
             index: index.clone(),
             node,
         })
+    }
+
+    pub fn peripheral_count(&self) -> usize {
+        self.peripherals.len()
+    }
+
+    pub fn register_count(&self) -> usize {
+        self.registers.len()
+    }
+
+    pub fn field_count(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn variant_count(&self) -> usize {
+        self.variants.len()
+    }
+
+    pub fn entitlement_count(&self) -> usize {
+        self.entitlements.len()
+    }
+
+    pub fn interrupt_count(&self) -> usize {
+        self.interrupts.len()
     }
 }
 
@@ -527,7 +575,7 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
 }
 
 /// A view into the device model at a single node.
-#[derive(Debug, Deref, AsRef)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct View<'cx, N: Node> {
     pub(super) model: &'cx Hal,
     pub(super) index: N::Index,
@@ -544,6 +592,14 @@ impl<'cx> View<'cx, PeripheralNode> {
             .values()
             .map(|index| self.model.get_register(*index))
     }
+
+    pub fn try_get_register(&self, ident: &Ident) -> Option<View<'cx, RegisterNode>> {
+        let Some(index) = self.registers.get(ident) else {
+            None?
+        };
+
+        Some(self.model.get_register(*index))
+    }
 }
 
 impl<'cx> View<'cx, RegisterNode> {
@@ -553,6 +609,14 @@ impl<'cx> View<'cx, RegisterNode> {
             .fields
             .values()
             .map(|index| self.model.get_field(*index))
+    }
+
+    pub fn try_get_field(&self, ident: &Ident) -> Option<View<'cx, FieldNode>> {
+        let Some(index) = self.fields.get(ident) else {
+            None?
+        };
+
+        Some(self.model.get_field(*index))
     }
 }
 

@@ -10,7 +10,12 @@ mod utils;
 use std::marker::PhantomData;
 
 use indexmap::IndexMap;
-use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
+use ir::structures::{
+    field::FieldNode,
+    hal::{Hal, View},
+    peripheral::PeripheralNode,
+    register::RegisterNode,
+};
 use syn::{Ident, Path, parse_quote};
 use ters::ters;
 
@@ -60,10 +65,10 @@ where
 
         for tree in &args.trees {
             if let Err(e) = parse_peripheral::<PeripheralPolicy, _>(
+                model,
                 &mut peripherals,
                 &mut registers,
                 tree,
-                model,
             ) {
                 diagnostics.extend(e);
             }
@@ -147,7 +152,7 @@ pub struct PeripheralItem<'cx> {
     #[get]
     ident: &'cx Ident,
     #[get]
-    peripheral: &'cx Peripheral,
+    peripheral: View<'cx, PeripheralNode>,
     #[get]
     binding: Option<&'cx Binding>,
 }
@@ -165,9 +170,9 @@ where
     #[get]
     ident: &'cx Ident,
     #[get]
-    peripheral: &'cx Peripheral,
+    peripheral: View<'cx, PeripheralNode>,
     #[get]
-    register: &'cx Register,
+    register: View<'cx, RegisterNode>,
     #[get]
     fields: FieldMap<'cx, EntryPolicy>,
 }
@@ -183,7 +188,7 @@ where
     #[get]
     ident: &'cx Ident,
     #[get]
-    field: &'cx Field,
+    field: View<'cx, FieldNode>,
     #[get]
     entry: EntryPolicy,
 }
@@ -205,15 +210,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ir::{
-        access::Access,
-        structures::{
-            field::{Field, Numericity},
-            hal::Hal,
-            peripheral::Peripheral,
-            register::Register,
-        },
-    };
+    use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
     use quote::quote;
     use syn::{Ident, Path, parse_quote};
 
@@ -233,7 +230,10 @@ mod tests {
         let peripheral_name = "foo";
         let peripheral_path = parse_quote! { ::external::foo };
         let peripheral_binding = quote! { some_foo };
-        let model = Hal::new([Peripheral::new(peripheral_name, 0, [])]);
+
+        let mut model = Hal::new();
+        model.add_peripheral(Peripheral::new(peripheral_name, 0));
+
         let tokens = quote! {
             #peripheral_path(#peripheral_binding)
         };
@@ -262,10 +262,11 @@ mod tests {
         let peripheral0_binding = quote! { some_foo };
         let peripheral1_name = "bar";
         let peripheral1_path = parse_quote! { external::stuff::bar };
-        let model = Hal::new([
-            Peripheral::new(peripheral0_name, 0, []),
-            Peripheral::new(peripheral1_name, 0, []),
-        ]);
+
+        let mut model = Hal::new();
+        model.add_peripheral(Peripheral::new(peripheral0_name, 0));
+        model.add_peripheral(Peripheral::new(peripheral1_name, 0));
+
         let tokens = quote! {
             #peripheral0_path(#peripheral0_binding),
             #peripheral1_path,
@@ -302,11 +303,12 @@ mod tests {
         let peripheral_path: Path = parse_quote! { ::external::foo };
         let register_name = "bar";
         let register_ident: Ident = parse_quote! { bar };
-        let model = Hal::new([Peripheral::new(
-            peripheral_name,
-            0,
-            [Register::new(register_name, 0, [])],
-        )]);
+
+        let mut model = Hal::new();
+        model
+            .add_peripheral(Peripheral::new(peripheral_name, 0))
+            .add_register(Register::new(register_name, 0));
+
         let tokens = quote! {
             #peripheral_path::#register_ident
         };
@@ -330,20 +332,13 @@ mod tests {
         let register_ident: Ident = parse_quote! { bar };
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
-        let model = Hal::new([Peripheral::new(
-            peripheral_name,
-            0,
-            [Register::new(
-                register_name,
-                0,
-                [Field::new(
-                    field_name,
-                    0,
-                    0,
-                    Access::read(Numericity::Numeric),
-                )],
-            )],
-        )]);
+
+        let mut model = Hal::new();
+        model
+            .add_peripheral(Peripheral::new(peripheral_name, 0))
+            .add_register(Register::new(register_name, 0))
+            .add_read_field(Field::new(field_name, 0, 0));
+
         let tokens = quote! {
             #peripheral_path::#register_ident::#field_ident(&mut my_field) => Foo,
         };
@@ -364,20 +359,27 @@ mod tests {
         let register_ident: Ident = parse_quote! { bar };
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
-        let model = Hal::new([Peripheral::new(
-            peripheral_name,
-            0,
-            [Register::new(
-                register_name,
-                0,
-                [Field::new(
-                    field_name,
-                    0,
-                    0,
-                    Access::write(Numericity::Numeric),
-                )],
-            )],
-        )]);
+        // let model = Hal::new([Peripheral::new(
+        //     peripheral_name,
+        //     0,
+        //     [Register::new(
+        //         register_name,
+        //         0,
+        //         [Field::new(
+        //             field_name,
+        //             0,
+        //             0,
+        //             Access::write(Numericity::Numeric),
+        //         )],
+        //     )],
+        // )]);
+
+        let mut model = Hal::new();
+        model
+            .add_peripheral(Peripheral::new(peripheral_name, 0))
+            .add_register(Register::new(register_name, 0))
+            .add_write_field(Field::new(field_name, 0, 0));
+
         let tokens = quote! {
             #peripheral_path::#register_ident::#field_ident(&mut my_field) => Foo,
         };

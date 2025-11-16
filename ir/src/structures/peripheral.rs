@@ -18,6 +18,12 @@ use crate::{
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
 pub struct PeripheralIndex(pub(super) Ident);
 
+impl From<Ident> for PeripheralIndex {
+    fn from(ident: Ident) -> Self {
+        Self(ident)
+    }
+}
+
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct PeripheralNode {
     #[deref]

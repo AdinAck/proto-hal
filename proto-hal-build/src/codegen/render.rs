@@ -41,27 +41,18 @@ pub fn validate(hal: &Hal) {
     println!("Validating codegen...");
     match hal.render() {
         Ok(output) => {
-            let peripherals = hal.peripherals.len();
-            let registers = hal
-                .peripherals
-                .values()
-                .map(|peripheral| peripheral.registers.len())
-                .sum::<usize>();
-            let fields = hal
-                .peripherals
-                .values()
-                .flat_map(|peripheral| peripheral.registers.values())
-                .map(|register| register.fields.len())
-                .sum::<usize>();
-            let interrupts = hal.interrupts.len();
             let reserved_interrupts = hal
-                .interrupts
+                .interrupts()
                 .iter()
                 .filter(|interrupt| matches!(interrupt.kind, InterruptKind::Reserved))
                 .count();
 
             println!(
-                "Peripherals: {peripherals}\nRegisters: {registers}\nFields: {fields}\nInterrupts: {interrupts} ({reserved_interrupts} reserved)\nLines: {}\n{}",
+                "Peripherals: {}\nRegisters: {}\nFields: {}\nInterrupts: {} ({reserved_interrupts} reserved)\nLines: {}\n{}",
+                hal.peripheral_count(),
+                hal.register_count(),
+                hal.field_count(),
+                hal.interrupt_count(),
                 output.lines().count(),
                 "Finished".green().bold(),
             );
@@ -85,7 +76,7 @@ pub fn generate(hal: &Hal) {
     super::generate(hal, |hal| {
         Ok([
             ("hal.rs".to_string(), hal.render()?),
-            ("device.x".to_string(), hal.interrupts.device_x()),
+            ("device.x".to_string(), hal.interrupts().device_x()),
         ]
         .into())
     });
