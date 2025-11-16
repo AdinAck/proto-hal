@@ -1,11 +1,10 @@
-use std::{collections::HashMap, marker::PhantomData, ops::Deref};
+use std::{collections::HashMap, marker::PhantomData};
 
 use colored::Colorize;
 use derive_more::{AsRef, Deref};
 use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
-use ters::ters;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
@@ -15,7 +14,6 @@ use crate::{
         field::{
             Field, FieldIndex, FieldNode,
             access::{self, Access},
-            numericity::Numericity,
         },
         interrupts::{Interrupt, Interrupts},
         peripheral::{PeripheralIndex, PeripheralNode},
@@ -206,29 +204,23 @@ impl Hal {
         })
     }
 
-    fn generate_peripherals_struct<'a>(
-        peripherals: impl Iterator<Item = &'a Peripheral> + Clone,
+    fn generate_peripherals_struct<'cx>(
+        &'cx self,
+        peripherals: &Vec<View<'cx, PeripheralNode>>,
     ) -> TokenStream {
-        let fundamental_peripheral_idents = peripherals
-            .clone()
-            .filter_map(|peripheral| {
-                if peripheral.entitlements.is_empty() {
-                    Some(peripheral.module_name())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        let mut fundamental_peripheral_idents = Vec::new();
+        let mut conditional_peripheral_idents = Vec::new();
 
-        let conditional_peripheral_idents = peripherals
-            .filter_map(|peripheral| {
-                if !peripheral.entitlements.is_empty() {
-                    Some(peripheral.module_name())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        for peripheral in peripherals {
+            if self
+                .entitlements
+                .contains_key(&EntitlementIndex::Peripheral(peripheral.index.clone()))
+            {
+                conditional_peripheral_idents.push(peripheral.module_name());
+            } else {
+                fundamental_peripheral_idents.push(peripheral.module_name());
+            }
+        }
 
         quote! {
             pub struct Peripherals {
@@ -269,8 +261,10 @@ impl Hal {
 
 impl ToTokens for Hal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let peripherals = self.peripherals().collect();
+
         tokens.extend(self.generate_peripherals());
-        tokens.extend(Self::generate_peripherals_struct(self.peripherals.values()));
+        tokens.extend(self.generate_peripherals_struct(&peripherals));
         self.interrupts.to_tokens(tokens);
     }
 }
@@ -283,7 +277,7 @@ pub struct Entry<'cx, Index, Meta> {
 
 impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add a register to the peripheral.
-    pub fn add_register(&'cx mut self, register: Register) -> Entry<'_, RegisterIndex, ()> {
+    pub fn add_register(&'cx mut self, register: Register) -> Entry<'cx, RegisterIndex, ()> {
         let index = RegisterIndex(self.model.registers.len());
 
         // update parent
@@ -341,7 +335,7 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         });
     }
 
-    fn make_child_entry<Meta>(&'cx mut self, index: FieldIndex) -> Entry<'_, FieldIndex, Meta> {
+    fn make_child_entry<Meta>(&'cx mut self, index: FieldIndex) -> Entry<'cx, FieldIndex, Meta> {
         Entry {
             model: self.model,
             index,
@@ -350,14 +344,14 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     }
 
     /// Add a field to the register with [`Read`](access::Read) access.
-    pub fn add_read_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Read> {
+    pub fn add_read_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Read> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Read(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`Write`](access::Write) access.
-    pub fn add_write_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Write> {
+    pub fn add_write_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Write> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Write(Default::default()));
         self.make_child_entry(index)
@@ -374,7 +368,7 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     }
 
     /// Add a field to the register with [`Store`](access::Store) access.
-    pub fn add_store_field(&'cx mut self, field: Field) -> Entry<'_, FieldIndex, access::Store> {
+    pub fn add_store_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Store> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Store(Default::default()));
         self.make_child_entry(index)
@@ -423,7 +417,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     ///
     /// If the field's access modality exposes both *read* and *write* access,
     /// this will add the variant to *both*.
-    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'_, VariantIndex, ()> {
+    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
         let (index, access) = self.new_index_and_get_access();
 
         // update parent

@@ -193,7 +193,8 @@ impl From<VolatileStore> for Access {
 }
 
 /// Marker trait for access modalities that expose write access.
-pub(crate) trait IsWrite {}
+#[doc(hidden)]
+pub trait IsWrite {}
 
 impl IsWrite for Write {}
 impl IsWrite for ReadWrite {}
