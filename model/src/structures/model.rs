@@ -329,7 +329,10 @@ pub struct Entry<'cx, Index, Meta> {
 
 impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add a register to the peripheral.
-    pub fn add_register(&'cx mut self, register: Register) -> Entry<'cx, RegisterIndex, ()> {
+    pub fn add_register<'ncx>(
+        &'ncx mut self,
+        register: Register,
+    ) -> Entry<'ncx, RegisterIndex, ()> {
         let index = RegisterIndex(self.model.registers.len());
 
         // update parent
@@ -387,7 +390,10 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         });
     }
 
-    fn make_child_entry<Meta>(&'cx mut self, index: FieldIndex) -> Entry<'cx, FieldIndex, Meta> {
+    fn make_child_entry<'ncx, Meta>(
+        &'ncx mut self,
+        index: FieldIndex,
+    ) -> Entry<'ncx, FieldIndex, Meta> {
         Entry {
             model: self.model,
             index,
@@ -396,41 +402,50 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     }
 
     /// Add a field to the register with [`Read`](access::Read) access.
-    pub fn add_read_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Read> {
+    pub fn add_read_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> Entry<'ncx, FieldIndex, access::Read> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Read(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`Write`](access::Write) access.
-    pub fn add_write_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Write> {
+    pub fn add_write_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> Entry<'ncx, FieldIndex, access::Write> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Write(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`ReadWrite`](access::ReadWrite) access.
-    pub fn add_read_write_field(
-        &'cx mut self,
+    pub fn add_read_write_field<'ncx>(
+        &'ncx mut self,
         field: Field,
-    ) -> Entry<'cx, FieldIndex, access::ReadWrite> {
+    ) -> Entry<'ncx, FieldIndex, access::ReadWrite> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::ReadWrite(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`Store`](access::Store) access.
-    pub fn add_store_field(&'cx mut self, field: Field) -> Entry<'cx, FieldIndex, access::Store> {
+    pub fn add_store_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> Entry<'ncx, FieldIndex, access::Store> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Store(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`VolatileStore`](access::VolatileStore) access.
-    pub fn add_volatile_store_field(
-        &'cx mut self,
+    pub fn add_volatile_store_field<'ncx>(
+        &'ncx mut self,
         field: Field,
-    ) -> Entry<'cx, FieldIndex, access::VolatileStore> {
+    ) -> Entry<'ncx, FieldIndex, access::VolatileStore> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
         self.make_child_entry(index)
@@ -469,7 +484,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     ///
     /// If the field's access modality exposes both *read* and *write* access,
     /// this will add the variant to *both*.
-    pub fn add_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
+    pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> Entry<'ncx, VariantIndex, ()> {
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
