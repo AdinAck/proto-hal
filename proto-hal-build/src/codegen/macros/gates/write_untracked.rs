@@ -96,7 +96,7 @@ fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStr
                 parameter_tys.push(fragments::write_value_ty(
                     &register_path,
                     field_item.ident(),
-                    &write.numericity,
+                    write,
                 ));
 
                 parameter_write_values.push(fragments::write_argument_value(

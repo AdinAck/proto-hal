@@ -118,7 +118,7 @@ pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
                 closure_return_tys.push(fragments::write_value_ty(
                     &register_path,
                     field_item.ident(),
-                    &write.numericity,
+                    write,
                 ));
 
                 write_exprs.push(fragments::write_argument_value(
