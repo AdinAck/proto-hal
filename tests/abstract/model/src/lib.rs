@@ -1,17 +1,17 @@
-use proto_hal_build::ir::{
+use proto_hal_build::model::{
     access::{Access, AccessProperties},
     structures::{
         entitlement::Entitlement,
         field::{Field, Numericity},
-        hal::Hal,
+        model::Model,
         peripheral::Peripheral,
         register::Register,
         variant::Variant,
     },
 };
 
-pub fn generate() -> Hal {
-    Hal::new([
+pub fn generate() -> Model {
+    Model::new([
         Peripheral::new(
             "foo",
             0,
@@ -66,15 +66,15 @@ pub fn generate() -> Hal {
 #[cfg(test)]
 mod tests {
     mod hal {
-        use proto_hal_build::ir::{
+        use proto_hal_build::model::{
             diagnostic,
-            structures::{hal::Hal, peripheral::Peripheral, register::Register},
+            structures::{model::Model, peripheral::Peripheral, register::Register},
         };
 
         /// Create an empty HAL.
         #[test]
         fn empty() {
-            let hal = Hal::new([]);
+            let hal = Model::new([]);
 
             assert!(hal.peripherals.is_empty());
 
@@ -86,7 +86,7 @@ mod tests {
         /// Create a HAL with one peripheral.
         #[test]
         fn one_peripheral() {
-            let hal = Hal::new([Peripheral::new("foo", 0, [])]);
+            let hal = Model::new([Peripheral::new("foo", 0, [])]);
 
             assert_eq!(hal.peripherals.len(), 1);
 
@@ -98,7 +98,7 @@ mod tests {
         /// Create a HAL with many disjoint peripherals.
         #[test]
         fn many_peripherals() {
-            let hal = Hal::new([
+            let hal = Model::new([
                 Peripheral::new("foo", 0, []),
                 Peripheral::new("bar", 4, []),
                 Peripheral::new("baz", 8, []),
@@ -118,7 +118,7 @@ mod tests {
         /// Expected behavior: The HAL will contain one peripheral (the last specified).
         #[test]
         fn peripherals_same_ident() {
-            let hal = Hal::new([Peripheral::new("foo", 0, []), Peripheral::new("foo", 1, [])]);
+            let hal = Model::new([Peripheral::new("foo", 0, []), Peripheral::new("foo", 1, [])]);
 
             assert_eq!(hal.peripherals.len(), 1);
             assert_eq!(hal.peripherals.values().last().unwrap().base_addr, 1);
@@ -130,7 +130,7 @@ mod tests {
         /// not exist and as such there is no error.
         #[test]
         fn zero_size_peripheral_overlap() {
-            let hal = Hal::new([Peripheral::new("foo", 0, []), Peripheral::new("bar", 0, [])]);
+            let hal = Model::new([Peripheral::new("foo", 0, []), Peripheral::new("bar", 0, [])]);
 
             assert_eq!(hal.peripherals.len(), 2);
 
@@ -144,7 +144,7 @@ mod tests {
         /// Expected behavior: Exactly one diagnostic error is emitted during validation.
         #[test]
         fn peripheral_overlap() {
-            let hal = Hal::new([
+            let hal = Model::new([
                 Peripheral::new("foo", 0, [Register::new("foo0", 0, [])]),
                 Peripheral::new("bar", 0, [Register::new("bar0", 0, [])]),
             ]);
@@ -160,7 +160,7 @@ mod tests {
     }
 
     mod peripherals {
-        use proto_hal_build::ir::{
+        use proto_hal_build::model::{
             diagnostic::{self, Context},
             structures::{peripheral::Peripheral, register::Register},
         };

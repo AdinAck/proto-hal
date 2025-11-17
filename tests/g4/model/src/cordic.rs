@@ -2,7 +2,7 @@ mod csr;
 mod rdata;
 mod wdata;
 
-use proto_hal_build::ir::structures::{entitlement::Entitlement, peripheral::Peripheral};
+use proto_hal_build::model::structures::{entitlement::Entitlement, peripheral::Peripheral};
 
 pub fn generate() -> Peripheral {
     Peripheral::new(

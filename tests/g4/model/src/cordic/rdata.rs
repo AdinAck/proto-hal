@@ -1,4 +1,4 @@
-use proto_hal_build::ir::structures::register::Register;
+use proto_hal_build::model::structures::register::Register;
 
 pub mod res;
 pub mod res0;

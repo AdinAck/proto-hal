@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Deref};
 
-use ir::structures::hal::Hal;
+use model::structures::model::Model;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};
@@ -26,7 +26,7 @@ use crate::codegen::macros::{
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, PermitTransition<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, PermitTransition<'cx>>;
 
-pub fn modify_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),

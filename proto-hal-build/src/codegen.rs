@@ -3,9 +3,9 @@ pub mod render;
 
 use std::{collections::HashMap, env, fs, path::Path};
 
-use ir::{diagnostic, structures::hal::Hal};
+use model::{diagnostic, structures::model::Model};
 
-fn generate(hal: &Hal, output: impl FnOnce(&Hal) -> Result<HashMap<String, String>, String>) {
+fn generate(hal: &Model, output: impl FnOnce(&Model) -> Result<HashMap<String, String>, String>) {
     let out_dir = env::var("OUT_DIR").unwrap();
 
     let diagnostics = hal.validate();

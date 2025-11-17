@@ -1,15 +1,15 @@
 use std::fs;
 
 use colored::Colorize as _;
-use ir::{
+use model::{
     diagnostic::{self, Diagnostic},
-    structures::{hal::Hal, interrupts::InterruptKind},
+    structures::{interrupts::InterruptKind, model::Model},
 };
 
 /// Validate a HAL model is properly defined and codegen succeeds.
 ///
 /// *Note: This function is intended to be called in the "model" phase of synthesis.*
-pub fn validate(hal: &Hal) {
+pub fn validate(hal: &Model) {
     // model validation
     println!("Validating model...");
     let diagnostics = hal.validate();
@@ -72,7 +72,7 @@ pub fn validate(hal: &Hal) {
 /// Generate and emit HAL code for use.
 ///
 /// *Note: This function is intended to be called in the "out" phase of synthesis.*
-pub fn generate(hal: &Hal) {
+pub fn generate(hal: &Model) {
     super::generate(hal, |hal| {
         Ok([
             ("hal.rs".to_string(), hal.render()?),

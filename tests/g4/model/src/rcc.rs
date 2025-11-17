@@ -1,6 +1,6 @@
 pub mod ahbenr;
 
-use proto_hal_build::ir::structures::peripheral::Peripheral;
+use proto_hal_build::model::structures::peripheral::Peripheral;
 
 pub fn generate() -> Peripheral {
     Peripheral::new(

@@ -9,7 +9,7 @@ use crate::{
         Node,
         entitlement::Entitlements,
         field::{Field, FieldIndex},
-        hal::View,
+        model::View,
     },
 };
 

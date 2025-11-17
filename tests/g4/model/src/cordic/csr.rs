@@ -10,7 +10,7 @@ pub mod ressize;
 pub mod rrdy;
 pub mod scale;
 
-use proto_hal_build::ir::structures::register::Register;
+use proto_hal_build::model::structures::register::Register;
 
 pub fn generate() -> Register {
     Register::new(

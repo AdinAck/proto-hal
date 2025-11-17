@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ir::structures::hal::Hal;
+use model::structures::model::Model;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
@@ -28,15 +28,15 @@ enum Scheme {
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, TransitionOnly<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, TransitionOnly<'cx>>;
 
-pub fn write_from_zero_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn write_from_zero_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     write_untracked(Scheme::FromZero, model, tokens)
 }
 
-pub fn write_from_reset_untracked(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn write_from_reset_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     write_untracked(Scheme::FromReset, model, tokens)
 }
 
-fn write_untracked(scheme: Scheme, model: &Hal, tokens: TokenStream) -> TokenStream {
+fn write_untracked(scheme: Scheme, model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),

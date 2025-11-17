@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use syn::{Ident, parse_quote};
 
 use crate::structures::{
-    hal::{Hal, View},
+    model::{Model, View},
     variant::{Variant, VariantIndex, VariantNode},
 };
 
@@ -54,7 +54,7 @@ impl Numeric {
 }
 
 impl Enumerated {
-    pub fn variants<'cx>(&self, model: &'cx Hal) -> impl Iterator<Item = View<'cx, VariantNode>> {
+    pub fn variants<'cx>(&self, model: &'cx Model) -> impl Iterator<Item = View<'cx, VariantNode>> {
         self.variants
             .values()
             .map(|index| model.get_variant(*index))
@@ -63,7 +63,7 @@ impl Enumerated {
     /// View an inert variant if one exists. If there is more than one, the variant returned
     /// is not guaranteed to be any particular one, nor consistent. If the numericity is
     /// [`Numeric`](Numericity::Numeric), [`None`] is returned.
-    pub fn some_inert<'cx>(&self, model: &'cx Hal) -> Option<&'cx Variant> {
+    pub fn some_inert<'cx>(&self, model: &'cx Model) -> Option<&'cx Variant> {
         self.variants(model)
             .map(|view| &view.variant)
             .find(|variant| variant.inert)

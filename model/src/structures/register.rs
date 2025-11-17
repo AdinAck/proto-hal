@@ -11,7 +11,7 @@ use crate::{
     structures::{
         Node,
         field::{FieldIndex, FieldNode},
-        hal::View,
+        model::View,
         peripheral::PeripheralIndex,
     },
 };

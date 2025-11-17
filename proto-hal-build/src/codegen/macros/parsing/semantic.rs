@@ -10,9 +10,9 @@ mod utils;
 use std::marker::PhantomData;
 
 use indexmap::IndexMap;
-use ir::structures::{
+use model::structures::{
     field::FieldNode,
-    hal::{Hal, View},
+    model::{Model, View},
     peripheral::PeripheralNode,
     register::RegisterNode,
 };
@@ -58,7 +58,7 @@ where
     EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
 {
     /// Parse the gate input against the model to produce a semantic gate input.
-    pub fn parse(args: &'cx syntax::Gate, model: &'cx Hal) -> (Self, Diagnostics) {
+    pub fn parse(args: &'cx syntax::Gate, model: &'cx Model) -> (Self, Diagnostics) {
         let mut diagnostics = Diagnostics::new();
         let mut peripherals = Default::default();
         let mut registers = Default::default();
@@ -210,7 +210,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ir::structures::{field::Field, hal::Hal, peripheral::Peripheral, register::Register};
+    use model::structures::{
+        field::Field, model::Model, peripheral::Peripheral, register::Register,
+    };
     use quote::quote;
     use syn::{Ident, Path, parse_quote};
 
@@ -231,7 +233,7 @@ mod tests {
         let peripheral_path = parse_quote! { ::external::foo };
         let peripheral_binding = quote! { some_foo };
 
-        let mut model = Hal::new();
+        let mut model = Model::new();
         model.add_peripheral(Peripheral::new(peripheral_name, 0));
 
         let tokens = quote! {
@@ -263,7 +265,7 @@ mod tests {
         let peripheral1_name = "bar";
         let peripheral1_path = parse_quote! { external::stuff::bar };
 
-        let mut model = Hal::new();
+        let mut model = Model::new();
         model.add_peripheral(Peripheral::new(peripheral0_name, 0));
         model.add_peripheral(Peripheral::new(peripheral1_name, 0));
 
@@ -304,7 +306,7 @@ mod tests {
         let register_name = "bar";
         let register_ident: Ident = parse_quote! { bar };
 
-        let mut model = Hal::new();
+        let mut model = Model::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0));
@@ -333,7 +335,7 @@ mod tests {
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
 
-        let mut model = Hal::new();
+        let mut model = Model::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0))
@@ -374,7 +376,7 @@ mod tests {
         //     )],
         // )]);
 
-        let mut model = Hal::new();
+        let mut model = Model::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0))

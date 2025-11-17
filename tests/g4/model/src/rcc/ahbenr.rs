@@ -1,6 +1,6 @@
 pub mod en;
 
-use proto_hal_build::ir::structures::register::Register;
+use proto_hal_build::model::structures::register::Register;
 
 #[derive(Clone, Copy)]
 pub enum Instance {

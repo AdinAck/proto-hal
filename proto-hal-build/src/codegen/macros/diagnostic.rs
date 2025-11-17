@@ -1,4 +1,4 @@
-use ir::structures::{peripheral::Peripheral, register::Register};
+use model::structures::{peripheral::Peripheral, register::Register};
 use proc_macro2::Span;
 use syn::{Ident, LitInt, Path, spanned::Spanned};
 use ters::ters;

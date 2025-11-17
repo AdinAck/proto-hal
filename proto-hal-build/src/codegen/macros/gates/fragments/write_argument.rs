@@ -1,4 +1,4 @@
-use ir::structures::field::FieldNode;
+use model::structures::field::FieldNode;
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote_spanned};
 use syn::{Ident, Path};

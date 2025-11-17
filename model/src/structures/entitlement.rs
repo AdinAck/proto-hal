@@ -7,7 +7,7 @@ use crate::{
     structures::{
         Node,
         field::{FieldIndex, FieldNode},
-        hal::{Hal, View},
+        model::{Model, View},
         peripheral::PeripheralIndex,
         variant::VariantIndex,
     },
@@ -17,7 +17,7 @@ use crate::{
 pub struct Entitlement(pub(super) VariantIndex);
 
 impl Entitlement {
-    pub fn field<'cx>(&self, model: &'cx Hal) -> View<'cx, FieldNode> {
+    pub fn field<'cx>(&self, model: &'cx Model) -> View<'cx, FieldNode> {
         let variant = model.get_variant(self.0);
         model.get_field(variant.parent)
     }
@@ -26,7 +26,7 @@ impl Entitlement {
         self.0
     }
 
-    pub fn render_up_to_field(&self, model: &Hal) -> TokenStream {
+    pub fn render_up_to_field(&self, model: &Model) -> TokenStream {
         let field = self.field(model);
         let register = model.get_register(field.parent);
         let peripheral = model.get_peripheral(register.parent.clone());
@@ -40,7 +40,7 @@ impl Entitlement {
         }
     }
 
-    pub fn render_entirely(&self, model: &Hal) -> TokenStream {
+    pub fn render_entirely(&self, model: &Model) -> TokenStream {
         let prefix = self.render_up_to_field(model);
         let variant = model.get_variant(self.0);
 
@@ -68,7 +68,7 @@ pub enum EntitlementIndex {
 }
 
 impl EntitlementIndex {
-    pub fn into_context(&self, model: &Hal) -> Context {
+    pub fn into_context(&self, model: &Model) -> Context {
         Context::with_path(match self {
             EntitlementIndex::Peripheral(peripheral_index) => {
                 vec![

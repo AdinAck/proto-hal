@@ -2,4 +2,4 @@
 
 pub mod codegen;
 
-pub use ir;
+pub use model;

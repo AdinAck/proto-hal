@@ -28,7 +28,7 @@ use super::peripheral::Peripheral;
 
 #[ters]
 #[derive(Debug, Clone, Default)]
-pub struct Hal {
+pub struct Model {
     peripherals: IndexMap<PeripheralIndex, PeripheralNode>,
     registers: Vec<RegisterNode>,
     fields: Vec<FieldNode>,
@@ -40,7 +40,7 @@ pub struct Hal {
     interrupts: Interrupts,
 }
 
-impl Hal {
+impl Model {
     pub fn new() -> Self {
         Self {
             peripherals: Default::default(),
@@ -193,7 +193,7 @@ impl Hal {
     }
 }
 
-impl Hal {
+impl Model {
     pub fn validate(&self) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = Context::new();
@@ -247,7 +247,7 @@ impl Hal {
 }
 
 // codegen
-impl Hal {
+impl Model {
     fn generate_peripherals(&self) -> TokenStream {
         self.peripherals().fold(quote! {}, |mut acc, peripheral| {
             acc.extend(peripheral.generate());
@@ -311,7 +311,7 @@ impl Hal {
     }
 }
 
-impl ToTokens for Hal {
+impl ToTokens for Model {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let peripherals = self.peripherals().collect();
 
@@ -322,7 +322,7 @@ impl ToTokens for Hal {
 }
 
 pub struct Entry<'cx, Index, Meta> {
-    model: &'cx mut Hal,
+    model: &'cx mut Model,
     index: Index,
     _p: PhantomData<Meta>,
 }
@@ -582,7 +582,7 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
 #[ters]
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct View<'cx, N: Node> {
-    pub(super) model: &'cx Hal,
+    pub(super) model: &'cx Model,
     #[get]
     pub(super) index: N::Index,
     #[deref]

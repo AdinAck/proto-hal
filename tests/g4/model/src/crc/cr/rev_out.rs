@@ -1,4 +1,4 @@
-use proto_hal_build::ir::{
+use proto_hal_build::model::{
     access::Access,
     structures::{
         field::{Field, Numericity},

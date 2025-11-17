@@ -82,7 +82,7 @@ pub trait Incoming<T> {
 
 Some fields accept values which do nothing. This is useful for "set" or "clear" registers (registers
 designed for setting or clearing specific fields without touching the other fields).
-This noop variant is **inert**. Encapsulating this quality in the `Variant` ir struct
+This noop variant is **inert**. Encapsulating this quality in the `Variant` model struct
 will enable useful functionality later...
 
 # The Ultimate Writer

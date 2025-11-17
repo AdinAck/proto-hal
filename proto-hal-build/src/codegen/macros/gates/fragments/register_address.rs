@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ir::structures::{peripheral::Peripheral, register::Register};
+use model::structures::{peripheral::Peripheral, register::Register};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};

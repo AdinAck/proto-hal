@@ -1,4 +1,4 @@
-use proto_hal_build::ir::structures::{hal::Hal, interrupts::Interrupt};
+use proto_hal_build::model::structures::{interrupts::Interrupt, model::Model};
 
 pub mod cordic;
 pub mod crc;
@@ -12,7 +12,7 @@ pub enum DeviceVariant {
     G484,
 }
 
-pub fn generate(variant: DeviceVariant) -> Hal {
+pub fn generate(variant: DeviceVariant) -> Model {
     let extra_interrupts = |interrupt| {
         if matches!(variant, DeviceVariant::G474 | DeviceVariant::G484) {
             interrupt
@@ -21,7 +21,7 @@ pub fn generate(variant: DeviceVariant) -> Hal {
         }
     };
 
-    Hal::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts([
+    Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts([
         Interrupt::handler("WWDG").docs(["Window Watchdog"]),
         Interrupt::handler("PVD_PVM").docs(["PVD through EXTI line detection"]),
         Interrupt::handler("RTC_TAMP_CSS_LSE"),

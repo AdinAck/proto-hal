@@ -1,6 +1,6 @@
-use ir::structures::{
+use model::structures::{
     field::{FieldNode, numericity::Numericity},
-    hal::Hal,
+    model::Model,
     variant::Variant,
 };
 use proc_macro2::Span;
@@ -25,7 +25,7 @@ pub enum Transition<'cx> {
 impl<'cx> Transition<'cx> {
     /// Parse the transition input against the model to produce a semantic transition.
     pub fn parse(
-        model: &'cx Hal,
+        model: &'cx Model,
         transition: &'cx syntax::Transition,
         field: &'cx FieldNode,
         field_ident: &'cx Ident,

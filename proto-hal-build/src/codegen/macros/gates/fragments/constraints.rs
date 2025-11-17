@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
-use ir::structures::{
+use model::structures::{
     field::{FieldNode, numericity::Numericity},
-    hal::{Hal, View},
+    model::{Model, View},
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
@@ -20,7 +20,7 @@ use crate::codegen::macros::{
 
 pub fn constraints<'cx, PeripheralPolicy>(
     input: &semantic::Gate<'cx, PeripheralPolicy, RequireBinding<'cx>>,
-    model: &Hal,
+    model: &Model,
     register_path: &Path,
     binding: &Binding,
     field_ident: &Ident,
@@ -122,7 +122,7 @@ where
 
 fn statewise_entitlements<'cx, PeripheralPolicy>(
     input: &semantic::Gate<'cx, PeripheralPolicy, RequireBinding<'cx>>,
-    model: &Hal,
+    model: &Model,
     field: &View<'cx, FieldNode>,
     return_ty: &TokenStream,
     span: Span,

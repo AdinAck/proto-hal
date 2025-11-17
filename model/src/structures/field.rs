@@ -17,7 +17,7 @@ use crate::{
         Node,
         entitlement::Entitlements,
         field::{access::Access, numericity::Numericity},
-        hal::View,
+        model::View,
         register::RegisterIndex,
     },
 };

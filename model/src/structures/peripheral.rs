@@ -10,7 +10,7 @@ use crate::{
     structures::{
         Node,
         entitlement::Entitlements,
-        hal::View,
+        model::View,
         register::{RegisterIndex, RegisterNode},
     },
 };

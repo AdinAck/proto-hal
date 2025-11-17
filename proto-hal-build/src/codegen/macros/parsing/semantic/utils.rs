@@ -1,6 +1,6 @@
-use ir::structures::{
+use model::structures::{
     field::FieldNode,
-    hal::{Hal, View},
+    model::{Model, View},
     peripheral::PeripheralNode,
     register::RegisterNode,
 };
@@ -22,7 +22,7 @@ use crate::codegen::macros::{
 };
 
 pub fn parse_peripheral<'cx, PeripheralPolicy, EntryPolicy>(
-    model: &'cx Hal,
+    model: &'cx Model,
     peripheral_map: &mut PeripheralMap<'cx>,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
@@ -139,7 +139,7 @@ where
 }
 
 fn parse_register<'cx, EntryPolicy>(
-    model: &'cx Hal,
+    model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     peripheral_path: &Path,
@@ -201,7 +201,7 @@ where
 }
 
 fn parse_field<'cx, EntryPolicy>(
-    model: &'cx Hal,
+    model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     peripheral_path: Path,
@@ -230,7 +230,7 @@ where
 }
 
 fn put_field<'cx, EntryPolicy>(
-    model: &'cx Hal,
+    model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     field_ident: &'cx Ident,
@@ -279,7 +279,7 @@ where
 }
 
 fn fuzzy_find_peripheral<'cx>(
-    model: &'cx Hal,
+    model: &'cx Model,
     path: &mut impl Iterator<Item = &'cx Ident>,
     span: Span,
 ) -> Result<(View<'cx, PeripheralNode>, Path, &'cx Ident), Diagnostic> {

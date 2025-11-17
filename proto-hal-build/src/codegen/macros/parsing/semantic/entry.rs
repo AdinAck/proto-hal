@@ -1,4 +1,4 @@
-use ir::structures::{field::FieldNode, hal::Hal};
+use model::structures::{field::FieldNode, model::Model};
 use syn::Ident;
 
 use crate::codegen::macros::{
@@ -42,7 +42,7 @@ pub enum Entry<'cx> {
 impl<'cx> Entry<'cx> {
     /// Parse the entry input against the model to produce a semantic entry.
     pub fn parse(
-        model: &'cx Hal,
+        model: &'cx Model,
         entry: &'cx syntax::Entry,
         field: &'cx FieldNode,
         field_ident: &'cx Ident,

@@ -1,7 +1,7 @@
 // use std::collections::HashMap;
 
 // use indexmap::IndexMap;
-// use ir::structures::{
+// use model::structures::{
 //     field::{Field, Numericity},
 //     hal::Hal,
 //     peripheral::Peripheral,
@@ -344,7 +344,7 @@
 
 use std::collections::HashMap;
 
-use ir::structures::hal::Hal;
+use model::structures::model::Model;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
@@ -370,7 +370,7 @@ use crate::codegen::macros::{
 type EntryPolicy<'cx> = BindingOnly<'cx>;
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, EntryPolicy<'cx>>;
 
-pub fn read(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),

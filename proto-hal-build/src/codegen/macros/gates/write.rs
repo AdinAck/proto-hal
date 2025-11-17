@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ir::structures::{field::numericity::Numericity, hal::Hal};
+use model::structures::{field::numericity::Numericity, model::Model};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
@@ -23,14 +23,14 @@ use crate::codegen::macros::{
 type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, RequireBinding<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
 
-pub fn write(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn write(model: &Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, false)
 }
-pub fn write_in_place(model: &Hal, tokens: TokenStream) -> TokenStream {
+pub fn write_in_place(model: &Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, true)
 }
 
-fn write_inner(model: &Hal, tokens: TokenStream, in_place: bool) -> TokenStream {
+fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
@@ -231,7 +231,7 @@ fn validate<'cx>(_input: &Input<'cx>) -> Diagnostics {
     //     .collect()
 }
 
-fn reg_write_value<'cx>(model: &'cx Hal, register_item: &RegisterItem<'cx>) -> TokenStream {
+fn reg_write_value<'cx>(model: &'cx Model, register_item: &RegisterItem<'cx>) -> TokenStream {
     // start with inert field values (or zero)
     let initial = {
         let inert = register_item

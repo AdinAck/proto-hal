@@ -1,4 +1,4 @@
-use ir::structures::{
+use model::structures::{
     field::{FieldNode, numericity::Numericity},
     peripheral::Peripheral,
     register::Register,
