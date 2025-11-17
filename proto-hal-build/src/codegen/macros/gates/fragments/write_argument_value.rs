@@ -1,4 +1,4 @@
-use ir::structures::field::{Field, Numericity};
+use ir::structures::field::{FieldNode, numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
 use syn::{Ident, Path, spanned::Spanned as _};
@@ -8,7 +8,7 @@ use crate::codegen::macros::parsing::semantic;
 pub fn write_argument_value(
     register_path: &Path,
     field_ident: &Ident,
-    field: &Field,
+    field: &FieldNode,
     transition: &semantic::Transition,
 ) -> TokenStream {
     let block = match transition {
@@ -21,9 +21,7 @@ pub fn write_argument_value(
         semantic::Transition::Lit(lit_int) => quote! { #lit_int },
     };
 
-    if let Some(Numericity::Enumerated { .. }) =
-        field.access.get_write().map(|write| &write.numericity)
-    {
+    if let Some(Numericity::Enumerated(..)) = field.access.get_write() {
         quote! {{
             use #register_path::#field_ident::WriteVariant::{self as Variant, *};
             #block

@@ -1,4 +1,4 @@
-use ir::structures::field::Numericity;
+use ir::structures::field::numericity::Numericity;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Path};
@@ -9,8 +9,8 @@ pub fn write_value_ty(
     write_numericity: &Numericity,
 ) -> TokenStream {
     match write_numericity {
-        Numericity::Numeric => quote! { u32 },
-        Numericity::Enumerated { .. } => quote! {
+        Numericity::Numeric(..) => quote! { u32 },
+        Numericity::Enumerated(..) => quote! {
             #register_path::#field_ident::WriteVariant
         },
     }

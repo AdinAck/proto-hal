@@ -9,11 +9,9 @@ use crate::{
         Node,
         entitlement::Entitlements,
         field::{Field, FieldIndex},
-        hal::Hal,
+        hal::View,
     },
 };
-
-use super::entitlement::Entitlement;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct VariantIndex(pub(super) usize);
@@ -35,7 +33,6 @@ pub struct Variant {
     pub ident: Ident,
     pub bits: u32,
     pub inert: bool,
-    pub entitlements: Entitlements,
     pub docs: Vec<String>,
 }
 
@@ -45,7 +42,6 @@ impl Variant {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             bits,
             inert: false,
-            entitlements: Entitlements::new(),
             docs: Vec::new(),
         }
     }
@@ -55,11 +51,6 @@ impl Variant {
             inert: true,
             ..self
         }
-    }
-
-    pub fn entitlements(mut self, entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
-        self.entitlements.extend(entitlements);
-        self
     }
 
     pub fn docs<I>(mut self, docs: I) -> Self
@@ -106,7 +97,7 @@ impl Variant {
 }
 
 // codegen
-impl Variant {
+impl<'cx> View<'cx, VariantNode> {
     pub fn generate_state(&self) -> TokenStream {
         let ident = self.type_name();
         let docs = &self.docs;
@@ -121,43 +112,48 @@ impl Variant {
         }
     }
 
-    pub fn generate_entitlement_impls(&self, model: &Hal, field: &Field) -> TokenStream {
+    pub fn generate_entitlement_impls(
+        &self,
+        field: &Field,
+        statewise_entitlements: Option<&Entitlements>,
+    ) -> TokenStream {
         let ident = self.type_name();
-        let entitlements = &self.entitlements;
         let field_ty = field.type_name();
 
-        if entitlements.is_empty() {
+        let Some(entitlements) = statewise_entitlements else {
             // any T satisfies this state's entitlement requirements
 
-            quote! {
+            return quote! {
                 unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #field_ty<#ident> {}
-            }
-        } else {
-            // exactly this finite set of states satisfy this state's entitlement requirements
+            };
+        };
 
-            let entitlement_paths = entitlements.iter().map(|entitlement| {
-                let field = entitlement.field(model);
-                let field_ty = field.type_name();
-                let prefix = entitlement.render_up_to_field(model);
-                let state = entitlement.render_entirely(model);
-                quote! { #prefix::#field_ty<#state> }
-            });
+        // exactly this finite set of states satisfy this state's entitlement requirements
 
-            quote! {
-                #(
-                    unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #field_ty<#ident> {}
-                )*
-            }
+        let entitlement_paths = entitlements.iter().map(|entitlement| {
+            let field = entitlement.field(self.model);
+            let field_ty = field.type_name();
+            let prefix = entitlement.render_up_to_field(self.model);
+            let state = entitlement.render_entirely(self.model);
+            quote! { #prefix::#field_ty<#state> }
+        });
+
+        quote! {
+            #(
+                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #field_ty<#ident> {}
+            )*
         }
     }
-}
 
-impl Variant {
-    pub fn generate(&self, model: &Hal, parent: &Field) -> TokenStream {
+    pub fn generate(&self, parent: &Field) -> TokenStream {
         let mut body = quote! {};
 
+        let statewise_entitlements = self.statewise_entitlements();
+
         body.extend(self.generate_state());
-        body.extend(self.generate_entitlement_impls(model, parent));
+        body.extend(
+            self.generate_entitlement_impls(parent, statewise_entitlements.as_deref().copied()),
+        );
 
         body
     }

@@ -148,12 +148,16 @@ impl Hal {
         }
     }
 
-    pub fn get_entitlements(&self, index: EntitlementIndex) -> View<'_, Entitlements> {
-        View {
+    pub fn try_get_entitlements(&self, index: EntitlementIndex) -> Option<View<'_, Entitlements>> {
+        let Some(node) = self.entitlements.get(&index) else {
+            None?
+        };
+
+        Some(View {
             model: self,
-            node: &self.entitlements[&index],
             index,
-        }
+            node,
+        })
     }
 
     pub fn peripherals<'cx>(&'cx self) -> impl Iterator<Item = View<'cx, PeripheralNode>> {
@@ -575,9 +579,11 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
 }
 
 /// A view into the device model at a single node.
+#[ters]
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct View<'cx, N: Node> {
     pub(super) model: &'cx Hal,
+    #[get]
     pub(super) index: N::Index,
     #[deref]
     #[as_ref]
@@ -600,6 +606,11 @@ impl<'cx> View<'cx, PeripheralNode> {
 
         Some(self.model.get_register(*index))
     }
+
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+        self.model
+            .try_get_entitlements(EntitlementIndex::Peripheral(self.index.clone()))
+    }
 }
 
 impl<'cx> View<'cx, RegisterNode> {
@@ -611,6 +622,8 @@ impl<'cx> View<'cx, RegisterNode> {
             .map(|index| self.model.get_field(*index))
     }
 
+    /// Try to get a child field by identifier. Returns [`None`] if there is no field
+    /// with the provided identifier.
     pub fn try_get_field(&self, ident: &Ident) -> Option<View<'cx, FieldNode>> {
         let Some(index) = self.fields.get(ident) else {
             None?
@@ -618,10 +631,59 @@ impl<'cx> View<'cx, RegisterNode> {
 
         Some(self.model.get_field(*index))
     }
+
+    /// View the parent peripheral.
+    pub fn parent(&self) -> View<'cx, PeripheralNode> {
+        self.model.get_peripheral(self.parent.clone())
+    }
+}
+
+impl<'cx> View<'cx, FieldNode> {
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+        self.model
+            .try_get_entitlements(EntitlementIndex::Field(self.index.clone()))
+    }
+
+    pub fn write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+        self.model
+            .try_get_entitlements(EntitlementIndex::Write(self.index.clone()))
+    }
+
+    pub fn hardware_write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+        self.model
+            .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index.clone()))
+    }
+
+    /// View the parent register and peripheral.
+    pub fn parents(&self) -> (View<'cx, PeripheralNode>, View<'cx, RegisterNode>) {
+        let register = self.model.get_register(self.parent);
+        let peripheral = register.parent();
+
+        (peripheral, register)
+    }
+}
+
+impl<'cx> View<'cx, VariantNode> {
+    pub fn statewise_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+        self.model
+            .try_get_entitlements(EntitlementIndex::Variant(self.index))
+    }
 }
 
 impl<'cx> View<'cx, Entitlements> {
     pub fn entitlements(&self) -> impl Iterator<Item = &'cx Entitlement> {
-        self.node.iter().map(|entitlement| entitlement)
+        self.node.iter()
+    }
+
+    /// View the fields containing these entitlements.
+    pub fn entitlement_fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> {
+        let mut fields = IndexMap::new();
+
+        for entitlement in self.node {
+            let field = entitlement.field(self.model);
+            fields.insert(field.index, field);
+        }
+
+        fields.into_values()
     }
 }

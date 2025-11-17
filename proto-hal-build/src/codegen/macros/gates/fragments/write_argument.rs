@@ -1,4 +1,4 @@
-use ir::structures::field::Field;
+use ir::structures::field::FieldNode;
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote_spanned};
 use syn::{Ident, Path};
@@ -10,7 +10,7 @@ use crate::codegen::macros::{
 pub fn write_argument<'cx>(
     register_path: &Path,
     field_ident: &Ident,
-    field: &Field,
+    field: &FieldNode,
     entry: &RequireBinding<'cx>,
 ) -> TokenStream {
     match entry {

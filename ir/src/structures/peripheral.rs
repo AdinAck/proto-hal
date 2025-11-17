@@ -9,7 +9,7 @@ use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        entitlement::{EntitlementIndex, Entitlements},
+        entitlement::Entitlements,
         hal::View,
         register::{RegisterIndex, RegisterNode},
     },
@@ -136,10 +136,11 @@ impl<'cx> View<'cx, PeripheralNode> {
         })
     }
 
-    fn generate_masked(&self, ontological_entitlements: &Entitlements) -> Option<TokenStream> {
-        if ontological_entitlements.is_empty() {
-            None?
-        }
+    fn generate_masked(
+        &self,
+        ontological_entitlements: Option<&Entitlements>,
+    ) -> Option<TokenStream> {
+        ontological_entitlements?;
 
         Some(quote! {
             pub struct Masked {
@@ -187,12 +188,10 @@ impl<'cx> View<'cx, PeripheralNode> {
         let module_name = self.module_name();
         let registers = self.registers().collect();
 
-        let ontological_entitlements = self
-            .model
-            .get_entitlements(EntitlementIndex::Peripheral(self.index.clone()));
+        let ontological_entitlements = self.ontological_entitlements();
 
         body.extend(self.generate_registers(&registers));
-        body.extend(self.generate_masked(&ontological_entitlements));
+        body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_reset(&registers));
 
         let docs = &self.docs;

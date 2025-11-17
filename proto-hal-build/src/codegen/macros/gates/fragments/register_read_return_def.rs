@@ -26,7 +26,7 @@ where
         Some(read_value_ty(
             &register_item.path(),
             field_item.ident(),
-            &field_item.field().access.get_read()?.numericity,
+            field_item.field().access.get_read()?,
         ))
     });
 

@@ -1,4 +1,4 @@
-use ir::structures::field::Field;
+use ir::structures::field::{FieldNode, numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Ident, Path};
@@ -11,7 +11,7 @@ use crate::codegen::macros::parsing::{
 pub fn transition_return_ty<'cx>(
     register_path: &Path,
     entry: &RequireBinding,
-    field: &Field,
+    field: &FieldNode,
     field_ident: &Ident,
     output_generic: Option<&Ident>,
 ) -> Option<TokenStream> {
@@ -23,12 +23,10 @@ pub fn transition_return_ty<'cx>(
         });
     }
 
-    let numeric_ty = field
-        .access
-        .get_write()?
-        .numericity
-        .numeric_ty(field.width)
-        .map(|(.., ty)| ty);
+    let numeric_ty = match field.access.get_write()? {
+        Numericity::Numeric(numeric) => Some(numeric.ty(field.width).1),
+        _ => None,
+    };
 
     Some(match entry {
         RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,

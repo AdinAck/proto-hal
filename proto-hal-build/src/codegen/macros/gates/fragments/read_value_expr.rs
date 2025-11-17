@@ -1,5 +1,5 @@
 use ir::structures::{
-    field::{Field, Numericity},
+    field::{FieldNode, numericity::Numericity},
     peripheral::Peripheral,
     register::Register,
 };
@@ -14,7 +14,7 @@ pub fn read_value_expr(
     field_ident: &Ident,
     peripheral: &Peripheral,
     register: &Register,
-    field: &Field,
+    field: &FieldNode,
 ) -> Option<TokenStream> {
     let reg = unique_register_ident(peripheral, register);
     let mask = u32::MAX >> (32 - field.width);
@@ -32,9 +32,9 @@ pub fn read_value_expr(
         quote! { (#reg #shift) & #mask }
     };
 
-    Some(match field.access.get_read()?.numericity {
-        Numericity::Numeric => value,
-        Numericity::Enumerated { .. } => quote! {
+    Some(match field.access.get_read()? {
+        Numericity::Numeric(..) => value,
+        Numericity::Enumerated(..) => quote! {
             unsafe { #register_path::#field_ident::ReadVariant::from_bits(#value) }
         },
     })

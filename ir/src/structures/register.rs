@@ -10,7 +10,6 @@ use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        entitlement::EntitlementIndex,
         field::{FieldIndex, FieldNode},
         hal::View,
         peripheral::PeripheralIndex,
@@ -117,17 +116,13 @@ impl<'cx> View<'cx, RegisterNode> {
                     break;
                 }
 
-                let ontological_entitlements = self
-                    .model
-                    .get_entitlements(EntitlementIndex::Field(field.index));
-                let other_ontological_entitlements = self
-                    .model
-                    .get_entitlements(EntitlementIndex::Field(other.index));
+                let ontological_entitlements = field.ontological_entitlements();
+                let other_ontological_entitlements = other.ontological_entitlements();
 
                 // unfortunate workaround for `is_disjoint` behavior when sets are empty
-                if !ontological_entitlements.is_empty()
-                    && !other_ontological_entitlements.is_empty()
-                    && ontological_entitlements.is_disjoint(&other_ontological_entitlements)
+                if let Some(lhs) = &ontological_entitlements
+                    && let Some(rhs) = &other_ontological_entitlements
+                    && lhs.is_disjoint(&rhs)
                 {
                     continue;
                 }
@@ -140,11 +135,11 @@ impl<'cx> View<'cx, RegisterNode> {
                     ))
                     .with_context(new_context.clone())
                     .notes(
-                        if !ontological_entitlements.is_empty() || !other_ontological_entitlements.is_empty() {
+                        if ontological_entitlements.is_some() || other_ontological_entitlements.is_some() {
                             vec![format!(
                                 "overlapping fields have non-trivial intersecting entitlement spaces {:?} and {:?}",
-                                ontological_entitlements.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>(),
-                                other_ontological_entitlements.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>(),
+                                ontological_entitlements.map(|x| x.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>()),
+                                other_ontological_entitlements.map(|x| x.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>()),
                             )]
                         } else {
                             vec![]
@@ -214,11 +209,9 @@ impl<'cx> View<'cx, RegisterNode> {
                 let ident = field.module_name();
                 let ty = field.type_name();
 
-                let ontological_entitlements = self
-                    .model
-                    .get_entitlements(EntitlementIndex::Field(field.index));
+                let ontological_entitlements = field.ontological_entitlements();
 
-                let reset_ty = if ontological_entitlements.is_empty() {
+                let reset_ty = if ontological_entitlements.is_none() {
                     let reset_ty = field.reset_ty(parse_quote! { #ident }, self.reset);
 
                     quote! { #ident::#ty<#reset_ty> }

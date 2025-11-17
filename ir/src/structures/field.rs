@@ -15,7 +15,7 @@ use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        entitlement::{EntitlementIndex, Entitlements},
+        entitlement::Entitlements,
         field::{access::Access, numericity::Numericity},
         hal::View,
         register::RegisterIndex,
@@ -53,15 +53,11 @@ impl<'cx> View<'cx, FieldNode> {
             Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
             Access::Store(store) => Some(&store.numericity),
             Access::VolatileStore(volatile_store) => {
-                let write_entitlements = self
-                    .model
-                    .get_entitlements(EntitlementIndex::Write(self.index));
-
-                if write_entitlements.is_empty() {
+                let Some(write_entitlements) = self.write_entitlements() else {
                     // no entitlements means all states are entitled to,
                     // so they are exhaustive
                     None?
-                }
+                };
 
                 let mut entitlement_fields = IndexMap::new();
 
@@ -280,13 +276,13 @@ impl<'cx> View<'cx, FieldNode> {
             && let Numericity::Enumerated(enumerated) = &access
         {
             let variants = enumerated.variants(self.model);
-            variants.for_each(|variant| out.extend(variant.generate(self.model, self)));
+            variants.for_each(|variant| out.extend(variant.generate(self)));
         }
 
         out
     }
 
-    fn generate_container(&self, write_entitlements: &Entitlements) -> TokenStream {
+    fn generate_container(&self, write_entitlements: Option<&Entitlements>) -> TokenStream {
         let ident = self.type_name();
 
         let into_dynamic = if self.is_resolvable() {
@@ -311,11 +307,13 @@ impl<'cx> View<'cx, FieldNode> {
             None
         };
 
-        let entitlement_paths = write_entitlements.iter().map(|entitlement| {
-            let field_ty = entitlement.field(self.model).type_name();
-            let prefix = entitlement.render_up_to_field(self.model);
-            let state = entitlement.render_entirely(self.model);
-            quote! { #prefix::#field_ty<#state> }
+        let entitlement_paths = write_entitlements.iter().flat_map(|entitlements| {
+            entitlements.iter().map(|entitlement| {
+                let field_ty = entitlement.field(self.model).type_name();
+                let prefix = entitlement.render_up_to_field(self.model);
+                let state = entitlement.render_entirely(self.model);
+                quote! { #prefix::#field_ty<#state> }
+            })
         });
 
         quote! {
@@ -449,10 +447,11 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
-    fn generate_masked(&self, ontological_entitlements: &Entitlements) -> Option<TokenStream> {
-        if ontological_entitlements.is_empty() {
-            None?
-        }
+    fn generate_masked(
+        &self,
+        ontological_entitlements: Option<&Entitlements>,
+    ) -> Option<TokenStream> {
+        ontological_entitlements?;
 
         Some(quote! {
             pub struct Masked {
@@ -511,19 +510,15 @@ impl<'cx> View<'cx, FieldNode> {
     pub fn generate(&self) -> TokenStream {
         let ident = &self.ident;
 
-        let ontological_entitlements = self
-            .model
-            .get_entitlements(EntitlementIndex::Field(self.index));
-        let write_entitlements = self
-            .model
-            .get_entitlements(EntitlementIndex::Write(self.index));
+        let ontological_entitlements = self.ontological_entitlements();
+        let write_entitlements = self.write_entitlements();
 
         let mut body = quote! {};
 
         body.extend(self.generate_states());
-        body.extend(self.generate_container(&write_entitlements));
+        body.extend(self.generate_container(write_entitlements.as_deref().copied()));
         body.extend(self.generate_repr());
-        body.extend(self.generate_masked(&ontological_entitlements));
+        body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_state_impls());
 
         let docs = &self.docs;
