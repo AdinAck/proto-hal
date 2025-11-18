@@ -13,8 +13,9 @@ mod tests {
     }
 
     mod hal {
-        use crate::foo::foo0::a;
         use core::any::{Any, TypeId};
+
+        use crate::foo::foo0::a;
 
         #[test]
         fn fundamental_peripherals() {
@@ -29,15 +30,13 @@ mod tests {
     }
 
     mod registers {
-
         mod unsafe_interface {
-            extern crate std;
-            use crate as hal;
-
             use crate::{
                 foo,
                 tests::{MOCK_FOO, addr_of_foo},
             };
+
+            use crate as hal;
 
             #[test]
             fn unsafe_read() {
@@ -106,8 +105,7 @@ mod tests {
     }
 
     mod entitlements {
-        use macros::{read_untracked, write, write_in_place};
-
+        use crate as hal;
         use crate::{foo, tests::addr_of_foo};
 
         #[test]
@@ -116,7 +114,7 @@ mod tests {
 
             let a = p.foo.foo0.a;
 
-            write_in_place! {
+            hal::write_in_place! {
                 foo::foo0 {
                     a(a) => _,
                 },
@@ -125,7 +123,7 @@ mod tests {
 
             assert!(
                 unsafe {
-                    read_untracked! {
+                    hal::read_untracked! {
                         foo::foo0::a,
                         @base_addr(foo, addr_of_foo())
                     }
@@ -133,7 +131,7 @@ mod tests {
                 .is_v5()
             );
 
-            write! {
+            hal::write! {
                 foo {
                     foo1::write_requires_v5(&mut p.foo.foo1.write_requires_v5) => Noop,
                     foo0::a(&a),

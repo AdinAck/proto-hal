@@ -9,7 +9,7 @@ use crate::{
         field::{FieldIndex, FieldNode},
         model::{Model, View},
         peripheral::PeripheralIndex,
-        variant::VariantIndex,
+        variant::{VariantIndex, VariantNode},
     },
 };
 
@@ -17,8 +17,12 @@ use crate::{
 pub struct Entitlement(pub(super) VariantIndex);
 
 impl Entitlement {
+    pub fn variant<'cx>(&self, model: &'cx Model) -> View<'cx, VariantNode> {
+        model.get_variant(self.0)
+    }
+
     pub fn field<'cx>(&self, model: &'cx Model) -> View<'cx, FieldNode> {
-        let variant = model.get_variant(self.0);
+        let variant = self.variant(model);
         model.get_field(variant.parent)
     }
 
@@ -42,7 +46,7 @@ impl Entitlement {
 
     pub fn render_entirely(&self, model: &Model) -> TokenStream {
         let prefix = self.render_up_to_field(model);
-        let variant = model.get_variant(self.0);
+        let variant = self.variant(model);
 
         let variant_ident = variant.type_name();
 

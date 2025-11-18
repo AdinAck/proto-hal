@@ -24,6 +24,9 @@ pub enum Kind {
     BindingCannotBeView,
     UnexpectedTransition,
     ExpectedTransition,
+
+    // validation
+    MissingEntitlements,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -190,6 +193,28 @@ impl Diagnostic {
     /// expected transition
     pub fn expected_transition(ident: &Ident) -> Self {
         Self::new(Kind::ExpectedTransition, "expected transition", ident)
+    }
+
+    /// field "foo" is entitled to [E0, E1, ...] in field "bar" which must be provided
+    pub fn missing_entitlements(
+        offending: &Ident,
+        entitlement_peripheral: &Ident,
+        entitlement_register: &Ident,
+        entitlement_field: &Ident,
+        entitlement_variants: impl Iterator<Item = Ident>,
+    ) -> Self {
+        let entitlement_list = entitlement_variants
+            .map(|ident| ident.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Self::new(
+            Kind::MissingEntitlements,
+            format!(
+                "field \"{offending}\" is entitled to [{entitlement_list}] in field \
+                \"{entitlement_peripheral}::{entitlement_register}::{entitlement_field}\" which must be provided"
+            ),
+            offending,
+        )
     }
 }
 

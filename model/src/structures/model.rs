@@ -683,6 +683,20 @@ impl<'cx> View<'cx, VariantNode> {
         self.model
             .try_get_entitlements(EntitlementIndex::Variant(self.index))
     }
+
+    /// View the parent field, register, and peripheral.
+    pub fn parents(
+        &self,
+    ) -> (
+        View<'cx, PeripheralNode>,
+        View<'cx, RegisterNode>,
+        View<'cx, FieldNode>,
+    ) {
+        let field = self.model.get_field(self.parent);
+        let (peripheral, register) = field.parents();
+
+        (peripheral, register, field)
+    }
 }
 
 impl<'cx> View<'cx, Entitlements> {

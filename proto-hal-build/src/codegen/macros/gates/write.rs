@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
-use model::structures::{field::numericity::Numericity, model::Model};
+use indexmap::{IndexMap, IndexSet};
+use model::structures::{
+    entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
 
 use crate::codegen::macros::{
-    diagnostic::Diagnostics,
+    diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
         utils::{render_diagnostics, suggestions, unique_field_ident},
@@ -37,7 +40,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     };
 
     let (input, mut diagnostics) = Input::parse(&args, model);
-    diagnostics.extend(validate(&input));
+    diagnostics.extend(validate(&input, model));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
 
@@ -214,10 +217,8 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     }
 }
 
-fn validate<'cx>(_input: &Input<'cx>) -> Diagnostics {
+fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     // Q: since transitions probe the model for write numericity, is this validation step necessary?
-
-    Diagnostics::new()
 
     // input
     //     .visit_fields()
@@ -229,6 +230,85 @@ fn validate<'cx>(_input: &Input<'cx>) -> Diagnostics {
     //         }
     //     })
     //     .collect()
+
+    let mut diagnostics = Vec::new();
+
+    for field in input.visit_fields() {
+        let (RequireBinding::Dynamic(..) | RequireBinding::Static(..)) = field.entry() else {
+            continue;
+        };
+
+        // check for write entitlements
+        if let Some(write_entitlements) =
+            model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
+        {
+            scan_entitlements(input, model, &mut diagnostics, field, write_entitlements);
+        }
+
+        // check for statewise entitlements
+        let Some(Numericity::Enumerated(enumerated)) = field.field().resolvable() else {
+            continue;
+        };
+
+        for variant in enumerated.variants(model) {
+            if let Some(statewise_entitlements) =
+                model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
+            {
+                scan_entitlements(
+                    input,
+                    model,
+                    &mut diagnostics,
+                    field,
+                    statewise_entitlements,
+                );
+            }
+        }
+    }
+
+    diagnostics
+}
+
+fn scan_entitlements<'cx>(
+    input: &semantic::Gate<'cx, ForbidPeripherals, RequireBinding<'cx>>,
+    model: &'cx Model,
+    diagnostics: &mut Vec<Diagnostic>,
+    field: &semantic::FieldItem<'cx, RequireBinding<'cx>>,
+    entitlements: model::structures::model::View<
+        '_,
+        IndexSet<model::structures::entitlement::Entitlement>,
+    >,
+) {
+    let mut entitlement_fields = IndexMap::new();
+
+    for entitlement in entitlements.iter() {
+        entitlement_fields
+            .entry(*entitlement.field(model).index())
+            .or_insert_with(IndexSet::new)
+            .insert(entitlement);
+    }
+
+    for (entitlement_field_index, field_entitlements) in entitlement_fields {
+        let entitlement_field = model.get_field(entitlement_field_index);
+        let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
+        if input
+            .get_field(
+                entitlement_peripheral.module_name().to_string(),
+                entitlement_register.module_name().to_string(),
+                entitlement_field.module_name().to_string(),
+            )
+            .is_none()
+        {
+            diagnostics.push(Diagnostic::missing_entitlements(
+                &field.ident(),
+                &entitlement_peripheral.module_name(),
+                &entitlement_register.module_name(),
+                &entitlement_field.module_name(),
+                field_entitlements
+                    .iter()
+                    .map(|entitlement| entitlement.variant(model).type_name()),
+            ));
+        };
+    }
 }
 
 fn reg_write_value<'cx>(model: &'cx Model, register_item: &RegisterItem<'cx>) -> TokenStream {
