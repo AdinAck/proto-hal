@@ -93,38 +93,46 @@ mod tests {
         /// Expected behavior: The model will contain one peripheral (the last specified).
         #[test]
         fn peripherals_same_ident() {
-            let model = Model::new([Peripheral::new("foo", 0, []), Peripheral::new("foo", 1, [])]);
+            let mut model = Model::new();
 
-            assert_eq!(model.peripherals.len(), 1);
-            assert_eq!(model.peripherals.values().last().unwrap().base_addr, 1);
+            model.add_peripheral(Peripheral::new("foo", 0));
+            model.add_peripheral(Peripheral::new("foo", 1));
+
+            assert_eq!(model.peripheral_count(), 1);
+            assert_eq!(model.peripherals().last().unwrap().base_addr, 1);
         }
 
-        /// Create a HAL with multiple peripherals of zero size at the same base address.
+        /// Create a model with multiple peripherals of zero size at the same base address.
         ///
         /// Expected behavior: Since the peripherals are of zero size, they effectively do
         /// not exist and as such there is no error.
         #[test]
         fn zero_size_peripheral_overlap() {
-            let hal = Model::new([Peripheral::new("foo", 0, []), Peripheral::new("bar", 0, [])]);
+            let mut model = Model::new();
 
-            assert_eq!(hal.peripherals.len(), 2);
+            model.add_peripheral(Peripheral::new("foo", 0));
+            model.add_peripheral(Peripheral::new("bar", 0));
 
-            let diagnostics = hal.validate();
+            assert_eq!(model.peripheral_count(), 2);
+
+            let diagnostics = model.validate();
 
             assert!(diagnostics.is_empty());
         }
 
-        /// Create a HAL with multiple peripherals with overlapping domains.
+        /// Create a model with multiple peripherals with overlapping domains.
         ///
         /// Expected behavior: Exactly one diagnostic error is emitted during validation.
         #[test]
         fn peripheral_overlap() {
-            let hal = Model::new([
-                Peripheral::new("foo", 0, [Register::new("foo0", 0, [])]),
-                Peripheral::new("bar", 0, [Register::new("bar0", 0, [])]),
-            ]);
+            let mut model = Model::new();
 
-            let mut diagnostics = hal.validate().into_iter();
+            let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
+            foo.add_register(Register::new("foo0", 0));
+            let mut bar = model.add_peripheral(Peripheral::new("bar", 0));
+            bar.add_register(Register::new("bar0", 0));
+
+            let mut diagnostics = model.validate().into_iter();
 
             let diagnostic = diagnostics.next().unwrap();
 
@@ -136,62 +144,43 @@ mod tests {
 
     mod peripherals {
         use proto_hal_build::model::{
-            diagnostic::{self, Context},
-            structures::{peripheral::Peripheral, register::Register},
+            diagnostic,
+            structures::{model::Model, peripheral::Peripheral, register::Register},
         };
 
         #[test]
-        fn empty() {
-            let peripheral = Peripheral::new("foo", 0, []);
-
-            assert!(peripheral.registers.is_empty());
-
-            let diagnostics = peripheral.validate(&Context::new());
-
-            assert!(diagnostics.is_empty());
-        }
-
-        #[test]
-        fn one_register() {
-            let peripheral = Peripheral::new("foo", 0, [Register::new("foo0", 0, [])]);
-
-            assert_eq!(peripheral.registers.len(), 1);
-
-            let diagnostics = peripheral.validate(&Context::new());
-
-            assert!(diagnostics.is_empty());
-        }
-
-        #[test]
         fn many_registers() {
-            let peripheral = Peripheral::new(
-                "foo",
-                0,
-                [
-                    Register::new("foo", 0, []),
-                    Register::new("bar", 4, []),
-                    Register::new("baz", 8, []),
-                    Register::new("dead", 12, []),
-                    Register::new("beef", 16, []),
-                ],
-            );
+            let mut model = Model::new();
 
-            assert_eq!(peripheral.registers.len(), 5);
+            let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 
-            let diagnostics = peripheral.validate(&Context::new());
+            for (ident, offset) in [
+                ("foo", 0),
+                ("bar", 4),
+                ("baz", 8),
+                ("dead", 12),
+                ("beef", 16),
+            ] {
+                foo.add_register(Register::new(ident, offset));
+            }
+
+            assert_eq!(model.register_count(), 5);
+
+            let diagnostics = model.validate();
 
             assert!(diagnostics.is_empty());
         }
 
         #[test]
         fn register_overlap() {
-            let peripheral = Peripheral::new(
-                "foo",
-                0,
-                [Register::new("foo", 0, []), Register::new("bar", 0, [])],
-            );
+            let mut model = Model::new();
 
-            let mut diagnostics = peripheral.validate(&Context::new()).into_iter();
+            let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
+
+            foo.add_register(Register::new("foo", 0));
+            foo.add_register(Register::new("bar", 0));
+
+            let mut diagnostics = model.validate().into_iter();
 
             let diagnostic = diagnostics.next().unwrap();
 
