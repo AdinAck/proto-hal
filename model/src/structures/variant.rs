@@ -135,7 +135,7 @@ impl<'cx> View<'cx, VariantNode> {
             let field_ty = field.type_name();
             let prefix = entitlement.render_up_to_field(self.model);
             let state = entitlement.render_entirely(self.model);
-            quote! { #prefix::#field_ty<#state> }
+            quote! { crate::#prefix::#field_ty<crate::#state> }
         });
 
         quote! {

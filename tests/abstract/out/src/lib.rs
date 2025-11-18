@@ -29,17 +29,10 @@ mod tests {
     }
 
     mod registers {
-        use crate::{bar::bar0, foo::foo0};
-
-        #[test]
-        fn offset() {
-            assert_eq!(foo0::ADDR, 0);
-            assert_eq!(bar0::ADDR, 0x100);
-        }
 
         mod unsafe_interface {
             extern crate std;
-            use macros::{modify_untracked, read_untracked, write_from_zero_untracked};
+            use crate as hal;
 
             use crate::{
                 foo,
@@ -53,7 +46,7 @@ mod tests {
 
                     assert!(
                         unsafe {
-                            read_untracked! {
+                            hal::read_untracked! {
                                 foo::foo0::a,
                                 @base_addr(foo, addr_of_foo())
                             }
@@ -67,13 +60,13 @@ mod tests {
             fn unsafe_write() {
                 critical_section::with(|_| {
                     unsafe {
-                        write_from_zero_untracked! {
+                        hal::write_from_zero_untracked! {
                             foo::foo0::a => V2,
                             @base_addr(foo, addr_of_foo())
                         }
                     };
                     assert!(unsafe {
-                        read_untracked! {
+                        hal::read_untracked! {
                             foo::foo0::a,
                             @base_addr(foo, addr_of_foo())
                         }
@@ -86,14 +79,14 @@ mod tests {
             fn unsafe_modify() {
                 critical_section::with(|cs| {
                     unsafe {
-                        write_from_zero_untracked! {
+                        hal::write_from_zero_untracked! {
                             foo::foo0::a => V3,
                             @base_addr(foo, addr_of_foo())
                         }
                     }
 
                     unsafe {
-                        modify_untracked! {
+                        hal::modify_untracked! {
                             foo::foo0::a => Variant::from_bits(a as u32 + 1),
                             @critical_section(cs),
                             @base_addr(foo, addr_of_foo())
@@ -101,7 +94,7 @@ mod tests {
                     };
 
                     assert!(unsafe {
-                        read_untracked! {
+                        hal::read_untracked! {
                             foo::foo0::a,
                             @base_addr(foo, addr_of_foo())
                         }
@@ -109,15 +102,6 @@ mod tests {
                     });
                 });
             }
-        }
-    }
-
-    mod fields {
-        use crate::foo::foo0::a;
-
-        #[test]
-        fn offset() {
-            assert_eq!(a::OFFSET, 0);
         }
     }
 

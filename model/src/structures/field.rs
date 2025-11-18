@@ -282,6 +282,12 @@ impl<'cx> View<'cx, FieldNode> {
         out
     }
 
+    fn generate_marker() -> TokenStream {
+        quote! {
+            pub struct Field;
+        }
+    }
+
     fn generate_container(&self, write_entitlements: Option<&Entitlements>) -> TokenStream {
         let ident = self.type_name();
 
@@ -312,7 +318,7 @@ impl<'cx> View<'cx, FieldNode> {
                 let field_ty = entitlement.field(self.model).type_name();
                 let prefix = entitlement.render_up_to_field(self.model);
                 let state = entitlement.render_entirely(self.model);
-                quote! { #prefix::#field_ty<#state> }
+                quote! { crate::#prefix::#field_ty<crate::#state> }
             })
         });
 
@@ -516,6 +522,7 @@ impl<'cx> View<'cx, FieldNode> {
         let mut body = quote! {};
 
         body.extend(self.generate_states());
+        body.extend(Self::generate_marker());
         body.extend(self.generate_container(write_entitlements.as_deref().copied()));
         body.extend(self.generate_repr());
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
