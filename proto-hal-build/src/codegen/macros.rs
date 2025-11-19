@@ -2,7 +2,6 @@ pub mod diagnostic;
 mod gates;
 pub mod parsing;
 mod scaffolding;
-mod unmask;
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
