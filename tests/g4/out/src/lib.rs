@@ -15,7 +15,9 @@ mod tests {
     }
 
     mod cordic {
-        use crate::{cordic, rcc, read, read_untracked, write, write_from_reset_untracked};
+        use crate::{cordic, rcc};
+
+        use crate as hal;
 
         static mut MOCK_CORDIC: [u32; 3] = [0x0000_0050, 0, 0];
 
@@ -28,11 +30,15 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { crate::peripherals() };
 
-                let rcc::ahb1enr::States { cordicen, .. } =
-                    rcc::ahb1enr::modify_in_cs(cs, |_, w| {
-                        w.cordicen(p.rcc.ahb1enr.cordicen).enabled()
-                    });
-                let cordic = p.cordic.unmask(cordicen);
+                let cordicen = hal::write! {
+                    rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
+                };
+
+                let cordic = hal::unmask! {
+                    rcc::ahb1enr::cordicen(&cordicen), // TODO: fix this!!!
+                    cordic(p.cordic),
+
+                };
 
                 cordic::csr::modify_in_cs(cs, |_, w| {
                     w.func(cordic.csr.func)

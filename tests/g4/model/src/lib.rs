@@ -130,7 +130,7 @@ pub fn model(variant: DeviceVariant) -> Model {
 
     // Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts()
 
-    rcc(&mut model);
+    let rcc::Output { cordicen, crcen } = rcc(&mut model);
     cordic(&mut model, cordicen);
     crc(&mut model, crcen);
 

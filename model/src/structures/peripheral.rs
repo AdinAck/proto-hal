@@ -196,7 +196,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 
         Some(quote! {
             #(
-                unsafe impl ::proto_hal::Entitled<#entitlement_paths> for Reset {}
+                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for Reset {}
             )*
         })
     }

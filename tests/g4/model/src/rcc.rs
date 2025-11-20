@@ -1,20 +1,23 @@
-pub mod enr;
+pub mod ahb1enr;
+pub mod ahb2enr;
 
 use proto_hal_build::model::structures::{
     entitlement::Entitlement, model::Model, peripheral::Peripheral,
 };
 
-use crate::rcc::enr::enr;
+use crate::rcc::{ahb1enr::ahb1enr, ahb2enr::ahb2enr};
 
 // TODO: improve this
 pub struct Output {
-    cordicen: Entitlement,
-    crcen: Entitlement,
+    pub cordicen: Entitlement,
+    pub crcen: Entitlement,
 }
 
 pub fn rcc(model: &mut Model) -> Output {
     let mut rcc = model.add_peripheral(Peripheral::new("rcc", 0x4002_1000));
 
-    enr(&mut rcc, enr::Instance::AHB1);
-    enr(&mut rcc, enr::Instance::AHB2);
+    let ahb1enr::Output { cordicen, crcen } = ahb1enr(&mut rcc);
+    ahb2enr(&mut rcc);
+
+    Output { cordicen, crcen }
 }

@@ -7,7 +7,7 @@ pub struct Output {
 }
 
 pub fn nres<'cx>(csr: &mut RegisterEntry) -> Output {
-    let mut nres = csr.add_store_field(Field::new("nres", 20, 1));
+    let mut nres = csr.add_store_field(Field::new("nres", 19, 1));
 
     let one = nres
         .add_variant(

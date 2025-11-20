@@ -2,7 +2,7 @@ use proto_hal_build::model::structures::{
     field::Field, model::Model, peripheral::Peripheral, register::Register, variant::Variant,
 };
 
-pub fn generate() -> Model {
+pub fn model() -> Model {
     let mut model = Model::new();
 
     let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
