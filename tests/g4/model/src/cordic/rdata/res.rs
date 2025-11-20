@@ -1,12 +1,8 @@
-use proto_hal_build::model::{
-    access::Access,
-    structures::{
-        entitlement::Entitlement,
-        field::{Field, Numericity},
-    },
+use proto_hal_build::model::structures::{
+    entitlement::Entitlement, field::Field, model::RegisterEntry,
 };
 
-pub fn generate() -> Field {
-    Field::new("res", 0, 32, Access::read(Numericity::Numeric))
-        .entitlements([Entitlement::to("cordic::csr::ressize::Q31")])
+pub fn res<'cx>(rdata: &mut RegisterEntry<'cx>, q31: Entitlement) {
+    let mut res = rdata.add_read_field(Field::new("res", 0, 32));
+    res.ontological_entitlements([q31]);
 }

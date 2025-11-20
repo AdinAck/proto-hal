@@ -1,7 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use colored::Colorize;
-use derive_more::{AsRef, Deref};
+use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
 use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -53,10 +53,7 @@ impl Model {
     }
 
     /// Add a peripheral to the model.
-    pub fn add_peripheral<'cx>(
-        &'cx mut self,
-        peripheral: Peripheral,
-    ) -> Entry<'cx, PeripheralIndex, ()> {
+    pub fn add_peripheral<'cx>(&'cx mut self, peripheral: Peripheral) -> PeripheralEntry<'cx> {
         let index = PeripheralIndex(peripheral.module_name());
 
         self.peripherals.insert(
@@ -72,6 +69,7 @@ impl Model {
             index,
             _p: PhantomData,
         }
+        .into()
     }
 
     pub fn with_interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
@@ -321,6 +319,19 @@ impl ToTokens for Model {
     }
 }
 
+#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
+pub struct PeripheralEntry<'cx>(Entry<'cx, PeripheralIndex, ()>);
+
+#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
+pub struct RegisterEntry<'cx>(Entry<'cx, RegisterIndex, ()>);
+
+#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
+pub struct FieldEntry<'cx, AccessModality>(Entry<'cx, FieldIndex, AccessModality>);
+
+#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
+pub struct VariantEntry<'cx>(Entry<'cx, VariantIndex, ()>);
+
+#[derive(Debug)]
 pub struct Entry<'cx, Index, Meta> {
     model: &'cx mut Model,
     index: Index,
@@ -329,10 +340,7 @@ pub struct Entry<'cx, Index, Meta> {
 
 impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add a register to the peripheral.
-    pub fn add_register<'ncx>(
-        &'ncx mut self,
-        register: Register,
-    ) -> Entry<'ncx, RegisterIndex, ()> {
+    pub fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
         let index = RegisterIndex(self.model.registers.len());
 
         // update parent
@@ -354,11 +362,12 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
             index,
             _p: PhantomData,
         }
+        .into()
     }
 
     /// Add [ontological entitlements](TODO) to the peripheral.
     pub fn ontological_entitlements(
-        &'cx mut self,
+        &mut self,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
@@ -390,32 +399,24 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         });
     }
 
-    fn make_child_entry<'ncx, Meta>(
-        &'ncx mut self,
-        index: FieldIndex,
-    ) -> Entry<'ncx, FieldIndex, Meta> {
+    fn make_child_entry<'ncx, Meta>(&'ncx mut self, index: FieldIndex) -> FieldEntry<'ncx, Meta> {
         Entry {
             model: self.model,
             index,
             _p: PhantomData,
         }
+        .into()
     }
 
     /// Add a field to the register with [`Read`](access::Read) access.
-    pub fn add_read_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> Entry<'ncx, FieldIndex, access::Read> {
+    pub fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Read(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`Write`](access::Write) access.
-    pub fn add_write_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> Entry<'ncx, FieldIndex, access::Write> {
+    pub fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Write(Default::default()));
         self.make_child_entry(index)
@@ -425,17 +426,14 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     pub fn add_read_write_field<'ncx>(
         &'ncx mut self,
         field: Field,
-    ) -> Entry<'ncx, FieldIndex, access::ReadWrite> {
+    ) -> FieldEntry<'ncx, access::ReadWrite> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::ReadWrite(Default::default()));
         self.make_child_entry(index)
     }
 
     /// Add a field to the register with [`Store`](access::Store) access.
-    pub fn add_store_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> Entry<'ncx, FieldIndex, access::Store> {
+    pub fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::Store(Default::default()));
         self.make_child_entry(index)
@@ -445,7 +443,7 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     pub fn add_volatile_store_field<'ncx>(
         &'ncx mut self,
         field: Field,
-    ) -> Entry<'ncx, FieldIndex, access::VolatileStore> {
+    ) -> FieldEntry<'ncx, access::VolatileStore> {
         let index = self.new_index_and_add_to_parent(&field);
         self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
         self.make_child_entry(index)
@@ -466,7 +464,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         &mut self,
         index: VariantIndex,
         variant: Variant,
-    ) -> Entry<'_, VariantIndex, ()> {
+    ) -> VariantEntry<'_> {
         // insert child
         self.model.variants.push(VariantNode {
             parent: self.index.clone(),
@@ -478,13 +476,14 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
             index,
             _p: PhantomData,
         }
+        .into()
     }
 
     /// Add a variant to the field.
     ///
     /// If the field's access modality exposes both *read* and *write* access,
     /// this will add the variant to *both*.
-    pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> Entry<'ncx, VariantIndex, ()> {
+    pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
@@ -513,7 +512,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
 
 impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
     /// Add a variant to the field for read access **only**.
-    pub fn add_read_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
+    pub fn add_read_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
@@ -526,7 +525,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
     }
 
     /// Add a variant to the field for write access **only**.
-    pub fn add_write_variant(&'cx mut self, variant: Variant) -> Entry<'cx, VariantIndex, ()> {
+    pub fn add_write_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
@@ -587,9 +586,11 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
                 .insert(Entitlement(self.index));
         }
 
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::Variant(self.index), entitlements);
+        if !entitlements.is_empty() {
+            self.model
+                .entitlements
+                .insert(EntitlementIndex::Variant(self.index), entitlements);
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 use proto_hal_build::model::structures::{interrupts::Interrupt, model::Model};
 
+use crate::{cordic::cordic, crc::crc, rcc::rcc};
+
 pub mod cordic;
 pub mod crc;
 pub mod rcc;
@@ -12,7 +14,7 @@ pub enum DeviceVariant {
     G484,
 }
 
-pub fn generate(variant: DeviceVariant) -> Model {
+pub fn model(variant: DeviceVariant) -> Model {
     let extra_interrupts = |interrupt| {
         if matches!(variant, DeviceVariant::G474 | DeviceVariant::G484) {
             interrupt
@@ -21,7 +23,7 @@ pub fn generate(variant: DeviceVariant) -> Model {
         }
     };
 
-    Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts([
+    let mut model = Model::new().with_interrupts([
         Interrupt::handler("WWDG").docs(["Window Watchdog"]),
         Interrupt::handler("PVD_PVM").docs(["PVD through EXTI line detection"]),
         Interrupt::handler("RTC_TAMP_CSS_LSE"),
@@ -124,5 +126,13 @@ pub fn generate(variant: DeviceVariant) -> Model {
         extra_interrupts(Interrupt::handler("DMA2_CH8")),
         Interrupt::handler("CORDIC"),
         Interrupt::handler("FMAC"),
-    ])
+    ]);
+
+    // Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts()
+
+    rcc(&mut model);
+    cordic(&mut model, cordicen);
+    crc(&mut model, crcen);
+
+    model
 }

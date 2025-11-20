@@ -3,18 +3,18 @@ pub mod rev_in;
 pub mod rev_out;
 pub mod rst;
 
-use proto_hal_build::model::structures::register::Register;
+use proto_hal_build::model::structures::{model::PeripheralEntry, register::Register};
 
-pub fn generate() -> Register {
-    Register::new(
-        "cr",
-        8,
-        [
-            rst::generate(),
-            polysize::generate(),
-            rev_in::generate(),
-            rev_out::generate(),
-        ],
-    )
-    .reset(0)
+use polysize::polysize;
+use rev_in::rev_in;
+use rev_out::rev_out;
+use rst::rst;
+
+pub fn cr<'cx>(crc: &mut PeripheralEntry<'cx>) {
+    let mut cr = crc.add_register(Register::new("cr", 8).reset(0));
+
+    rst(&mut cr);
+    polysize(&mut cr);
+    rev_in(&mut cr);
+    rev_out(&mut cr);
 }

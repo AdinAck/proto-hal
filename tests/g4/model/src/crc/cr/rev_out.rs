@@ -1,19 +1,8 @@
-use proto_hal_build::model::{
-    access::Access,
-    structures::{
-        field::{Field, Numericity},
-        variant::Variant,
-    },
-};
+use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
 
-pub fn generate() -> Field {
-    Field::new(
-        "rev_in",
-        7,
-        1,
-        Access::read_write(Numericity::enumerated([
-            Variant::new("NoEffect", 0),
-            Variant::new("Reversed", 1),
-        ])),
-    )
+pub fn rev_out<'cx>(cr: &mut RegisterEntry<'cx>) {
+    let mut rev_out = cr.add_store_field(Field::new("rev_in", 7, 1));
+
+    rev_out.add_variant(Variant::new("NoEffect", 0));
+    rev_out.add_variant(Variant::new("Reversed", 1));
 }

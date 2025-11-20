@@ -1,4 +1,4 @@
-use model::DeviceVariant;
+use model::{DeviceVariant, model};
 
 fn main() -> Result<(), String> {
     let variant = if cfg!(feature = "g431") {
@@ -13,7 +13,7 @@ fn main() -> Result<(), String> {
         Err("device variant must be specified")?
     };
 
-    proto_hal_build::codegen::render::generate(&model::generate(variant));
+    proto_hal_build::codegen::render::generate(&model(variant));
 
     Ok(())
 }

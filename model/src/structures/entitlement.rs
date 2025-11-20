@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Entitlement(pub(super) VariantIndex);
 
 impl Entitlement {
