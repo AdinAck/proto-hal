@@ -1,7 +1,7 @@
-use indexmap::IndexSet;
-use model::structures::model::Model;
+use model::structures::{entitlement::Entitlements, model::Model};
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens as _, quote};
+use quote::{ToTokens as _, format_ident, quote};
+use syn::Ident;
 
 use crate::codegen::macros::{
     diagnostic::Diagnostic,
@@ -17,8 +17,17 @@ use crate::codegen::macros::{
 
 type Input<'cx> = semantic::Gate<'cx, PermitPeripherals, RequireBinding<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
+type FieldItem<'cx> = semantic::FieldItem<'cx, RequireBinding<'cx>>;
 
-fn unmask_inner(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn unmask(model: &Model, tokens: TokenStream) -> TokenStream {
+    unmask_inner(model, tokens, false)
+}
+
+pub fn unmask_in_place(model: &Model, tokens: TokenStream) -> TokenStream {
+    unmask_inner(model, tokens, true)
+}
+
+fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
@@ -38,14 +47,17 @@ fn unmask_inner(model: &Model, tokens: TokenStream) -> TokenStream {
         );
     }
 
+    let mut generics = Vec::new();
     let mut parameters = Vec::new();
     let mut return_tys = Vec::new();
+    let mut constraints = Vec::new();
     let mut arguments = Vec::new();
     let mut conjures = Vec::new();
-    let mut transmutes = Vec::new();
+    let mut rebinds = Vec::new();
 
     for peripheral_item in input.visit_peripherals() {
         let peripheral_ident = peripheral_item.ident();
+        let peripheral_path = peripheral_item.path();
 
         let Some(binding) = peripheral_item.binding() else {
             // TODO: shouldn't need to do this
@@ -59,78 +71,116 @@ fn unmask_inner(model: &Model, tokens: TokenStream) -> TokenStream {
             continue;
         };
 
-        for ontological_entitlement in *ontological_entitlements {
-            let Some((entitlement_register_item, entitlement_field_item)) =
-                get_entitlement_input_items(model, &input, ontological_entitlement)
-            else {
-                continue;
-            };
+        // peripheral is ontologically entitled to some field(s)
 
-            let peripheral_path = peripheral_item.path();
+        make_constraints(
+            &input,
+            model,
+            &mut constraints,
+            &quote! { #peripheral_path::Reset },
+            *ontological_entitlements,
+        );
 
-            parameters.push(quote! { #peripheral_ident: #peripheral_path::Masked });
-            return_tys.push(quote! { #peripheral_path::Reset });
-            arguments.push(binding.to_token_stream());
-            conjures.push(fragments::conjure());
+        if binding.is_moved() {
+            rebinds.push(binding.as_ref());
         }
+
+        parameters.push(quote! { #peripheral_ident: #peripheral_path::Masked });
+        return_tys.push(quote! { #peripheral_path::Reset });
+        arguments.push(binding.to_token_stream());
+        conjures.push(fragments::conjure());
     }
 
     for register_item in input.visit_registers() {
         for field_item in register_item.fields().values() {
-            let register_path = register_item.path();
-            let field_ident = field_item.ident();
-            let field_ty = field_item.field().type_name();
+            let (field_module_path, field_ty_path) = field_paths(&register_item, &field_item);
             let unique_field_ident = unique_field_ident(
                 register_item.peripheral(),
                 register_item.register(),
                 field_item.field(),
             );
+            let binding = field_item.entry().binding();
 
             let Some(ontological_entitlements) = field_item.field().ontological_entitlements()
             else {
                 // must be an entitlement of another entry, freeze!
 
-                parameters
-                    .push(quote! { #unique_field_ident: #register_path::#field_ident::Masked });
-                return_tys.push(quote! { #register_path::#field_ident::#field_ty<::proto_hal::stasis::Dynamic> });
+                let generic = make_generic(&register_item, &field_item);
+
+                // TODO: return frozen for reclaimation and rebinding
+
+                parameters.push(quote! { #unique_field_ident: #field_ty_path<#generic>});
+                generics.push(generic);
                 arguments.push(binding.to_token_stream());
-                conjures.push(fragments::conjure());
 
                 continue;
             };
 
-            for ontological_entitlement in *ontological_entitlements {
-                let Some((entitlement_register_item, entitlement_field_item)) =
-                    get_entitlement_input_items(model, &input, ontological_entitlement)
-                else {
-                    continue;
-                };
+            make_constraints(
+                &input,
+                model,
+                &mut constraints,
+                &quote! { #field_module_path::Field },
+                *ontological_entitlements,
+            );
 
-                let binding = field_item.entry().binding();
+            let binding = field_item.entry().binding();
 
-                parameters
-                    .push(quote! { #unique_field_ident: #register_path::#field_ident::Masked });
-                return_tys.push(quote! { #register_path::#field_ident::#field_ty<::proto_hal::stasis::Dynamic> });
-                arguments.push(binding.to_token_stream());
-                conjures.push(fragments::conjure());
+            if binding.is_moved() {
+                rebinds.push(binding.as_ref());
             }
+
+            parameters.push(quote! { #unique_field_ident: #field_module_path::Masked });
+            return_tys.push(quote! { #field_ty_path<::proto_hal::stasis::Dynamic> });
+            arguments.push(binding.to_token_stream());
+            conjures.push(fragments::conjure());
         }
     }
 
     let suggestions = suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
+    let constraints = (!constraints.is_empty()).then_some(quote! {
+        where #(#constraints)*
+    });
+
+    let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });
+    let semicolon = in_place.then_some(quote! { ; });
+
     quote! {
-        {
+        #rebinds {
             #suggestions
             #errors
 
-            fn gate(#(#parameters,)*) -> (#(#return_tys),*) {
+            fn gate<#(#generics,)*>(#(#parameters,)*) -> (#(#return_tys),*) #constraints {
                 unsafe { (#(#conjures),*) }
             }
 
             gate(#(#arguments,)*)
-        }
+        } #semicolon
+    }
+}
+
+fn make_constraints<'cx>(
+    input: &'cx semantic::Gate<'cx, PermitPeripherals, RequireBinding<'cx>>,
+    model: &'cx Model,
+    constraints: &mut Vec<TokenStream>,
+    constrained_ty: &TokenStream,
+    ontological_entitlements: &Entitlements,
+) {
+    for ontological_entitlement in ontological_entitlements {
+        let Some((entitlement_register_item, entitlement_field_item)) =
+            get_entitlement_input_items(model, input, ontological_entitlement)
+        else {
+            continue;
+        };
+
+        let (.., field_ty_path) = field_paths(&entitlement_register_item, &entitlement_field_item);
+        let generic = make_generic(&entitlement_register_item, &entitlement_field_item);
+
+        constraints.push(quote! {
+            #constrained_ty: ::proto_hal::stasis::Entitled<#field_ty_path<#generic>>
+        });
     }
 }
 
@@ -149,5 +199,28 @@ fn get_entitlement_input_items<'cx>(
         entitlement_peripheral.module_name().to_string(),
         entitlement_register.module_name().to_string(),
         entitlement_field.module_name().to_string(),
+    )
+}
+
+fn make_generic<'cx>(register_item: &RegisterItem<'cx>, field_item: &FieldItem<'cx>) -> Ident {
+    format_ident!(
+        "{}{}{}",
+        register_item.peripheral().type_name(),
+        register_item.register().type_name(),
+        field_item.field().type_name()
+    )
+}
+
+fn field_paths<'cx>(
+    register_item: &RegisterItem<'cx>,
+    field_item: &FieldItem<'cx>,
+) -> (TokenStream, TokenStream) {
+    let register_path = register_item.path();
+    let field_ident = field_item.ident();
+    let field_ty = field_item.field().type_name();
+
+    (
+        quote! { #register_path::#field_ident },
+        quote! { #register_path::#field_ident::#field_ty },
     )
 }

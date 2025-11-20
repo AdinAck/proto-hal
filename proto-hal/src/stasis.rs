@@ -78,7 +78,10 @@ pub struct Frozen<Resource, Key> {
     _key: PhantomData<Key>,
 }
 
-impl<Resource, Key> Frozen<Resource, Key> {
+impl<Resource, Key> Frozen<Resource, Key>
+where
+    Resource: Conjure,
+{
     /// Freeze a resource, ensuring the resource is not destructively
     /// mutated or moved.
     ///
@@ -96,6 +99,18 @@ impl<Resource, Key> Frozen<Resource, Key> {
     /// Provide the required key to retrieve the resource.
     pub fn unfreeze(self, #[expect(unused)] key: Key) -> Resource {
         self.resource
+    }
+}
+
+impl<Resource, Key> Conjure for Frozen<Resource, Key>
+where
+    Resource: Conjure,
+{
+    unsafe fn conjure() -> Self {
+        Self {
+            resource: unsafe { Conjure::conjure() },
+            _key: PhantomData,
+        }
     }
 }
 

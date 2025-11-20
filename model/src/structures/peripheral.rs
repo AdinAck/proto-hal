@@ -179,6 +179,27 @@ impl<'cx> View<'cx, PeripheralNode> {
             }
         }
     }
+
+    fn generate_entitlement_impls(
+        &self,
+        ontological_entitlements: Option<&Entitlements>,
+    ) -> Option<TokenStream> {
+        let ontological_entitlements = ontological_entitlements?;
+
+        let entitlement_paths = ontological_entitlements.iter().map(|entitlement| {
+            let field = entitlement.field(self.model);
+            let field_ty = field.type_name();
+            let prefix = entitlement.render_up_to_field(self.model);
+            let state = entitlement.render_entirely(self.model);
+            quote! { crate::#prefix::#field_ty<crate::#state> }
+        });
+
+        Some(quote! {
+            #(
+                unsafe impl ::proto_hal::Entitled<#entitlement_paths> for Reset {}
+            )*
+        })
+    }
 }
 
 impl<'cx> View<'cx, PeripheralNode> {
@@ -193,6 +214,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         body.extend(self.generate_registers(&registers));
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_reset(&registers));
+        body.extend(self.generate_entitlement_impls(ontological_entitlements.as_deref().copied()));
 
         let docs = &self.docs;
 

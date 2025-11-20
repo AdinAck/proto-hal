@@ -11,6 +11,7 @@ pub use gates::{
     modify_untracked::modify_untracked,
     read::read,
     read_untracked::read_untracked,
+    unmask::{unmask, unmask_in_place},
     write::{write, write_in_place},
     write_untracked::{write_from_reset_untracked, write_from_zero_untracked},
 };
@@ -25,6 +26,8 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         "write_in_place",
         "write_from_reset_untracked",
         "write_from_zero_untracked",
+        "unmask",
+        "unmask_in_place",
     ];
 
     let idents = idents_raw

@@ -282,9 +282,22 @@ impl<'cx> View<'cx, FieldNode> {
         out
     }
 
-    fn generate_marker() -> TokenStream {
+    fn generate_marker(&self, ontological_entitlements: Option<&Entitlements>) -> TokenStream {
+        let entitlement_paths = ontological_entitlements.iter().flat_map(|entitlements| {
+            entitlements.iter().map(|entitlement| {
+                let field_ty = entitlement.field(self.model).type_name();
+                let prefix = entitlement.render_up_to_field(self.model);
+                let state = entitlement.render_entirely(self.model);
+                quote! { crate::#prefix::#field_ty<crate::#state> }
+            })
+        });
+
         quote! {
             pub struct Field;
+
+            #(
+                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for Field {}
+            )*
         }
     }
 
@@ -522,7 +535,7 @@ impl<'cx> View<'cx, FieldNode> {
         let mut body = quote! {};
 
         body.extend(self.generate_states());
-        body.extend(Self::generate_marker());
+        body.extend(self.generate_marker(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_container(write_entitlements.as_deref().copied()));
         body.extend(self.generate_repr());
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
