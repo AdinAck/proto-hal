@@ -1,5 +1,5 @@
 use derive_more::{AsRef, Deref};
-use syn::{Expr, parse::Parse};
+use syn::{Expr, ExprPath, parse::Parse};
 
 /// A binding is the first entry component, delineating the resource passed to the gate.
 ///
@@ -44,6 +44,15 @@ impl Binding {
     /// *See [`is_dynamic`] and [`is_moved`].*
     pub fn is_mutated(&self) -> bool {
         self.is_moved() || self.is_dynamic()
+    }
+
+    /// Determine whether the binding is a valid identifier or not.
+    pub fn is_ident(&self) -> bool {
+        let Expr::Path(ExprPath { path, .. }) = self.as_ref() else {
+            return false;
+        };
+
+        path.get_ident().is_some()
     }
 }
 

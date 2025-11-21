@@ -9,8 +9,8 @@ use crate::codegen::macros::{
     },
 };
 
-/// The semantic entry optionally provided at the termination of a path.
-pub enum Entry<'cx> {
+/// The semantic entry optionally provided at the termination of a path to a field.
+pub enum FieldEntry<'cx> {
     /// There is no entry.
     Empty,
     /// The entry is a view binding with no transition.
@@ -37,9 +37,25 @@ pub enum Entry<'cx> {
     /// (foo) => bar
     /// ```
     StaticTransition(&'cx Binding, Transition<'cx>),
+    /// The entry is just a static binding.
+    ///
+    /// ```ignore
+    /// (foo)
+    /// ```
+    Consumed(&'cx Binding),
 }
 
-impl<'cx> Entry<'cx> {
+/// The semantic entry optionally provided at the termination of a path to a peripheral.
+pub enum PeripheralEntry<'cx> {
+    /// The entry is just a static binding.
+    ///
+    /// ```ignore
+    /// (foo)
+    /// ```
+    Consumed(&'cx Binding),
+}
+
+impl<'cx> FieldEntry<'cx> {
     /// Parse the entry input against the model to produce a semantic entry.
     pub fn parse(
         model: &'cx Model,
@@ -56,7 +72,10 @@ impl<'cx> Entry<'cx> {
                 field_ident,
             )?),
             (Some(binding), None) if binding.is_viewed() => Self::View(binding),
-            (Some(binding), None) => Err(Diagnostic::binding_must_be_view(binding))?,
+            (Some(binding), None) if binding.is_dynamic() => {
+                Err(Diagnostic::binding_cannot_be_dynamic(binding))?
+            }
+            (Some(binding), None) => Self::Consumed(binding),
             (Some(binding), Some(transition)) if binding.is_dynamic() => {
                 Self::BoundDynamicTransition(
                     binding,
@@ -68,6 +87,23 @@ impl<'cx> Entry<'cx> {
                 Transition::parse(model, transition, field, field_ident)?,
             ),
             (Some(binding), Some(..)) => Err(Diagnostic::binding_cannot_be_view(binding))?,
+        })
+    }
+}
+
+impl<'cx> PeripheralEntry<'cx> {
+    /// Parse the entry input against the model to produce a semantic entry.
+    pub fn parse(
+        entry: &'cx syntax::Entry,
+        peripheral_ident: &'cx Ident,
+    ) -> Result<Self, Diagnostic> {
+        Ok(match (&entry.binding, &entry.transition) {
+            (None, None) => Err(Diagnostic::expected_binding(peripheral_ident))?,
+            (.., Some(transition)) => Err(Diagnostic::unexpected_transition(transition))?,
+            (Some(binding), None) if binding.is_viewed() => {
+                Err(Diagnostic::binding_cannot_be_view(binding))?
+            }
+            (Some(binding), None) => Self::Consumed(binding),
         })
     }
 }

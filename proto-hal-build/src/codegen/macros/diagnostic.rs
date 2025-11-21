@@ -3,7 +3,7 @@ use proc_macro2::Span;
 use syn::{Ident, LitInt, Path, spanned::Spanned};
 use ters::ters;
 
-use crate::codegen::macros::parsing::{semantic::Transition, syntax::Binding};
+use crate::codegen::macros::parsing::syntax::Binding;
 
 #[derive(Debug)]
 pub enum Kind {
@@ -22,6 +22,7 @@ pub enum Kind {
     ExpectedBinding,
     BindingMustBeView,
     BindingCannotBeView,
+    BindingCannotBeDynamic,
     UnexpectedTransition,
     ExpectedTransition,
 
@@ -61,11 +62,11 @@ impl Diagnostic {
     }
 
     /// unexpected peripheral at end of path
-    pub fn unexpected_peripheral(peripheral_ident: &Ident) -> Self {
+    pub fn unexpected_peripheral(offending: &impl Spanned) -> Self {
         Self::new(
             Kind::UnexpectedPeripheral,
             "unexpected peripheral at end of path",
-            peripheral_ident,
+            offending,
         )
     }
 
@@ -159,8 +160,8 @@ impl Diagnostic {
     }
 
     /// expected binding
-    pub fn expected_binding(ident: &Ident) -> Self {
-        Self::new(Kind::ExpectedBinding, "expected binding", ident)
+    pub fn expected_binding(offending: &impl Spanned) -> Self {
+        Self::new(Kind::ExpectedBinding, "expected binding", offending)
     }
 
     /// binding must be a view (&foo)
@@ -172,27 +173,32 @@ impl Diagnostic {
         )
     }
 
-    /// binding cannot be a view because it is being transitioned. must be (&mut foo) or (foo)
+    /// binding cannot be a view
     pub fn binding_cannot_be_view(binding: &Binding) -> Self {
         Self::new(
             Kind::BindingCannotBeView,
-            "binding cannot be a view because it is being transitioned. must be (&mut foo) or (foo)",
+            "binding cannot be a view",
+            binding.as_ref(),
+        )
+    }
+
+    /// binding cannot be dynamic
+    pub fn binding_cannot_be_dynamic(binding: &Binding) -> Self {
+        Self::new(
+            Kind::BindingCannotBeView,
+            "binding cannot be dynamic",
             binding.as_ref(),
         )
     }
 
     /// unexpected transition
-    pub fn unexpected_transition(transition: &Transition) -> Self {
-        Self::new(
-            Kind::UnexpectedBinding,
-            "unexpected transition",
-            &transition.span(),
-        )
+    pub fn unexpected_transition(offending: &impl Spanned) -> Self {
+        Self::new(Kind::UnexpectedBinding, "unexpected transition", offending)
     }
 
     /// expected transition
-    pub fn expected_transition(ident: &Ident) -> Self {
-        Self::new(Kind::ExpectedTransition, "expected transition", ident)
+    pub fn expected_transition(offending: &impl Spanned) -> Self {
+        Self::new(Kind::ExpectedTransition, "expected transition", offending)
     }
 
     /// field "foo" is entitled to [E0, E1, ...] in field "bar" which must be provided

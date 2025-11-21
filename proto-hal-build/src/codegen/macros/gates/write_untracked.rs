@@ -12,10 +12,7 @@ use crate::codegen::macros::{
         utils::{mask, render_diagnostics, suggestions, unique_field_ident},
     },
     parsing::{
-        semantic::{
-            self,
-            policies::{ForbidPeripherals, TransitionOnly},
-        },
+        semantic::{self, policies},
         syntax::Override,
     },
 };
@@ -25,8 +22,9 @@ enum Scheme {
     FromReset,
 }
 
-type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, TransitionOnly<'cx>>;
-type RegisterItem<'cx> = semantic::RegisterItem<'cx, TransitionOnly<'cx>>;
+type Input<'cx> =
+    semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::TransitionOnly<'cx>>;
+type RegisterItem<'cx> = semantic::RegisterItem<'cx, policies::field::TransitionOnly<'cx>>;
 
 pub fn write_from_zero_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     write_untracked(Scheme::FromZero, model, tokens)

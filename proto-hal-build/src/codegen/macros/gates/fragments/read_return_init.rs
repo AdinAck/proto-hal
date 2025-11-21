@@ -8,14 +8,14 @@ use crate::codegen::macros::{
         fragments::{read_value_expr, register_read_return_init},
         utils::return_rank::ReturnRank,
     },
-    parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
+    parsing::semantic::{FieldEntry, policies::Refine},
 };
 
 pub fn read_return_init<'cx, EntryPolicy>(
     rank: &ReturnRank<'cx, EntryPolicy>,
 ) -> Option<TokenStream>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     match rank {
         ReturnRank::Empty => None,

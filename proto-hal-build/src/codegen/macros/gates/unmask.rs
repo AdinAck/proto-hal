@@ -1,23 +1,23 @@
-use model::structures::{entitlement::Entitlements, model::Model};
+use model::structures::{
+    entitlement::{Entitlement, Entitlements},
+    model::Model,
+};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote};
 use syn::Ident;
 
 use crate::codegen::macros::{
-    diagnostic::Diagnostic,
     gates::{
         fragments,
         utils::{render_diagnostics, suggestions, unique_field_ident},
     },
-    parsing::semantic::{
-        self,
-        policies::{PermitPeripherals, RequireBinding},
-    },
+    parsing::semantic::{self, policies},
 };
 
-type Input<'cx> = semantic::Gate<'cx, PermitPeripherals, RequireBinding<'cx>>;
-type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
-type FieldItem<'cx> = semantic::FieldItem<'cx, RequireBinding<'cx>>;
+type Input<'cx> =
+    semantic::Gate<'cx, policies::peripheral::ConsumeOnly<'cx>, policies::field::ConsumeOnly<'cx>>;
+type RegisterItem<'cx> = semantic::RegisterItem<'cx, policies::field::ConsumeOnly<'cx>>;
+type FieldItem<'cx> = semantic::FieldItem<'cx, policies::field::ConsumeOnly<'cx>>;
 
 pub fn unmask(model: &Model, tokens: TokenStream) -> TokenStream {
     unmask_inner(model, tokens, false)
@@ -56,14 +56,8 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let mut rebinds = Vec::new();
 
     for peripheral_item in input.visit_peripherals() {
-        let peripheral_ident = peripheral_item.ident();
+        let peripheral_ident = peripheral_item.peripheral().module_name();
         let peripheral_path = peripheral_item.path();
-
-        let Some(binding) = peripheral_item.binding() else {
-            // TODO: shouldn't need to do this
-            diagnostics.push(Diagnostic::expected_binding(peripheral_ident));
-            continue;
-        };
 
         let Some(ontological_entitlements) =
             peripheral_item.peripheral().ontological_entitlements()
@@ -81,10 +75,11 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             *ontological_entitlements,
         );
 
-        if binding.is_moved() {
-            rebinds.push(binding.as_ref());
-        }
+        let binding = peripheral_item.entry();
 
+        if binding.is_ident() {
+            rebinds.push(binding.as_ref().as_ref());
+        }
         parameters.push(quote! { #peripheral_ident: #peripheral_path::Masked });
         return_tys.push(quote! { #peripheral_path::Reset });
         arguments.push(binding.to_token_stream());
@@ -99,7 +94,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 register_item.register(),
                 field_item.field(),
             );
-            let binding = field_item.entry().binding();
+            let binding = field_item.entry();
 
             let Some(ontological_entitlements) = field_item.field().ontological_entitlements()
             else {
@@ -124,12 +119,9 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 *ontological_entitlements,
             );
 
-            let binding = field_item.entry().binding();
-
-            if binding.is_moved() {
+            if binding.is_ident() {
                 rebinds.push(binding.as_ref());
             }
-
             parameters.push(quote! { #unique_field_ident: #field_module_path::Masked });
             return_tys.push(quote! { #field_ty_path<::proto_hal::stasis::Dynamic> });
             arguments.push(binding.to_token_stream());
@@ -162,7 +154,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 }
 
 fn make_constraints<'cx>(
-    input: &'cx semantic::Gate<'cx, PermitPeripherals, RequireBinding<'cx>>,
+    input: &'cx Input<'cx>,
     model: &'cx Model,
     constraints: &mut Vec<TokenStream>,
     constrained_ty: &TokenStream,
@@ -170,7 +162,7 @@ fn make_constraints<'cx>(
 ) {
     for ontological_entitlement in ontological_entitlements {
         let Some((entitlement_register_item, entitlement_field_item)) =
-            get_entitlement_input_items(model, input, ontological_entitlement)
+            get_entitlement_input_items(input, model, ontological_entitlement)
         else {
             continue;
         };
@@ -185,13 +177,10 @@ fn make_constraints<'cx>(
 }
 
 fn get_entitlement_input_items<'cx>(
+    input: &'cx Input<'cx>,
     model: &'cx Model,
-    input: &'cx semantic::Gate<'cx, PermitPeripherals, RequireBinding<'cx>>,
-    ontological_entitlement: &'cx model::structures::entitlement::Entitlement,
-) -> Option<(
-    &'cx semantic::RegisterItem<'cx, RequireBinding<'cx>>,
-    &'cx semantic::FieldItem<'cx, RequireBinding<'cx>>,
-)> {
+    ontological_entitlement: &'cx Entitlement,
+) -> Option<(&'cx RegisterItem<'cx>, &'cx FieldItem<'cx>)> {
     let entitlement_field = ontological_entitlement.field(model);
     let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 

@@ -5,12 +5,12 @@ use syn::Ident;
 
 use crate::codegen::macros::{
     gates::{fragments::read_value_ty, utils::return_rank::ReturnRank},
-    parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
+    parsing::semantic::{FieldEntry, policies::Refine},
 };
 
 pub fn read_return_ty<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     match rank {
         ReturnRank::Empty => None,

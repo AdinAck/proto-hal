@@ -13,23 +13,22 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
         semantic::{
-            Entry, FieldEntryRefinementInput, FieldItem, FieldKey, PeripheralItem, PeripheralKey,
-            PeripheralMap, RegisterItem, RegisterKey, RegisterMap,
-            policies::{Filter, Refine},
+            FieldEntry, FieldItem, FieldKey, PeripheralItem, PeripheralKey, PeripheralMap,
+            RegisterItem, RegisterKey, RegisterMap, entry::PeripheralEntry, policies::Refine,
         },
         syntax::{Node, Tree},
     },
 };
 
-pub fn parse_peripheral<'cx, PeripheralPolicy, EntryPolicy>(
+pub fn parse_peripheral<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
     model: &'cx Model,
-    peripheral_map: &mut PeripheralMap<'cx>,
-    register_map: &mut RegisterMap<'cx, EntryPolicy>,
+    peripheral_map: &mut PeripheralMap<'cx, PeripheralEntryPolicy>,
+    register_map: &mut RegisterMap<'cx, FieldEntryPolicy>,
     tree: &'cx Tree,
 ) -> Result<(), Diagnostics>
 where
-    PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     let mut diagnostics = Diagnostics::new();
 
@@ -47,11 +46,6 @@ where
         // path ends on peripheral item
         match &tree.node {
             Node::Leaf(entry) => {
-                // peripheral entry
-                if !PeripheralPolicy::accepted() {
-                    Err(Diagnostic::unexpected_peripheral(&peripheral.module_name()))?
-                }
-
                 if peripheral_map
                     .insert(
                         PeripheralKey::from_model(&peripheral),
@@ -59,7 +53,10 @@ where
                             path: path.clone(),
                             ident: peripheral_ident,
                             peripheral,
-                            binding: entry.binding.as_ref(),
+                            entry: PeripheralEntryPolicy::refine(
+                                peripheral_ident,
+                                PeripheralEntry::parse(entry, peripheral_ident)?,
+                            )?,
                         },
                     )
                     .is_some()
@@ -146,7 +143,7 @@ fn parse_register<'cx, EntryPolicy>(
     peripheral: View<'cx, PeripheralNode>,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     let mut diagnostics = Diagnostics::new();
 
@@ -210,7 +207,7 @@ fn parse_field<'cx, EntryPolicy>(
     register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     let field_segment = tree
         .path
@@ -240,7 +237,7 @@ fn put_field<'cx, EntryPolicy>(
     register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     let field = find_field(field_ident, &register)?;
 
@@ -261,10 +258,10 @@ where
                     FieldKey::from_model(&field),
                     FieldItem {
                         ident: field_ident,
-                        entry: EntryPolicy::refine((
+                        entry: EntryPolicy::refine(
                             field_ident,
-                            Entry::parse(model, entry, &field, field_ident)?,
-                        ))?,
+                            FieldEntry::parse(model, entry, &field, field_ident)?,
+                        )?,
                         field,
                     },
                 )

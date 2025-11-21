@@ -8,7 +8,7 @@ use syn::Ident;
 use crate::codegen::macros::{
     diagnostic::Diagnostics,
     parsing::{
-        semantic::{FieldEntryRefinementInput, FieldItem, policies::Refine},
+        semantic::{FieldEntry, FieldItem, policies::Refine},
         syntax,
     },
 };
@@ -76,7 +76,7 @@ pub fn suggestions(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<Tok
 
 pub fn mask<'cx, EntryPolicy>(fields: impl Iterator<Item = &'cx FieldItem<'cx, EntryPolicy>>) -> u32
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>> + 'cx,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>> + 'cx,
 {
     fields.fold(0, |acc, field_item| {
         let field = field_item.field();

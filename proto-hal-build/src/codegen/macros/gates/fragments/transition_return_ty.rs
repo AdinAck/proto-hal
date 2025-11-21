@@ -4,7 +4,7 @@ use quote::{ToTokens, quote};
 use syn::{Ident, Path};
 
 use crate::codegen::macros::parsing::{
-    semantic::{self, policies::RequireBinding},
+    semantic::{self, policies::field::RequireBinding},
     syntax,
 };
 

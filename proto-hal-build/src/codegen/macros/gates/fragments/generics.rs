@@ -2,7 +2,7 @@ use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 
 use crate::codegen::macros::parsing::semantic::{
-    self, FieldItem, RegisterItem, policies::RequireBinding,
+    self, FieldItem, RegisterItem, policies::field::RequireBinding,
 };
 
 pub fn generics<'cx>(

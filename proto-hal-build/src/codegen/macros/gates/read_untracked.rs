@@ -12,16 +12,13 @@ use crate::codegen::macros::{
         utils::{render_diagnostics, return_rank::ReturnRank, suggestions, unique_register_ident},
     },
     parsing::{
-        semantic::{
-            self,
-            policies::{ForbidEntry, ForbidPeripherals},
-        },
+        semantic::{self, policies},
         syntax::Override,
     },
 };
 
-type EntryPolicy = ForbidEntry;
-type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, EntryPolicy>;
+type EntryPolicy = policies::field::ForbidEntry;
+type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>;
 
 pub fn read_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {

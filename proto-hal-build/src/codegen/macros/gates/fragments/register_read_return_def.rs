@@ -5,9 +5,7 @@ use syn::Ident;
 
 use crate::codegen::macros::{
     gates::fragments::read_value_ty,
-    parsing::semantic::{
-        FieldEntryRefinementInput, FieldItem, FieldKey, RegisterItem, policies::Refine,
-    },
+    parsing::semantic::{FieldEntry, FieldItem, FieldKey, RegisterItem, policies::Refine},
 };
 
 pub fn register_read_return_def<'cx, EntryPolicy>(
@@ -16,7 +14,7 @@ pub fn register_read_return_def<'cx, EntryPolicy>(
     fields: &IndexMap<&FieldKey, &FieldItem<'cx, EntryPolicy>>,
 ) -> TokenStream
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     let field_idents = fields
         .values()

@@ -15,16 +15,14 @@ use crate::codegen::macros::{
         },
     },
     parsing::{
-        semantic::{
-            self,
-            policies::{ForbidPeripherals, PermitTransition},
-        },
+        semantic::{self, policies},
         syntax::Override,
     },
 };
 
-type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, PermitTransition<'cx>>;
-type RegisterItem<'cx> = semantic::RegisterItem<'cx, PermitTransition<'cx>>;
+type Input<'cx> =
+    semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::PermitTransition<'cx>>;
+type RegisterItem<'cx> = semantic::RegisterItem<'cx, policies::field::PermitTransition<'cx>>;
 
 pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {

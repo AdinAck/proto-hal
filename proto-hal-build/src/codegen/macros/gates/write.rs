@@ -17,13 +17,13 @@ use crate::codegen::macros::{
     parsing::{
         semantic::{
             self,
-            policies::{ForbidPeripherals, RequireBinding},
+            policies::{self, field::RequireBinding},
         },
         syntax::Override,
     },
 };
 
-type Input<'cx> = semantic::Gate<'cx, ForbidPeripherals, RequireBinding<'cx>>;
+type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
 
 pub fn write(model: &Model, tokens: TokenStream) -> TokenStream {
@@ -96,7 +96,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
 
         for field_item in register_item.fields().values() {
             let binding = field_item.entry().binding();
-            if binding.is_moved() {
+            if binding.is_ident() {
                 rebinds.push(binding.as_ref());
             }
 
@@ -269,7 +269,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
 }
 
 fn scan_entitlements<'cx>(
-    input: &semantic::Gate<'cx, ForbidPeripherals, RequireBinding<'cx>>,
+    input: &Input<'cx>,
     model: &'cx Model,
     diagnostics: &mut Vec<Diagnostic>,
     field: &semantic::FieldItem<'cx, RequireBinding<'cx>>,

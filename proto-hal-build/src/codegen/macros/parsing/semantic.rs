@@ -7,8 +7,6 @@ pub mod policies;
 mod transition;
 mod utils;
 
-use std::marker::PhantomData;
-
 use indexmap::IndexMap;
 use model::structures::{
     field::FieldNode,
@@ -22,40 +20,37 @@ use ters::ters;
 use crate::codegen::macros::{
     diagnostic::Diagnostics,
     parsing::{
-        semantic::{
-            policies::{Filter, PermitPeripherals, Refine},
-            utils::parse_peripheral,
-        },
-        syntax::{self, Binding},
+        semantic::{entry::PeripheralEntry, policies::Refine, utils::parse_peripheral},
+        syntax,
     },
 };
 
-pub use entry::Entry;
+pub use entry::FieldEntry;
 pub use keys::*;
 pub use transition::Transition;
 
-type PeripheralMap<'cx> = IndexMap<PeripheralKey, PeripheralItem<'cx>>;
+type PeripheralMap<'cx, EntryPolicy> = IndexMap<PeripheralKey, PeripheralItem<'cx, EntryPolicy>>;
 type RegisterMap<'cx, EntryPolicy> = IndexMap<RegisterKey, RegisterItem<'cx, EntryPolicy>>;
 type FieldMap<'cx, EntryPolicy> = IndexMap<FieldKey, FieldItem<'cx, EntryPolicy>>;
 
 /// The semantically parsed gate input, with corresponding model elements.
 #[ters]
-pub struct Gate<'cx, PeripheralPolicy, EntryPolicy>
+pub struct Gate<'cx, PeripheralEntryPolicy, FieldEntryPolicy>
 where
-    PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
-    peripherals: PeripheralMap<'cx>,
+    peripherals: PeripheralMap<'cx, PeripheralEntryPolicy>,
     #[get]
-    registers: RegisterMap<'cx, EntryPolicy>,
-    _p: PhantomData<PeripheralPolicy>,
+    registers: RegisterMap<'cx, FieldEntryPolicy>,
 }
 
-impl<'cx, PeripheralPolicy, EntryPolicy> Gate<'cx, PeripheralPolicy, EntryPolicy>
+impl<'cx, PeripheralEntryPolicy, FieldEntryPolicy>
+    Gate<'cx, PeripheralEntryPolicy, FieldEntryPolicy>
 where
-    PeripheralPolicy: Filter,
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     /// Parse the gate input against the model to produce a semantic gate input.
     pub fn parse(args: &'cx syntax::Gate, model: &'cx Model) -> (Self, Diagnostics) {
@@ -64,7 +59,7 @@ where
         let mut registers = Default::default();
 
         for tree in &args.trees {
-            if let Err(e) = parse_peripheral::<PeripheralPolicy, _>(
+            if let Err(e) = parse_peripheral::<PeripheralEntryPolicy, _>(
                 model,
                 &mut peripherals,
                 &mut registers,
@@ -78,10 +73,24 @@ where
             Self {
                 peripherals,
                 registers,
-                _p: PhantomData,
             },
             diagnostics,
         )
+    }
+
+    /// Query for a peripheral-level item with the provided identifier.
+    pub fn get_peripheral(
+        &self,
+        ident: impl Into<String>,
+    ) -> Option<&PeripheralItem<'cx, PeripheralEntryPolicy>> {
+        self.peripherals.get(&PeripheralKey::from_ident(ident))
+    }
+
+    /// Visit all peripheral-level items.
+    pub fn visit_peripherals(
+        &self,
+    ) -> impl Iterator<Item = &PeripheralItem<'cx, PeripheralEntryPolicy>> {
+        self.peripherals.values()
     }
 
     /// Query for a register-level item with the provided peripheral and register identifiers.
@@ -89,13 +98,13 @@ where
         &self,
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
-    ) -> Option<&RegisterItem<'cx, EntryPolicy>> {
+    ) -> Option<&RegisterItem<'cx, FieldEntryPolicy>> {
         self.registers
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
     }
 
     /// Visit all register-level items.
-    pub fn visit_registers(&self) -> impl Iterator<Item = &RegisterItem<'cx, EntryPolicy>> {
+    pub fn visit_registers(&self) -> impl Iterator<Item = &RegisterItem<'cx, FieldEntryPolicy>> {
         self.registers.values()
     }
 
@@ -106,8 +115,8 @@ where
         register_ident: impl Into<String>,
         field_ident: impl Into<String>,
     ) -> Option<(
-        &RegisterItem<'cx, EntryPolicy>,
-        &FieldItem<'cx, EntryPolicy>,
+        &RegisterItem<'cx, FieldEntryPolicy>,
+        &FieldItem<'cx, FieldEntryPolicy>,
     )> {
         self.registers
             .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
@@ -120,25 +129,10 @@ where
     }
 
     /// Visit all field-level items.
-    pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'cx, EntryPolicy>> {
+    pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'cx, FieldEntryPolicy>> {
         self.registers
             .values()
             .flat_map(|register_item| register_item.fields.values())
-    }
-}
-
-impl<'cx, EntryPolicy> Gate<'cx, PermitPeripherals, EntryPolicy>
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
-{
-    /// Query for a peripheral-level item with the provided identifier.
-    pub fn get_peripheral(&self, ident: impl Into<String>) -> Option<&PeripheralItem<'cx>> {
-        self.peripherals.get(&PeripheralKey::from_ident(ident))
-    }
-
-    /// Visit all peripheral-level items.
-    pub fn visit_peripherals(&self) -> impl Iterator<Item = &PeripheralItem<'cx>> {
-        self.peripherals.values()
     }
 }
 
@@ -146,7 +140,10 @@ where
 ///
 /// *Note: This item DOES NOT contain child registers, and DOES contain a binding.*
 #[ters]
-pub struct PeripheralItem<'cx> {
+pub struct PeripheralItem<'cx, EntryPolicy>
+where
+    EntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+{
     #[get]
     path: Path,
     #[get]
@@ -154,7 +151,7 @@ pub struct PeripheralItem<'cx> {
     #[get]
     peripheral: View<'cx, PeripheralNode>,
     #[get]
-    binding: Option<&'cx Binding>,
+    entry: EntryPolicy,
 }
 
 /// A register-level item present in the gate.
@@ -163,7 +160,7 @@ pub struct PeripheralItem<'cx> {
 #[ters]
 pub struct RegisterItem<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
     peripheral_path: Path,
@@ -183,7 +180,7 @@ where
 #[ters]
 pub struct FieldItem<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
     ident: &'cx Ident,
@@ -193,12 +190,9 @@ where
     entry: EntryPolicy,
 }
 
-/// The input context needed to apply refinement to a field entry.
-pub type FieldEntryRefinementInput<'cx> = (&'cx Ident, Entry<'cx>);
-
 impl<'cx, EntryPolicy> RegisterItem<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     /// The path to the register including segments *before* the peripheral.
     pub fn path(&self) -> Path {
@@ -219,10 +213,7 @@ mod tests {
     use crate::codegen::macros::{
         diagnostic,
         parsing::{
-            semantic::{
-                Gate,
-                policies::{ForbidPeripherals, PermitPeripherals, RequireBinding},
-            },
+            semantic::{Gate, policies},
             syntax,
         },
     };
@@ -241,7 +232,10 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (gate, e) = Gate::<PermitPeripherals, RequireBinding>::parse(&args, &model);
+        let (gate, e) =
+            Gate::<policies::peripheral::ConsumeOnly, policies::field::ForbidEntry>::parse(
+                &args, &model,
+            );
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
@@ -251,8 +245,8 @@ mod tests {
 
         assert_eq!(peripheral.path(), &peripheral_path);
         assert_eq!(
-            peripheral.binding(),
-            &Some(&parse_quote! { #peripheral_binding })
+            **peripheral.entry(),
+            &syn::parse2::<syntax::Binding>(quote! { #peripheral_binding }).unwrap()
         );
         assert_eq!(peripheral.peripheral().ident, peripheral_name);
     }
@@ -275,7 +269,10 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (gate, e) = Gate::<PermitPeripherals, RequireBinding>::parse(&args, &model);
+        let (gate, e) =
+            Gate::<policies::peripheral::ConsumeOnly, policies::field::ForbidEntry>::parse(
+                &args, &model,
+            );
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
@@ -289,13 +286,12 @@ mod tests {
 
         assert_eq!(peripheral0.path(), &peripheral0_path);
         assert_eq!(
-            peripheral0.binding(),
-            &Some(&parse_quote! { #peripheral0_binding })
+            **peripheral0.entry(),
+            &syn::parse2::<syntax::Binding>(quote! { #peripheral0_binding }).unwrap()
         );
         assert_eq!(peripheral0.peripheral().ident, peripheral0_name);
 
         assert_eq!(peripheral1.path(), &peripheral1_path);
-        assert!(peripheral1.binding().is_none());
         assert_eq!(peripheral1.peripheral().ident, peripheral1_name);
     }
 
@@ -316,7 +312,10 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (.., e) = Gate::<ForbidPeripherals, RequireBinding>::parse(&args, &model);
+        let (.., e) =
+            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+                &args, &model,
+            );
 
         assert!(
             e.iter().any(|diagnostic| matches!(
@@ -346,7 +345,10 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (.., e) = Gate::<ForbidPeripherals, RequireBinding>::parse(&args, &model);
+        let (.., e) =
+            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+                &args, &model,
+            );
 
         assert!(e.iter().any(|diagnostic| {
             matches!(diagnostic.kind(), diagnostic::Kind::FieldMustBeWritable)
@@ -361,20 +363,6 @@ mod tests {
         let register_ident: Ident = parse_quote! { bar };
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
-        // let model = Hal::new([Peripheral::new(
-        //     peripheral_name,
-        //     0,
-        //     [Register::new(
-        //         register_name,
-        //         0,
-        //         [Field::new(
-        //             field_name,
-        //             0,
-        //             0,
-        //             Access::write(Numericity::Numeric),
-        //         )],
-        //     )],
-        // )]);
 
         let mut model = Model::new();
         model
@@ -387,7 +375,10 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (gate, e) = Gate::<ForbidPeripherals, RequireBinding>::parse(&args, &model);
+        let (gate, e) =
+            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+                &args, &model,
+            );
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
@@ -399,8 +390,10 @@ mod tests {
         assert_eq!(register.peripheral().ident, peripheral_name);
         assert_eq!(register.register().ident, register_name);
 
-        let entry = field.entry();
-        assert!(matches!(entry, RequireBinding::Dynamic(..)));
+        assert!(matches!(
+            field.entry(),
+            policies::field::RequireBinding::Dynamic(..)
+        ));
         assert_eq!(field.field().ident, field_name);
     }
 }

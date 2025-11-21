@@ -4,7 +4,7 @@ use quote::{ToTokens as _, quote_spanned};
 use syn::{Ident, Path};
 
 use crate::codegen::macros::{
-    gates::fragments::write_argument_value, parsing::semantic::policies::RequireBinding,
+    gates::fragments::write_argument_value, parsing::semantic::policies::field::RequireBinding,
 };
 
 pub fn write_argument<'cx>(

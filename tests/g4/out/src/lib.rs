@@ -35,9 +35,8 @@ mod tests {
                 };
 
                 let cordic = hal::unmask! {
-                    rcc::ahb1enr::cordicen(&cordicen), // TODO: fix this!!!
+                    rcc::ahb1enr::cordicen(cordicen),
                     cordic(p.cordic),
-
                 };
 
                 cordic::csr::modify_in_cs(cs, |_, w| {
@@ -48,32 +47,32 @@ mod tests {
                 });
 
                 assert!({
-                    let (func, scale) = unsafe {
-                        read_untracked! {
+                    let csr = unsafe {
+                        hal::read_untracked! {
                             cordic::csr { func, scale },
                             @base_addr(cordic, addr_of_cordic())
                         }
                     };
 
-                    func.is_sqrt() && scale.is_n0()
+                    csr.func.is_sqrt() && csr.scale.is_n0()
                 });
 
                 unsafe {
-                    write_from_reset_untracked! {
+                    hal::write_from_reset_untracked! {
                         cordic::csr,
                         @base_addr(cordic, addr_of_cordic())
                     }
                 };
 
                 assert!({
-                    let (func, scale, precision) = unsafe {
-                        read_untracked! {
+                    let csr = unsafe {
+                        hal::read_untracked! {
                             cordic::csr { func, scale, precision },
                             @base_addr(cordic, addr_of_cordic())
                         }
                     };
 
-                    func.is_cos() && scale.is_n0() && precision.is_p20()
+                    csr.func.is_cos() && csr.scale.is_n0() && csr.precision.is_p20()
                 });
             });
         }
@@ -83,25 +82,22 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { crate::peripherals() };
 
-                let rcc::ahb1enr::States { cordicen, .. } =
-                    rcc::ahb1enr::modify_in_cs(cs, |_, w| {
-                        w.cordicen(p.rcc.ahb1enr.cordicen).enabled()
-                    });
-                let cordic = p.cordic.unmask(cordicen);
-
-                let (cordic, cordicen) = unmask! {
-                    cordic: p.cordic,
-                    rcc::ahb1enr {
-                        cordicen: cordicen,
-                    }
+                let cordicen = hal::write! {
+                    rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
                 };
 
-                let mut arg = cordic.wdata.arg.unmask(cordic.csr.argsize);
+                let cordic = hal::unmask! {
+                    cordic(p.cordic),
+                    rcc::ahb1enr::cordicen(cordicen)
+                };
 
-                write! {
-                    cordic::wdata {
-                        arg: &mut arg => 0xdeadbeef,
-                    }
+                let mut arg = hal::unmask! {
+                    cordic::csr::argsize(cordic.csr.argsize),
+                    cordic::wdata::arg(cordic.wdata.arg),
+                };
+
+                hal::write! {
+                    cordic::wdata::arg(&mut arg) => 0xdeadbeef,
                 }
 
                 assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
@@ -133,7 +129,7 @@ mod tests {
                     cordic.rdata.res1.unmask(res1_nres_ent, res1_ressize_ent),
                 );
 
-                let rdata = read! {
+                let rdata = hal::read! {
                     cordic::rdata {
                         res0(&res0),
                         res1(&res1),

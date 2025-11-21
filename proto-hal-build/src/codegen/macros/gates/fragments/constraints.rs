@@ -10,16 +10,17 @@ use syn::{Ident, Path};
 use crate::codegen::macros::{
     gates::fragments,
     parsing::{
-        semantic::{
-            self,
-            policies::{Filter, RequireBinding},
-        },
+        semantic::{self, policies},
         syntax::Binding,
     },
 };
 
-pub fn constraints<'cx, PeripheralPolicy>(
-    input: &semantic::Gate<'cx, PeripheralPolicy, RequireBinding<'cx>>,
+pub fn constraints<'cx>(
+    input: &semantic::Gate<
+        'cx,
+        policies::peripheral::ForbidPath,
+        policies::field::RequireBinding<'cx>,
+    >,
     model: &Model,
     register_path: &Path,
     binding: &Binding,
@@ -29,10 +30,7 @@ pub fn constraints<'cx, PeripheralPolicy>(
     output_generic: Option<&Ident>,
     input_ty: &TokenStream,
     return_ty: Option<&TokenStream>,
-) -> Option<TokenStream>
-where
-    PeripheralPolicy: Filter,
-{
+) -> Option<TokenStream> {
     // if the subject field's write access has entitlements, the entitlements
     // must be satisfied in the input to the gate, and the fields used to
     // satisfy the entitlements cannot be written
@@ -75,15 +73,16 @@ where
     Some(quote! { #(#constraints,)* })
 }
 
-fn write_entitlements<'cx, PeripheralPolicy>(
-    input: &semantic::Gate<'cx, PeripheralPolicy, RequireBinding<'cx>>,
+fn write_entitlements<'cx>(
+    input: &semantic::Gate<
+        'cx,
+        policies::peripheral::ForbidPath,
+        policies::field::RequireBinding<'cx>,
+    >,
     field: &View<'cx, FieldNode>,
     input_ty: &TokenStream,
     span: Span,
-) -> Option<Vec<TokenStream>>
-where
-    PeripheralPolicy: Filter,
-{
+) -> Option<Vec<TokenStream>> {
     // get entitlement *fields*
     let write_entitlements = field.write_entitlements()?;
     let entitlement_fields = write_entitlements.entitlement_fields();
@@ -120,16 +119,17 @@ where
     Some(constraints.collect())
 }
 
-fn statewise_entitlements<'cx, PeripheralPolicy>(
-    input: &semantic::Gate<'cx, PeripheralPolicy, RequireBinding<'cx>>,
+fn statewise_entitlements<'cx>(
+    input: &semantic::Gate<
+        'cx,
+        policies::peripheral::ForbidPath,
+        policies::field::RequireBinding<'cx>,
+    >,
     model: &Model,
     field: &View<'cx, FieldNode>,
     return_ty: &TokenStream,
     span: Span,
-) -> Option<Vec<TokenStream>>
-where
-    PeripheralPolicy: Filter,
-{
+) -> Option<Vec<TokenStream>> {
     // get entitlement *fields*
     let Numericity::Enumerated(enumerated) = field.resolvable()? else {
         None?

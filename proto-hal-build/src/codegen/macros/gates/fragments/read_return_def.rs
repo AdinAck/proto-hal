@@ -5,14 +5,14 @@ use quote::quote;
 use syn::Ident;
 
 use crate::codegen::macros::gates::fragments::register_read_return_def;
+use crate::codegen::macros::parsing::semantic::FieldEntry;
 use crate::codegen::macros::{
-    gates::utils::return_rank::ReturnRank,
-    parsing::semantic::{FieldEntryRefinementInput, policies::Refine},
+    gates::utils::return_rank::ReturnRank, parsing::semantic::policies::Refine,
 };
 
 pub fn read_return_def<'cx, EntryPolicy>(rank: &ReturnRank<'cx, EntryPolicy>) -> Option<TokenStream>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     match rank {
         ReturnRank::Empty | ReturnRank::Field { .. } => None,

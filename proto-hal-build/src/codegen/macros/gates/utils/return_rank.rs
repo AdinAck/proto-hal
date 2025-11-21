@@ -2,8 +2,8 @@ use indexmap::IndexMap;
 use syn::Ident;
 
 use crate::codegen::macros::parsing::semantic::{
-    self, FieldEntryRefinementInput, FieldItem, FieldKey, RegisterItem, RegisterKey,
-    policies::{Filter, Refine},
+    self, FieldEntry, FieldItem, FieldKey, RegisterItem, RegisterKey,
+    policies::{self, Refine},
 };
 
 type RegisterMap<'cx, EntryPolicy> = IndexMap<
@@ -17,7 +17,7 @@ type RegisterMap<'cx, EntryPolicy> = IndexMap<
 /// The rank of the structure to be returned from the gate.
 pub enum ReturnRank<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     /// There is no return value.
     Empty,
@@ -42,7 +42,7 @@ where
 
 impl<'cx, EntryPolicy> ReturnRank<'cx, EntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = FieldEntryRefinementInput<'cx>>,
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     pub fn next(
         self,
@@ -191,13 +191,10 @@ where
         }
     }
 
-    pub fn from_input<PeripheralPolicy>(
-        input: &'cx semantic::Gate<'cx, PeripheralPolicy, EntryPolicy>,
+    pub fn from_input(
+        input: &'cx semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
         filter: impl Fn(&FieldItem<'cx, EntryPolicy>) -> bool,
-    ) -> Self
-    where
-        PeripheralPolicy: Filter,
-    {
+    ) -> Self {
         let mut rank = ReturnRank::Empty;
 
         for (register_key, register_item) in input.registers() {
