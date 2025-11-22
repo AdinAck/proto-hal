@@ -5,7 +5,7 @@ use ters::ters;
 
 use crate::codegen::macros::parsing::syntax::Binding;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Kind {
     Erased,
     UnexpectedRegister,
@@ -278,7 +278,8 @@ impl From<Diagnostic> for Diagnostics {
 
 impl From<Diagnostic> for syn::Error {
     fn from(diagnostic: Diagnostic) -> Self {
-        Self::new(diagnostic.span, diagnostic.message())
+        let code = format!("[E{:04}]", diagnostic.kind as u32);
+        Self::new(diagnostic.span, format!("{code} {}", diagnostic.message()))
     }
 }
 

@@ -143,7 +143,9 @@ mod tests {
     }
 
     mod crc {
-        use crate::{crc, rcc, write};
+        use crate::{crc, rcc};
+
+        use crate as hal;
 
         static mut MOCK_CRC: [u32; 2] = [0, 0];
 
@@ -160,10 +162,8 @@ mod tests {
                     rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
                 let crc = p.crc.unmask(crcen);
 
-                let idr = write! {
-                    crc::idr {
-                        idr: crc.idr.idr => 0xdeadbeef,
-                    }
+                let idr = hal::write! {
+                    crc::idr::idr(crc.idr.idr) => 0xdeadbeef,
                 };
 
                 assert_eq!(0xdeadbeef, unsafe { MOCK_CRC[1] });
