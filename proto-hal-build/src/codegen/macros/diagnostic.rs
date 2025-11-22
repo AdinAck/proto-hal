@@ -7,7 +7,8 @@ use crate::codegen::macros::parsing::syntax::Binding;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
-    Erased,
+    // parsing
+    Erased = 0,
     UnexpectedRegister,
     UnexpectedPeripheral,
     ItemAlreadySpecified,
@@ -27,7 +28,7 @@ pub enum Kind {
     ExpectedTransition,
 
     // validation
-    MissingEntitlements,
+    MissingEntitlements = 1000,
     MissingFields,
     CannotUnmaskFundamental,
     UnincumbentField,
