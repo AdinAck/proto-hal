@@ -29,6 +29,8 @@ pub enum Kind {
     // validation
     MissingEntitlements,
     MissingFields,
+    CannotUnmaskFundamental,
+    UnincumbentField,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -202,7 +204,7 @@ impl Diagnostic {
         Self::new(Kind::ExpectedTransition, "expected transition", offending)
     }
 
-    /// field "foo" is entitled to [E0, E1, ...] in field "bar" which must be provided
+    /// "foo" is entitled to [E0, E1, ...] in field "bar" which must be provided
     pub fn missing_entitlements(
         offending: &Ident,
         entitlement_peripheral: &Ident,
@@ -217,7 +219,7 @@ impl Diagnostic {
         Self::new(
             Kind::MissingEntitlements,
             format!(
-                "field \"{offending}\" is entitled to [{entitlement_list}] in field \
+                "\"{offending}\" is entitled to [{entitlement_list}] in field \
                 \"{entitlement_peripheral}::{entitlement_register}::{entitlement_field}\" which must be provided"
             ),
             offending,
@@ -266,6 +268,28 @@ impl Diagnostic {
                 "missing fields are ambiguous, but may include any of [{formatted_fields}] which must be provided"
             ),
             offending,
+        )
+    }
+
+    /// "foo" is fundamental and as such cannot be masked nor unmasked
+    pub fn cannot_unmask_fundamental<'a>(peripheral_ident: &Ident) -> Self {
+        Self::new(
+            Kind::CannotUnmaskFundamental,
+            format!(
+                "peripheral \"{peripheral_ident}\" is fundamental and as such cannot be masked nor unmasked"
+            ),
+            peripheral_ident,
+        )
+    }
+
+    /// field "foo" is not entitled to nor has entitlements within this gate
+    pub fn unincumbent_field<'a>(field_ident: &Ident) -> Self {
+        Self::new(
+            Kind::UnincumbentField,
+            format!(
+                "field \"{field_ident}\" is not entitled to nor has entitlements within this gate"
+            ),
+            field_ident,
         )
     }
 }

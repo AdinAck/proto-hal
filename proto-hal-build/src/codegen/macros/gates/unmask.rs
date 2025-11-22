@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use model::structures::{
     entitlement::{Entitlement, Entitlements},
     model::Model,
@@ -7,9 +8,10 @@ use quote::{ToTokens as _, format_ident, quote};
 use syn::Ident;
 
 use crate::codegen::macros::{
+    diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, suggestions, unique_field_ident},
+        utils::{render_diagnostics, scan_entitlements, suggestions, unique_field_ident},
     },
     parsing::semantic::{self, policies},
 };
@@ -34,7 +36,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     };
 
     let (input, mut diagnostics) = Input::parse(&args, model);
-    // diagnostics.extend(validate(&input, model));
+    diagnostics.extend(validate(&input, model));
 
     if !args.overrides.is_empty() {
         // TODO: override spans should be fixed
@@ -151,6 +153,56 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             gate(#(#arguments,)*)
         } #semicolon
     }
+}
+
+fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
+    // 1. all entitled items must have their entitlements present
+    // 2. all unentitled items must be entitled to by at least one other item
+
+    let mut diagnostics = Diagnostics::new();
+    let mut entitlement_fields = IndexMap::new();
+
+    for peripheral_item in input.visit_peripherals() {
+        let Some(ontological_entitlements) =
+            peripheral_item.peripheral().ontological_entitlements()
+        else {
+            diagnostics.push(Diagnostic::cannot_unmask_fundamental(
+                peripheral_item.ident(),
+            ));
+
+            continue;
+        };
+
+        entitlement_fields.extend(scan_entitlements(
+            input,
+            model,
+            &mut diagnostics,
+            peripheral_item.ident(),
+            ontological_entitlements,
+        ));
+    }
+
+    for field_item in input.visit_fields() {
+        let Some(ontological_entitlements) = field_item.field().ontological_entitlements() else {
+            continue;
+        };
+
+        entitlement_fields.extend(scan_entitlements(
+            input,
+            model,
+            &mut diagnostics,
+            field_item.ident(),
+            ontological_entitlements,
+        ));
+    }
+
+    for field_item in input.visit_fields() {
+        if !entitlement_fields.contains_key(field_item.field().index()) {
+            diagnostics.push(Diagnostic::unincumbent_field(field_item.ident()));
+        }
+    }
+
+    diagnostics
 }
 
 fn make_constraints<'cx>(

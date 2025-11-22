@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexSet;
 use model::structures::{
     entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
 };
@@ -12,7 +12,7 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, suggestions, unique_field_ident},
+        utils::{render_diagnostics, scan_entitlements, suggestions, unique_field_ident},
     },
     parsing::{
         semantic::{
@@ -298,7 +298,13 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         if let Some(write_entitlements) =
             model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
         {
-            scan_entitlements(input, model, &mut diagnostics, field, write_entitlements);
+            scan_entitlements(
+                input,
+                model,
+                &mut diagnostics,
+                field.ident(),
+                write_entitlements,
+            );
         }
 
         // check for statewise entitlements
@@ -314,7 +320,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
                     input,
                     model,
                     &mut diagnostics,
-                    field,
+                    field.ident(),
                     statewise_entitlements,
                 );
             }
@@ -322,49 +328,6 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     }
 
     diagnostics
-}
-
-fn scan_entitlements<'cx>(
-    input: &Input<'cx>,
-    model: &'cx Model,
-    diagnostics: &mut Vec<Diagnostic>,
-    field: &semantic::FieldItem<'cx, RequireBinding<'cx>>,
-    entitlements: model::structures::model::View<
-        '_,
-        IndexSet<model::structures::entitlement::Entitlement>,
-    >,
-) {
-    let mut entitlement_fields = IndexMap::new();
-
-    for entitlement in entitlements.iter() {
-        entitlement_fields
-            .entry(*entitlement.field(model).index())
-            .or_insert_with(IndexSet::new)
-            .insert(entitlement);
-    }
-
-    for (entitlement_field_index, field_entitlements) in entitlement_fields {
-        let entitlement_field = model.get_field(entitlement_field_index);
-        let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
-        if input
-            .get_field(
-                entitlement_peripheral.module_name().to_string(),
-                entitlement_register.module_name().to_string(),
-                entitlement_field.module_name().to_string(),
-            )
-            .is_none()
-        {
-            diagnostics.push(Diagnostic::missing_entitlements(
-                &field.ident(),
-                &entitlement_peripheral.module_name(),
-                &entitlement_register.module_name(),
-                &entitlement_field.module_name(),
-                field_entitlements
-                    .iter()
-                    .map(|entitlement| entitlement.variant(model).type_name()),
-            ));
-        };
-    }
 }
 
 fn reg_write_value<'cx>(model: &'cx Model, register_item: &RegisterItem<'cx>) -> TokenStream {

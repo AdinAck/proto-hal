@@ -20,12 +20,12 @@ use ters::ters;
 use crate::codegen::macros::{
     diagnostic::Diagnostics,
     parsing::{
-        semantic::{entry::PeripheralEntry, policies::Refine, utils::parse_peripheral},
+        semantic::{policies::Refine, utils::parse_peripheral},
         syntax,
     },
 };
 
-pub use entry::FieldEntry;
+pub use entry::{FieldEntry, PeripheralEntry};
 pub use keys::*;
 pub use transition::Transition;
 
