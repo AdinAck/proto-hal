@@ -233,6 +233,62 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
 
     let mut diagnostics = Vec::new();
 
+    // require non-inert fields
+    for register_item in input.visit_registers() {
+        let provided_fields = register_item.fields();
+
+        let mut concrete_missing_fields = Vec::new();
+        let mut ambiguous_missing_fields = Vec::new();
+
+        for position in 0..32 {
+            if provided_fields
+                .values()
+                .any(|field| field.field().domain().contains(&position))
+            {
+                continue;
+            }
+
+            let positioned_missing_fields = register_item
+                .register()
+                .fields()
+                .filter(|field| field.domain().contains(&position))
+                .map(|field| field.module_name())
+                .collect::<IndexSet<_>>();
+
+            if positioned_missing_fields.is_empty() {
+                continue;
+            }
+
+            if positioned_missing_fields.len() == 1 {
+                concrete_missing_fields.push(positioned_missing_fields.first().unwrap().clone());
+            } else {
+                ambiguous_missing_fields.extend(positioned_missing_fields);
+            }
+        }
+
+        if !concrete_missing_fields.is_empty() {
+            if concrete_missing_fields.len() == 1 {
+                diagnostics.push(Diagnostic::missing_concrete_field(
+                    register_item.ident(),
+                    &concrete_missing_fields[0],
+                ));
+            } else {
+                diagnostics.push(Diagnostic::missing_concrete_fields(
+                    register_item.ident(),
+                    concrete_missing_fields.iter(),
+                ));
+            }
+        }
+
+        if !ambiguous_missing_fields.is_empty() {
+            diagnostics.push(Diagnostic::missing_ambiguous_fields(
+                register_item.ident(),
+                ambiguous_missing_fields.iter(),
+            ));
+        }
+    }
+
+    // entitlements
     for field in input.visit_fields() {
         let (RequireBinding::Dynamic(..) | RequireBinding::Static(..)) = field.entry() else {
             continue;

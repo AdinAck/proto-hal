@@ -28,6 +28,7 @@ pub enum Kind {
 
     // validation
     MissingEntitlements,
+    MissingFields,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -218,6 +219,51 @@ impl Diagnostic {
             format!(
                 "field \"{offending}\" is entitled to [{entitlement_list}] in field \
                 \"{entitlement_peripheral}::{entitlement_register}::{entitlement_field}\" which must be provided"
+            ),
+            offending,
+        )
+    }
+
+    /// missing field "foo" must be provided
+    pub fn missing_concrete_field(offending: &Ident, field_ident: &Ident) -> Self {
+        Self::new(
+            Kind::MissingFields,
+            format!("missing field \"{field_ident}\" must be provided"),
+            offending,
+        )
+    }
+
+    /// missing fields [foo, bar, ...] must be provided
+    pub fn missing_concrete_fields<'a>(
+        offending: &Ident,
+        field_idents: impl Iterator<Item = &'a Ident>,
+    ) -> Self {
+        let formatted_fields = field_idents
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        Self::new(
+            Kind::MissingFields,
+            format!("missing fields [{formatted_fields}] must be provided"),
+            offending,
+        )
+    }
+
+    /// missing fields are ambiguous, but may include any of [foo, bar, ...] which must be provided
+    pub fn missing_ambiguous_fields<'a>(
+        offending: &Ident,
+        field_idents: impl Iterator<Item = &'a Ident>,
+    ) -> Self {
+        let formatted_fields = field_idents
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        Self::new(
+            Kind::MissingFields,
+            format!(
+                "missing fields are ambiguous, but may include any of [{formatted_fields}] which must be provided"
             ),
             offending,
         )
