@@ -1,4 +1,4 @@
-// pub mod modify;
+pub mod modify;
 pub mod modify_untracked;
 pub mod read;
 pub mod read_untracked;

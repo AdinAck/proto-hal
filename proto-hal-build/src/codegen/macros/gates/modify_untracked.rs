@@ -22,7 +22,6 @@ use crate::codegen::macros::{
 
 type Input<'cx> =
     semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::PermitTransition<'cx>>;
-type RegisterItem<'cx> = semantic::RegisterItem<'cx, policies::field::PermitTransition<'cx>>;
 
 pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {
@@ -91,8 +90,14 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
             &overridden_base_addrs,
         );
 
-        read_reg_idents.push(register_ident);
-        read_addrs.push(addr.clone());
+        if register_item
+            .register()
+            .fields()
+            .any(|field| field.access.is_read())
+        {
+            read_reg_idents.push(register_ident.clone());
+            read_addrs.push(addr.clone());
+        }
 
         if register_item
             .fields()
@@ -100,7 +105,16 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
             .any(|field_item| field_item.entry().is_some())
         {
             write_addrs.push(addr);
-            reg_write_values.push(reg_write_value(register_item, return_idents.as_ref()));
+            reg_write_values.push(fragments::register_write_value(
+                register_item,
+                Some(register_ident.to_token_stream()),
+                Some(mask(register_item.fields().values()).to_token_stream()),
+                |r, f| {
+                    let i = unique_field_ident(r.peripheral(), r.register(), f.field());
+
+                    Some(quote! { #i(#return_idents) as u32 })
+                },
+            ));
         }
 
         for field_item in register_item.fields().values() {
@@ -190,24 +204,4 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
             }
         })
         .collect()
-}
-
-fn reg_write_value<'cx>(
-    register_item: &RegisterItem<'cx>,
-    return_idents: Option<&TokenStream>,
-) -> TokenStream {
-    let ident = unique_register_ident(register_item.peripheral(), register_item.register());
-    let mask = mask(register_item.fields().values());
-
-    let values = register_item.fields().values().map(|field_item| {
-        let field = field_item.field();
-        let ident = unique_field_ident(register_item.peripheral(), register_item.register(), field);
-        let shift = fragments::shift(field.offset);
-
-        quote! { #ident(#return_idents) as u32 #shift }
-    });
-
-    quote! {
-        #ident & !#mask #(| (#values) )*
-    }
 }

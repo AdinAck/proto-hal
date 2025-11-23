@@ -1,9 +1,11 @@
 pub mod return_rank;
 
+use std::num::NonZeroU32;
+
 use indexmap::{IndexMap, IndexSet};
 use model::structures::{
     entitlement::Entitlement,
-    field::{Field, FieldIndex},
+    field::{Field, FieldIndex, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
     register::Register,
@@ -15,7 +17,10 @@ use syn::Ident;
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
-        semantic::{self, FieldEntry, FieldItem, PeripheralEntry, policies::Refine},
+        semantic::{
+            self, FieldEntry, FieldItem, PeripheralEntry, RegisterItem,
+            policies::{Refine, field::RequireBinding},
+        },
         syntax,
     },
 };
@@ -135,4 +140,51 @@ where
     }
 
     entitlement_fields
+}
+
+/// Creates the correct initial value for writing to a register without reading from it first.
+pub fn static_initial<'cx>(
+    model: &'cx Model,
+    register_item: &RegisterItem<'cx, RequireBinding<'cx>>,
+) -> Option<NonZeroU32> {
+    let inert = register_item
+        .register()
+        .fields()
+        .filter_map(|field| {
+            let intert_variant = match field.access.get_write()? {
+                Numericity::Numeric(..) => None?,
+                Numericity::Enumerated(enumerated) => enumerated.some_inert(model)?,
+            };
+
+            Some((field, intert_variant))
+        })
+        .fold(0, |acc, (field, variant)| {
+            acc | (variant.bits << field.offset)
+        });
+
+    // mask out values to be filled in by user
+    let mask = mask(register_item.fields().values());
+
+    // fill in statically known values from fields being statically transitioned
+    let statics = register_item
+        .fields()
+        .values()
+        .flat_map(|field_item| {
+            let bits = match field_item.entry() {
+                RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,
+                RequireBinding::Static(.., transition) => match transition {
+                    semantic::Transition::Variant(.., variant) => variant.bits,
+                    semantic::Transition::Expr(..) => None?,
+                    semantic::Transition::Lit(lit_int) => lit_int
+                        .base10_parse::<u32>()
+                        .expect("lit int should be valid"),
+                },
+            };
+
+            Some(bits << field_item.field().offset)
+        })
+        .reduce(|acc, value| acc | value)
+        .unwrap_or(0);
+
+    NonZeroU32::new((inert & !mask) | statics)
 }

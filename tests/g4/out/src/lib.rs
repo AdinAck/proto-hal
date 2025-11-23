@@ -30,7 +30,8 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { crate::peripherals() };
 
-                let cordicen = hal::write! {
+                let cordicen = hal::modify! {
+                    @critical_section(cs),
                     rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
                 };
 

@@ -5,14 +5,16 @@ use model::structures::{
     entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
 };
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{Expr, Ident};
 
 use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, scan_entitlements, suggestions, unique_field_ident},
+        utils::{
+            render_diagnostics, scan_entitlements, static_initial, suggestions, unique_field_ident,
+        },
     },
     parsing::{
         semantic::{
@@ -24,7 +26,6 @@ use crate::codegen::macros::{
 };
 
 type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
-type RegisterItem<'cx> = semantic::RegisterItem<'cx, RequireBinding<'cx>>;
 
 pub fn write(model: &Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, false)
@@ -52,7 +53,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             Override::CriticalSection(expr) => diagnostics.push(
                 syn::Error::new_spanned(
                     expr,
-                    "stand-alone read access is atomic and doesn't require a critical section",
+                    "stand-alone write access is atomic and doesn't require a critical section",
                 )
                 .into(),
             ),
@@ -85,7 +86,32 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 RequireBinding::Dynamic(..) | RequireBinding::Static(..)
             )
         }) {
-            reg_write_values.push(reg_write_value(model, register_item));
+            reg_write_values.push(fragments::register_write_value(
+                register_item,
+                static_initial(model, register_item).map(|value| value.get().to_token_stream()),
+                None,
+                |register_item, field_item| {
+                    let (input_generic, output_generic) =
+                        fragments::generics(register_item, field_item);
+
+                    Some(match (field_item.entry(), input_generic, output_generic) {
+                        (RequireBinding::Dynamic(..), ..) => {
+                            let ident = unique_field_ident(
+                                register_item.peripheral(),
+                                register_item.register(),
+                                field_item.field(),
+                            );
+
+                            quote! { #ident.1 as u32 }
+                        }
+                        (RequireBinding::View(..), Some(generic), ..)
+                        | (RequireBinding::Static(..), .., Some(generic)) => {
+                            quote! { #generic::VALUE }
+                        }
+                        (..) => None?,
+                    })
+                },
+            ));
         }
 
         addrs.push(fragments::register_address(
@@ -328,88 +354,4 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     }
 
     diagnostics
-}
-
-fn reg_write_value<'cx>(model: &'cx Model, register_item: &RegisterItem<'cx>) -> TokenStream {
-    // start with inert field values (or zero)
-    let initial = {
-        let inert = register_item
-            .register()
-            .fields()
-            .filter_map(|field| {
-                let intert_variant = match field.access.get_write()? {
-                    Numericity::Numeric(..) => None?,
-                    Numericity::Enumerated(enumerated) => enumerated.some_inert(model)?,
-                };
-
-                Some((field, intert_variant))
-            })
-            .fold(0, |acc, (field, variant)| {
-                acc | (variant.bits << field.offset)
-            });
-
-        // mask out values to be filled in by user
-        let mask = register_item.fields().values().fold(0, |acc, field_item| {
-            let field = field_item.field();
-
-            acc | ((u32::MAX >> (32 - field.width)) << field.offset)
-        });
-
-        // fill in statically known values from fields being statically transitioned
-        let statics = register_item
-            .fields()
-            .values()
-            .flat_map(|field_item| {
-                let bits = match field_item.entry() {
-                    RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,
-                    RequireBinding::Static(.., transition) => match transition {
-                        semantic::Transition::Variant(.., variant) => variant.bits,
-                        semantic::Transition::Expr(..) => None?,
-                        semantic::Transition::Lit(lit_int) => lit_int
-                            .base10_parse::<u32>()
-                            .expect("lit int should be valid"),
-                    },
-                };
-
-                Some(bits << field_item.field().offset)
-            })
-            .reduce(|acc, value| acc | value)
-            .unwrap_or(0);
-
-        (inert & !mask) | statics
-    };
-
-    let values = register_item
-        .fields()
-        .values()
-        .filter_map(|field_item| {
-            let field = field_item.field();
-            let shift = fragments::shift(field.offset);
-
-            let (input_generic, output_generic) = fragments::generics(register_item, field_item);
-
-            Some(match (field_item.entry(), input_generic, output_generic) {
-                (RequireBinding::Dynamic(..), ..) => {
-                    let ident = unique_field_ident(
-                        register_item.peripheral(),
-                        register_item.register(),
-                        &field,
-                    );
-
-                    quote! { (#ident.1 #shift) as u32 }
-                }
-                (RequireBinding::View(..), Some(generic), ..)
-                | (RequireBinding::Static(..), .., Some(generic)) => {
-                    quote! { #generic::VALUE #shift }
-                }
-                (..) => None?,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    match (initial == 0, values.is_empty()) {
-        (false, false) => quote! { #initial #(| #values)* },
-        (true, false) => quote! { #(#values)|* },
-        (.., true) => quote! { #initial },
-    }
 }
