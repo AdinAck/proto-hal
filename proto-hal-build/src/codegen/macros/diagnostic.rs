@@ -9,7 +9,6 @@ use crate::codegen::macros::parsing::syntax::Binding;
 pub enum Kind {
     // parsing
     Erased = 0,
-    UnexpectedRegister,
     UnexpectedPeripheral,
     ItemAlreadySpecified,
     ExpectedPeripheralPath,
@@ -54,15 +53,6 @@ impl Diagnostic {
             message: message.into(),
             span: offending.span(),
         }
-    }
-
-    /// unexpected register at end of path
-    pub fn unexpected_register(register_ident: &Ident) -> Self {
-        Self::new(
-            Kind::UnexpectedRegister,
-            "unexpected register at end of path",
-            register_ident,
-        )
     }
 
     /// unexpected peripheral at end of path

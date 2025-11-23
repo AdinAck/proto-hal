@@ -92,7 +92,18 @@ where
         // path ends on register item
 
         match &tree.node {
-            Node::Leaf(..) => Err(Diagnostic::unexpected_register(register_ident))?,
+            Node::Leaf(..) => {
+                register_map.insert(
+                    RegisterKey::from_model(&peripheral, &register),
+                    RegisterItem {
+                        peripheral_path: peripheral_path.clone(),
+                        ident: register_ident,
+                        peripheral,
+                        register,
+                        fields: Default::default(),
+                    },
+                );
+            }
             Node::Branch(children) => {
                 for child in children {
                     if let Err(e) = parse_field(
@@ -186,7 +197,18 @@ where
                 }
             }
             // zero
-            Node::Leaf(..) => Err(Diagnostic::unexpected_register(register_ident))?,
+            Node::Leaf(..) => {
+                register_map.insert(
+                    RegisterKey::from_model(&peripheral, &register),
+                    RegisterItem {
+                        peripheral_path: peripheral_path.clone(),
+                        ident: register_ident,
+                        peripheral,
+                        register,
+                        fields: Default::default(),
+                    },
+                );
+            }
         }
     }
 

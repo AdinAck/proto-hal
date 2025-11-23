@@ -258,6 +258,7 @@ mod tests {
         let peripheral0_binding = quote! { some_foo };
         let peripheral1_name = "bar";
         let peripheral1_path = parse_quote! { external::stuff::bar };
+        let peripheral1_binding = quote! { some_bar };
 
         let mut model = Model::new();
         model.add_peripheral(Peripheral::new(peripheral0_name, 0));
@@ -265,7 +266,7 @@ mod tests {
 
         let tokens = quote! {
             #peripheral0_path(#peripheral0_binding),
-            #peripheral1_path,
+            #peripheral1_path(#peripheral1_binding),
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
@@ -273,6 +274,8 @@ mod tests {
             Gate::<policies::peripheral::ConsumeOnly, policies::field::ForbidEntry>::parse(
                 &args, &model,
             );
+
+        println!("{e:?}");
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
@@ -312,17 +315,21 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (.., e) =
+        let (gate, e) =
             Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
                 &args, &model,
             );
 
-        assert!(
-            e.iter().any(|diagnostic| matches!(
-                diagnostic.kind(),
-                diagnostic::Kind::UnexpectedRegister
-            ))
-        )
+        let register = gate
+            .get_register(peripheral_name, register_name)
+            .expect("register should exist");
+
+        assert_eq!(
+            register.path(),
+            parse_quote!( #peripheral_path::#register_ident )
+        );
+        assert!(register.fields().is_empty());
+        assert!(e.is_empty(), "semantic parsing should succeed");
     }
 
     #[test]

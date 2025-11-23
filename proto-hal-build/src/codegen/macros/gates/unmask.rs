@@ -196,7 +196,10 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         ));
     }
 
-    for field_item in input.visit_fields() {
+    for field_item in input
+        .visit_fields()
+        .filter(|field_item| field_item.field().ontological_entitlements().is_none())
+    {
         if !entitlement_fields.contains_key(field_item.field().index()) {
             diagnostics.push(Diagnostic::unincumbent_field(field_item.ident()));
         }
