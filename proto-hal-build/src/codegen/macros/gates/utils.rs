@@ -86,14 +86,20 @@ pub fn suggestions(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<Tok
     }
 }
 
-pub fn mask<'cx, EntryPolicy>(fields: impl Iterator<Item = &'cx FieldItem<'cx, EntryPolicy>>) -> u32
+/// Creates the mask used to occlude all provided fields.
+///
+/// If a field domain is [5:3], then the first byte of the mask would be:
+/// `00111000`.
+pub fn mask<'cx, EntryPolicy>(
+    fields: impl Iterator<Item = &'cx FieldItem<'cx, EntryPolicy>>,
+) -> Option<NonZeroU32>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>> + 'cx,
 {
-    fields.fold(0, |acc, field_item| {
+    NonZeroU32::new(fields.fold(0, |acc, field_item| {
         let field = field_item.field();
         acc | ((u32::MAX >> (32 - field.width)) << field.offset)
-    })
+    }))
 }
 
 pub fn scan_entitlements<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
@@ -186,5 +192,5 @@ pub fn static_initial<'cx>(
         .reduce(|acc, value| acc | value)
         .unwrap_or(0);
 
-    NonZeroU32::new((inert & !mask) | statics)
+    NonZeroU32::new((inert & !mask.map(|value| value.get()).unwrap_or(0)) | statics)
 }

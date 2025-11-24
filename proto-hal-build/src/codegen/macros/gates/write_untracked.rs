@@ -151,7 +151,8 @@ fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> T
         Scheme::FromReset => {
             let mask = mask(register_item.fields().values());
 
-            register_item.register().reset.unwrap_or(0) & !mask
+            register_item.register().reset.unwrap_or(0)
+                & !mask.map(|value| value.get()).unwrap_or(0)
         }
     };
 

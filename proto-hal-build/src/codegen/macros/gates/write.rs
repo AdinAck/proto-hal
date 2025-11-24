@@ -89,7 +89,6 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             reg_write_values.push(fragments::register_write_value(
                 register_item,
                 static_initial(model, register_item).map(|value| value.get().to_token_stream()),
-                None,
                 |register_item, field_item| {
                     let (input_generic, output_generic) =
                         fragments::generics(register_item, field_item);

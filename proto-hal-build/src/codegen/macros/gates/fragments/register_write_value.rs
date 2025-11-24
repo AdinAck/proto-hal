@@ -11,7 +11,6 @@ use crate::codegen::macros::{
 pub fn register_write_value<'cx, EntryPolicy>(
     register_item: &RegisterItem<'cx, EntryPolicy>,
     initial: Option<TokenStream>,
-    mask: Option<TokenStream>,
     expr_factory: impl Fn(
         &RegisterItem<'cx, EntryPolicy>,
         &FieldItem<'cx, EntryPolicy>,
@@ -33,22 +32,21 @@ where
         })
         .peekable();
 
-    match (initial, mask) {
-        (Some(initial), Some(mask)) => {
-            quote! { #initial & !#mask #(| (#values) )* }
+    match (initial, values.peek().is_some()) {
+        (Some(initial), true) => {
+            quote! { (#initial) #(| (#values) )* }
         }
-        (Some(initial), None) => {
-            quote! { #initial #(| (#values) )* }
+        (Some(initial), false) => {
+            quote! { (#initial) }
         }
-        (None, ..) => {
-            if values.peek().is_none() {
-                // this value will never actually be used
-                // as this only happens when the transition is
-                // invalid
-                quote! { 0 }
-            } else {
-                quote! { #( (#values) )|* }
-            }
+        (None, true) => {
+            quote! { #( (#values) )|* }
+        }
+        (None, false) => {
+            // this value will never actually be used
+            // as this only happens when the transition is
+            // invalid
+            quote! { 0 }
         }
     }
 }

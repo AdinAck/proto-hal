@@ -104,11 +104,16 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
             .values()
             .any(|field_item| field_item.entry().is_some())
         {
+            let initial = &register_ident;
+            let mask = mask(register_item.fields().values()).map(|non_zero| {
+                let inverted = !non_zero.get();
+                quote! { & #inverted }
+            });
+
             write_addrs.push(addr);
             reg_write_values.push(fragments::register_write_value(
                 register_item,
-                Some(register_ident.to_token_stream()),
-                Some(mask(register_item.fields().values()).to_token_stream()),
+                Some(quote! { #initial #mask }),
                 |r, f| {
                     let i = unique_field_ident(r.peripheral(), r.register(), f.field());
 
