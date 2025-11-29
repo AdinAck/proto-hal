@@ -15,7 +15,9 @@ mod tests {
     mod hal {
         use core::any::{Any, TypeId};
 
-        use crate::foo::foo0::a;
+        use crate as hal;
+
+        use hal::foo::foo0::a;
 
         #[test]
         fn fundamental_peripherals() {
@@ -31,12 +33,11 @@ mod tests {
 
     mod registers {
         mod unsafe_interface {
-            use crate::{
-                foo,
-                tests::{MOCK_FOO, addr_of_foo},
-            };
+            use crate::tests::{MOCK_FOO, addr_of_foo};
 
             use crate as hal;
+
+            use hal::foo;
 
             #[test]
             fn unsafe_read() {
@@ -105,8 +106,11 @@ mod tests {
     }
 
     mod entitlements {
+        use crate::tests::addr_of_foo;
+
         use crate as hal;
-        use crate::{foo, tests::addr_of_foo};
+
+        use hal::foo;
 
         #[test]
         fn access() {

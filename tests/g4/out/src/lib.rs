@@ -15,9 +15,9 @@ mod tests {
     }
 
     mod cordic {
-        use crate::{cordic, rcc};
-
         use crate as hal;
+
+        use hal::{cordic, rcc};
 
         static mut MOCK_CORDIC: [u32; 3] = [0x0000_0050, 0, 0];
 
@@ -28,7 +28,7 @@ mod tests {
         #[test]
         fn basic() {
             critical_section::with(|cs| {
-                let p = unsafe { crate::peripherals() };
+                let p = unsafe { hal::peripherals() };
 
                 let cordicen = hal::modify! {
                     @critical_section(cs),
@@ -81,7 +81,7 @@ mod tests {
         #[test]
         fn wdata() {
             critical_section::with(|cs| {
-                let p = unsafe { crate::peripherals() };
+                let p = unsafe { hal::peripherals() };
 
                 let cordicen = hal::write! {
                     rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
@@ -110,7 +110,7 @@ mod tests {
             critical_section::with(|cs| {
                 unsafe { MOCK_CORDIC[2] = 0xdeadbeef };
 
-                let p = unsafe { crate::peripherals() };
+                let p = unsafe { hal::peripherals() };
 
                 let rcc::ahb1enr::States { cordicen, .. } =
                     rcc::ahb1enr::modify_in_cs(cs, |_, w| {
@@ -144,9 +144,9 @@ mod tests {
     }
 
     mod crc {
-        use crate::{crc, rcc};
-
         use crate as hal;
+
+        use hal::{crc, rcc};
 
         static mut MOCK_CRC: [u32; 2] = [0, 0];
 
@@ -157,7 +157,7 @@ mod tests {
         #[test]
         fn basic() {
             critical_section::with(|cs| {
-                let p = unsafe { crate::peripherals() };
+                let p = unsafe { hal::peripherals() };
 
                 let rcc::ahb1enr::States { crcen, .. } =
                     rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
@@ -174,7 +174,7 @@ mod tests {
         #[test]
         fn inert() {
             critical_section::with(|cs| {
-                let p = unsafe { crate::peripherals() };
+                let p = unsafe { hal::peripherals() };
 
                 let rcc::ahb1enr::States { crcen, .. } =
                     rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
@@ -194,11 +194,13 @@ mod tests {
     mod rcc {
         use core::any::{Any, TypeId};
 
-        use crate::rcc;
+        use crate as hal;
+
+        use hal::rcc;
 
         #[test]
         fn reset() {
-            let p = unsafe { crate::peripherals() };
+            let p = unsafe { hal::peripherals() };
 
             assert_eq!(
                 p.rcc.ahb1enr.flashen.type_id(),

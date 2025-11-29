@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use indexmap::IndexSet;
 use model::structures::{
     entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
 };
@@ -9,17 +8,17 @@ use quote::{ToTokens as _, quote};
 use syn::{Expr, Ident};
 
 use crate::codegen::macros::{
-    diagnostic::{Diagnostic, Diagnostics},
+    diagnostic::Diagnostics,
     gates::{
         fragments,
         utils::{
-            mask, render_diagnostics, return_rank::ReturnRank, scan_entitlements, suggestions,
-            unique_field_ident, unique_register_ident,
+            mask, render_diagnostics, return_rank::ReturnRank, scan_entitlements, static_initial,
+            suggestions, unique_field_ident, unique_register_ident,
         },
     },
     parsing::{
         semantic::{
-            self,
+            self, FieldItem,
             policies::{self, field::RequireBinding},
         },
         syntax::Override,
@@ -92,7 +91,6 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let mut read_reg_idents = Vec::new();
     let mut read_addrs = Vec::new();
     let mut write_addrs = Vec::new();
-    let mut write_exprs = Vec::new();
     let mut reg_write_values = Vec::new();
     let mut arguments = Vec::new();
     let mut conjures = Vec::new();
@@ -123,12 +121,25 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 RequireBinding::Dynamic(..) | RequireBinding::Static(..)
             )
         }) {
+            let static_initial = static_initial(model, register_item)
+                .map(|value| value.get())
+                .map(|static_initial| quote! { | #static_initial });
+            let mask = mask(register_item.fields().values())
+                .map(|value| !value.get())
+                .map(|mask| quote! { & #mask });
+            let initial = quote! {
+                (#register_ident #mask) #static_initial
+            };
+
             write_addrs.push(addr);
             reg_write_values.push(fragments::register_write_value(
                 register_item,
-                Some(register_ident.to_token_stream()),
-                Some(mask(register_item.fields().values()).to_token_stream()),
+                Some(initial),
                 |r, f| {
+                    let RequireBinding::Dynamic(..) = f.entry() else {
+                        None?
+                    };
+
                     let i = unique_field_ident(r.peripheral(), r.register(), f.field());
 
                     Some(quote! { #i(#return_idents) as u32 })
@@ -204,21 +215,13 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 value_ty.as_ref(),
             ));
 
-            arguments.push(fragments::write_argument(
+            arguments.push(fragments::modify_argument(
                 &register_path,
                 field_item.ident(),
                 field_item.field(),
                 field_item.entry(),
+                return_idents.as_ref(),
             ));
-
-            if let RequireBinding::Dynamic(.., transition) = field_item.entry() {
-                write_exprs.push(fragments::write_argument_value(
-                    &register_path,
-                    field_item.ident(),
-                    field_item.field(),
-                    transition,
-                ));
-            }
         }
     }
 
@@ -263,7 +266,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             (#return_idents)
         }
 
-        gate(#(|#return_idents| { #write_exprs },)*)
+        gate(#(#arguments)*)
     };
 
     let body = if cs.is_none() {
