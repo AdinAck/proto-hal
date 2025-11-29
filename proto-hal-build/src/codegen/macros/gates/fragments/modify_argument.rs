@@ -15,10 +15,10 @@ pub fn modify_argument<'cx>(
     closure_arguments: Option<&TokenStream>,
 ) -> TokenStream {
     match entry {
-        RequireBinding::View(binding) | RequireBinding::Static(binding, ..) => {
-            binding.to_token_stream()
-        }
-        RequireBinding::Dynamic(binding, transition) => {
+        RequireBinding::View(binding)
+        | RequireBinding::Dynamic(binding)
+        | RequireBinding::Static(binding, ..) => binding.to_token_stream(),
+        RequireBinding::DynamicTransition(binding, transition) => {
             let binding = binding.as_ref();
             let value = modify_argument_value(
                 register_path,

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use model::structures::model::Model;
+use model::structures::{field::access::Access, model::Model};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
@@ -132,5 +132,11 @@ fn make_parameter<'cx>(
     let ident = field_item.ident();
     let ty = field_item.field().type_name();
 
-    quote! { #unique_ident: &#path::#ident::#ty<::proto_hal::stasis::Dynamic> }
+    let ref_ = if let Access::Store(..) = &field_item.field().access {
+        quote! { & }
+    } else {
+        quote! { &mut }
+    };
+
+    quote! { #unique_ident: #ref_ #path::#ident::#ty<::proto_hal::stasis::Dynamic> }
 }

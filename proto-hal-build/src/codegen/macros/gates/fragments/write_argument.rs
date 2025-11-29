@@ -14,10 +14,10 @@ pub fn write_argument<'cx>(
     entry: &RequireBinding<'cx>,
 ) -> TokenStream {
     match entry {
-        RequireBinding::View(binding) | RequireBinding::Static(binding, ..) => {
-            binding.to_token_stream()
-        }
-        RequireBinding::Dynamic(binding, transition) => {
+        RequireBinding::View(binding)
+        | RequireBinding::Dynamic(binding)
+        | RequireBinding::Static(binding, ..) => binding.to_token_stream(),
+        RequireBinding::DynamicTransition(binding, transition) => {
             let binding = binding.as_ref();
             let value = write_argument_value(register_path, field_ident, field, transition);
             let span = field_ident.span();

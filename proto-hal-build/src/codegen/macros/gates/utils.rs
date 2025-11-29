@@ -177,7 +177,9 @@ pub fn static_initial<'cx>(
         .values()
         .flat_map(|field_item| {
             let bits = match field_item.entry() {
-                RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,
+                RequireBinding::View(..)
+                | RequireBinding::Dynamic(..)
+                | RequireBinding::DynamicTransition(..) => None?,
                 RequireBinding::Static(.., transition) => match transition {
                     semantic::Transition::Variant(.., variant) => variant.bits,
                     semantic::Transition::Expr(..) => None?,

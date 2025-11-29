@@ -20,9 +20,9 @@ impl<'cx> Refine<'cx> for ForbidEntry {
     fn refine(_cx: &impl Spanned, entry: Self::Input) -> Result<Self, Diagnostics> {
         Ok(match entry {
             FieldEntry::Empty => Self,
-            FieldEntry::View(binding) | FieldEntry::Consumed(binding) => {
-                Err(Diagnostic::unexpected_binding(binding))?
-            }
+            FieldEntry::View(binding)
+            | FieldEntry::BoundDynamic(binding)
+            | FieldEntry::Consumed(binding) => Err(Diagnostic::unexpected_binding(binding))?,
             FieldEntry::BoundDynamicTransition(binding, transition)
             | FieldEntry::StaticTransition(binding, transition) => Err(vec![
                 Diagnostic::unexpected_binding(binding),
@@ -45,9 +45,9 @@ impl<'cx> Refine<'cx> for PermitTransition<'cx> {
     fn refine(_cx: &impl Spanned, entry: Self::Input) -> Result<Self, Diagnostics> {
         Ok(match entry {
             FieldEntry::Empty => Self(None),
-            FieldEntry::View(binding) | FieldEntry::Consumed(binding) => {
-                Err(Diagnostic::unexpected_binding(binding))?
-            }
+            FieldEntry::View(binding)
+            | FieldEntry::BoundDynamic(binding)
+            | FieldEntry::Consumed(binding) => Err(Diagnostic::unexpected_binding(binding))?,
             FieldEntry::BoundDynamicTransition(binding, ..)
             | FieldEntry::StaticTransition(binding, ..) => {
                 Err(Diagnostic::unexpected_binding(binding))?
@@ -67,9 +67,9 @@ impl<'cx> Refine<'cx> for TransitionOnly<'cx> {
     fn refine(cx: &impl Spanned, entry: Self::Input) -> Result<Self, Diagnostics> {
         Ok(match entry {
             FieldEntry::Empty => Err(Diagnostic::expected_transition(cx))?,
-            FieldEntry::View(binding) | FieldEntry::Consumed(binding) => {
-                Err(Diagnostic::unexpected_binding(binding))?
-            }
+            FieldEntry::View(binding)
+            | FieldEntry::BoundDynamic(binding)
+            | FieldEntry::Consumed(binding) => Err(Diagnostic::unexpected_binding(binding))?,
             FieldEntry::BoundDynamicTransition(binding, ..)
             | FieldEntry::StaticTransition(binding, ..) => {
                 Err(Diagnostic::unexpected_binding(binding))?
@@ -86,7 +86,9 @@ pub enum RequireBinding<'cx> {
     /// The entry is a view (see [`Entry`]).
     View(&'cx syntax::Binding),
     /// The entry is dynnamic (see [`Entry`]).
-    Dynamic(&'cx syntax::Binding, semantic::Transition<'cx>),
+    Dynamic(&'cx syntax::Binding),
+    /// The entry is a dynnamic transition (see [`Entry`]).
+    DynamicTransition(&'cx syntax::Binding, semantic::Transition<'cx>),
     /// The entry is static (see [`Entry`]).
     Static(&'cx syntax::Binding, semantic::Transition<'cx>),
 }
@@ -98,8 +100,9 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
         Ok(match entry {
             FieldEntry::Empty => Err(Diagnostic::expected_binding(cx))?,
             FieldEntry::View(binding) => Self::View(binding),
+            FieldEntry::BoundDynamic(binding) => Self::Dynamic(binding),
             FieldEntry::BoundDynamicTransition(binding, transition) => {
-                Self::Dynamic(binding, transition)
+                Self::DynamicTransition(binding, transition)
             }
             FieldEntry::StaticTransition(binding, transition) => Self::Static(binding, transition),
             FieldEntry::Consumed(binding) => Err(Diagnostic::binding_must_be_view(binding))?,
@@ -113,7 +116,8 @@ impl<'cx> RequireBinding<'cx> {
     pub fn binding(&self) -> &syntax::Binding {
         match self {
             RequireBinding::View(binding) => binding,
-            RequireBinding::Dynamic(binding, ..) => binding,
+            RequireBinding::Dynamic(binding) => binding,
+            RequireBinding::DynamicTransition(binding, ..) => binding,
             RequireBinding::Static(binding, ..) => binding,
         }
     }
@@ -132,6 +136,7 @@ impl<'cx> Refine<'cx> for BindingOnly<'cx> {
         Ok(Self(match entry {
             FieldEntry::Empty => Err(Diagnostic::expected_binding(cx))?,
             FieldEntry::View(binding) => binding,
+            FieldEntry::BoundDynamic(binding) => binding,
             FieldEntry::Consumed(binding) => Err(Diagnostic::binding_must_be_view(binding))?,
             FieldEntry::BoundDynamicTransition(.., transition)
             | FieldEntry::UnboundDynamicTransition(transition)
@@ -153,6 +158,9 @@ impl<'cx> Refine<'cx> for ConsumeOnly<'cx> {
         Ok(Self(match entry {
             FieldEntry::Empty => Err(Diagnostic::expected_binding(cx))?,
             FieldEntry::View(binding) => Err(Diagnostic::binding_cannot_be_view(binding))?,
+            FieldEntry::BoundDynamic(binding) => {
+                Err(Diagnostic::binding_cannot_be_dynamic(binding))?
+            }
             FieldEntry::BoundDynamicTransition(.., transition)
             | FieldEntry::UnboundDynamicTransition(transition)
             | FieldEntry::StaticTransition(.., transition) => {

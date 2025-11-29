@@ -18,7 +18,7 @@ use crate::codegen::macros::{
     },
     parsing::{
         semantic::{
-            self, FieldItem,
+            self,
             policies::{self, field::RequireBinding},
         },
         syntax::Override,

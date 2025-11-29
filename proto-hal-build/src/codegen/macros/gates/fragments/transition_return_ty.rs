@@ -29,7 +29,9 @@ pub fn transition_return_ty<'cx>(
     };
 
     Some(match entry {
-        RequireBinding::View(..) | RequireBinding::Dynamic(..) => None?,
+        RequireBinding::View(..)
+        | RequireBinding::Dynamic(..)
+        | RequireBinding::DynamicTransition(..) => None?,
         RequireBinding::Static(.., transition) => {
             match transition {
                 semantic::Transition::Variant(transition, variant) => {

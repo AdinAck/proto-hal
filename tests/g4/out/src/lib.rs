@@ -132,8 +132,8 @@ mod tests {
 
                 let rdata = hal::read! {
                     cordic::rdata {
-                        res0(&res0),
-                        res1(&res1),
+                        res0(&mut res0),
+                        res1(&mut res1),
                     }
                 };
 

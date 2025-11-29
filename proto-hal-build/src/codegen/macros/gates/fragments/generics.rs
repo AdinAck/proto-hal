@@ -18,7 +18,7 @@ pub fn generics<'cx>(
 
     match field_item.entry() {
         RequireBinding::View(..) => (Some(input_generic), None),
-        RequireBinding::Dynamic(..) => (None, None),
+        RequireBinding::Dynamic(..) | RequireBinding::DynamicTransition(..) => (None, None),
         RequireBinding::Static(.., transition) => (
             Some(input_generic.clone()),
             if let semantic::Transition::Expr(expr) = transition
