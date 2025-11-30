@@ -26,7 +26,7 @@ impl Entitlement {
         model.get_field(variant.parent)
     }
 
-    pub fn index<'cx>(&self) -> VariantIndex {
+    pub fn index(&self) -> VariantIndex {
         self.0
     }
 

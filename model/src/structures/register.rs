@@ -122,7 +122,7 @@ impl<'cx> View<'cx, RegisterNode> {
                 // unfortunate workaround for `is_disjoint` behavior when sets are empty
                 if let Some(lhs) = &ontological_entitlements
                     && let Some(rhs) = &other_ontological_entitlements
-                    && lhs.is_disjoint(&rhs)
+                    && lhs.is_disjoint(rhs)
                 {
                     continue;
                 }

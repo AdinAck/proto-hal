@@ -33,9 +33,6 @@ fn add_field<'cx>(
     let mut en = ahb1enr.add_store_field(Field::new(ident, offset, 1));
 
     en.add_variant(Variant::new("Disabled", 0));
-    let enabled = en
-        .add_variant(Variant::new("Enabled", 1))
-        .make_entitlement();
-
-    enabled
+    en.add_variant(Variant::new("Enabled", 1))
+        .make_entitlement()
 }

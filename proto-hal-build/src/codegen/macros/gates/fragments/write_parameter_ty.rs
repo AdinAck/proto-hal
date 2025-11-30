@@ -3,7 +3,7 @@ use quote::quote;
 
 use crate::codegen::macros::parsing::syntax::Binding;
 
-pub fn write_parameter_ty<'cx>(
+pub fn write_parameter_ty(
     binding: &Binding,
     input_ty: &TokenStream,
     value_ty: Option<&TokenStream>,
@@ -12,11 +12,9 @@ pub fn write_parameter_ty<'cx>(
         && binding.is_dynamic()
     {
         quote! { (&mut #input_ty, #ty) }
+    } else if binding.is_viewed() {
+        quote! { &#input_ty }
     } else {
-        if binding.is_viewed() {
-            quote! { &#input_ty }
-        } else {
-            input_ty.clone()
-        }
+        input_ty.clone()
     }
 }

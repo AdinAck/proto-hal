@@ -11,7 +11,7 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, scan_entitlements, module_suggestions, unique_field_ident},
+        utils::{module_suggestions, render_diagnostics, scan_entitlements, unique_field_ident},
     },
     parsing::semantic::{self, policies},
 };
@@ -90,7 +90,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
     for register_item in input.visit_registers() {
         for field_item in register_item.fields().values() {
-            let (field_module_path, field_ty_path) = field_paths(&register_item, &field_item);
+            let (field_module_path, field_ty_path) = field_paths(register_item, field_item);
             let unique_field_ident = unique_field_ident(
                 register_item.peripheral(),
                 register_item.register(),
@@ -102,7 +102,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             else {
                 // must be an entitlement of another entry, freeze!
 
-                let generic = make_generic(&register_item, &field_item);
+                let generic = make_generic(register_item, field_item);
 
                 // TODO: return frozen for reclaimation and rebinding
 
@@ -222,8 +222,8 @@ fn make_constraints<'cx>(
             continue;
         };
 
-        let (.., field_ty_path) = field_paths(&entitlement_register_item, &entitlement_field_item);
-        let generic = make_generic(&entitlement_register_item, &entitlement_field_item);
+        let (.., field_ty_path) = field_paths(entitlement_register_item, entitlement_field_item);
+        let generic = make_generic(entitlement_register_item, entitlement_field_item);
 
         constraints.push(quote! {
             #constrained_ty: ::proto_hal::stasis::Entitled<#field_ty_path<#generic>>

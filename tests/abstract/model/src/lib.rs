@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_names)]
+
 use proto_hal_build::model::structures::{
     field::Field, model::Model, peripheral::Peripheral, register::Register, variant::Variant,
 };

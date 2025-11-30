@@ -399,7 +399,7 @@ mod tests {
 
         assert!(matches!(
             field.entry(),
-            policies::field::RequireBinding::Dynamic(..)
+            policies::field::RequireBinding::DynamicTransition(..)
         ));
         assert_eq!(field.field().ident, field_name);
     }

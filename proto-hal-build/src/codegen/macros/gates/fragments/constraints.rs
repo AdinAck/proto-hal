@@ -15,6 +15,7 @@ use crate::codegen::macros::{
     },
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn constraints<'cx>(
     input: &semantic::Gate<
         'cx,

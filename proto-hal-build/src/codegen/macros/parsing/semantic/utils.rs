@@ -248,6 +248,7 @@ where
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn put_field<'cx, EntryPolicy>(
     model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,

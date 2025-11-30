@@ -8,7 +8,7 @@ use crate::codegen::macros::parsing::{
     syntax,
 };
 
-pub fn transition_return_ty<'cx>(
+pub fn transition_return_ty(
     register_path: &Path,
     entry: &RequireBinding,
     field: &FieldNode,

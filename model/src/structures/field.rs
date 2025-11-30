@@ -62,7 +62,7 @@ impl<'cx> View<'cx, FieldNode> {
                 let mut entitlement_fields = IndexMap::new();
 
                 for entitlement in *write_entitlements {
-                    let field = entitlement.field(&self.model);
+                    let field = entitlement.field(self.model);
                     entitlement_fields
                         .entry(field.index)
                         .or_insert_with(|| (field, HashSet::new()))

@@ -6,7 +6,7 @@ pub struct Output {
     pub one: Entitlement,
 }
 
-pub fn nargs<'cx>(csr: &mut RegisterEntry) -> Output {
+pub fn nargs(csr: &mut RegisterEntry) -> Output {
     let mut nargs = csr.add_store_field(Field::new("nargs", 20, 1));
 
     let one = nargs

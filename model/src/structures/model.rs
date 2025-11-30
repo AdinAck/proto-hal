@@ -348,7 +348,7 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
             .peripherals
             .get_mut(&self.index)
             .unwrap()
-            .add_child_index(index.clone(), register.module_name());
+            .add_child_index(index, register.module_name());
 
         // insert child
         self.model.registers.push(RegisterNode {
@@ -386,14 +386,14 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
             .registers
             .get_mut(*self.index)
             .unwrap()
-            .add_child_index(index.clone(), field.module_name());
+            .add_child_index(index, field.module_name());
 
         index
     }
 
     fn insert_child_with_access(&mut self, field: Field, access: Access) {
         self.model.fields.push(FieldNode {
-            parent: self.index.clone(),
+            parent: self.index,
             field,
             access,
         });
@@ -467,7 +467,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     ) -> VariantEntry<'_> {
         // insert child
         self.model.variants.push(VariantNode {
-            parent: self.index.clone(),
+            parent: self.index,
             variant,
         });
 
@@ -545,7 +545,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
-            EntitlementIndex::HardwareWrite(self.index.clone()),
+            EntitlementIndex::HardwareWrite(self.index),
             entitlements.into_iter().collect(),
         );
     }
@@ -558,7 +558,7 @@ where
     /// Add [write access entitlements](TODO) to the field.
     pub fn write_entitlements(&'cx mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
         self.model.entitlements.insert(
-            EntitlementIndex::Write(self.index.clone()),
+            EntitlementIndex::Write(self.index),
             entitlements.into_iter().collect(),
         );
     }
@@ -657,17 +657,17 @@ impl<'cx> View<'cx, RegisterNode> {
 impl<'cx> View<'cx, FieldNode> {
     pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
         self.model
-            .try_get_entitlements(EntitlementIndex::Field(self.index.clone()))
+            .try_get_entitlements(EntitlementIndex::Field(self.index))
     }
 
     pub fn write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
         self.model
-            .try_get_entitlements(EntitlementIndex::Write(self.index.clone()))
+            .try_get_entitlements(EntitlementIndex::Write(self.index))
     }
 
     pub fn hardware_write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
         self.model
-            .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index.clone()))
+            .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index))
     }
 
     /// View the parent register and peripheral.

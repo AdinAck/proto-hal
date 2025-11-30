@@ -263,7 +263,7 @@ impl Diagnostic {
     }
 
     /// "foo" is fundamental and as such cannot be masked nor unmasked
-    pub fn cannot_unmask_fundamental<'a>(peripheral_ident: &Ident) -> Self {
+    pub fn cannot_unmask_fundamental(peripheral_ident: &Ident) -> Self {
         Self::new(
             Kind::CannotUnmaskFundamental,
             format!(
@@ -274,7 +274,7 @@ impl Diagnostic {
     }
 
     /// field "foo" is not entitled to nor has entitlements within this gate
-    pub fn unincumbent_field<'a>(field_ident: &Ident) -> Self {
+    pub fn unincumbent_field(field_ident: &Ident) -> Self {
         Self::new(
             Kind::UnincumbentField,
             format!(
