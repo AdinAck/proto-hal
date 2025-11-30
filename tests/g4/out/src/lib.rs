@@ -154,6 +154,17 @@ mod tests {
 
                 assert_eq!(rdata.res0, 0xbeef);
                 assert_eq!(rdata.res1, 0xdead);
+
+                let dmaren = cordic.csr.dmaren.into_dynamic();
+
+                // reading store fields doesn't require `mut`
+                assert_eq!(
+                    hal::read! {
+                        cordic::csr::dmaren(&dmaren),
+                        @base_addr(cordic, addr_of_cordic()),
+                    } as u32,
+                    0
+                );
             });
         }
     }
