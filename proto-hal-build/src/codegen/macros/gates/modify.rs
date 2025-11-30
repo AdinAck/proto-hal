@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use model::structures::{
-    entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
+    entitlement::EntitlementIndex,
+    field::{FieldNode, numericity::Numericity},
+    model::{Model, View},
 };
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
@@ -63,8 +65,13 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let suggestions = suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
-    let return_rank =
-        ReturnRank::from_input(&input, |field_item| field_item.field().access.is_read());
+    let return_rank = ReturnRank::from_input(&input, |field_item| {
+        let (RequireBinding::View(..) | RequireBinding::Dynamic(..)) = field_item.entry() else {
+            return false;
+        };
+
+        field_is_unentangled(model, &input, field_item.field())
+    });
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
     let return_init = fragments::read_return_init(&return_rank);
@@ -240,6 +247,10 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         .as_ref()
         .map(|return_ty| quote! { -> (#return_ty) });
 
+    let return_binding = return_idents
+        .as_ref()
+        .map(|return_idents| quote! { let (#return_idents) = #return_init; });
+
     let body = quote! {
         #cs
 
@@ -252,7 +263,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 };
             )*
 
-            let (#return_idents) = #return_init;
+            #return_binding
 
             #(
                 unsafe {
@@ -347,4 +358,33 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     }
 
     diagnostics
+}
+
+fn field_is_unentangled<'cx>(
+    model: &'cx Model,
+    input: &Input<'cx>,
+    field: &View<'cx, FieldNode>,
+) -> bool {
+    for other_field_item in input.visit_fields() {
+        for entitlement_set in other_field_item
+            .field()
+            .write_entitlements()
+            .iter()
+            .chain(other_field_item.field().ontological_entitlements().iter())
+            .chain(
+                other_field_item
+                    .field()
+                    .hardware_write_entitlements()
+                    .iter(),
+            )
+        {
+            for entitlement in *entitlement_set.as_ref() {
+                if entitlement.field(model).index() == field.index() {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
 }
