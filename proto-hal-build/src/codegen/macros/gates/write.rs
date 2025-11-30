@@ -13,7 +13,8 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            render_diagnostics, scan_entitlements, static_initial, suggestions, unique_field_ident,
+            module_suggestions, render_diagnostics, scan_entitlements, static_initial,
+            unique_field_ident,
         },
     },
     parsing::{
@@ -63,7 +64,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let mut generics = Vec::new();
@@ -83,7 +84,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
         if register_item.fields().values().any(|field_item| {
             matches!(
                 field_item.entry(),
-                RequireBinding::Dynamic(..) | RequireBinding::Static(..)
+                RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
             )
         }) {
             reg_write_values.push(fragments::register_write_value(
@@ -94,7 +95,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                         fragments::generics(register_item, field_item);
 
                     Some(match (field_item.entry(), input_generic, output_generic) {
-                        (RequireBinding::Dynamic(..), ..) => {
+                        (RequireBinding::DynamicTransition(..), ..) => {
                             let ident = unique_field_ident(
                                 register_item.peripheral(),
                                 register_item.register(),
@@ -262,8 +263,8 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     for register_item in input.visit_registers() {
         let provided_fields = register_item.fields();
 
-        let mut concrete_missing_fields = Vec::new();
-        let mut ambiguous_missing_fields = Vec::new();
+        let mut concrete_missing_fields = IndexSet::new();
+        let mut ambiguous_missing_fields = IndexSet::new();
 
         for position in 0..32 {
             if provided_fields
@@ -276,7 +277,13 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
             let positioned_missing_fields = register_item
                 .register()
                 .fields()
-                .filter(|field| field.domain().contains(&position))
+                .filter(|field| {
+                    field.domain().contains(&position)
+                        && field
+                            .access
+                            .get_write()
+                            .is_some_and(|x| x.some_inert(model).is_none())
+                })
                 .map(|field| field.module_name())
                 .collect::<IndexSet<_>>();
 
@@ -285,7 +292,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
             }
 
             if positioned_missing_fields.len() == 1 {
-                concrete_missing_fields.push(positioned_missing_fields.first().unwrap().clone());
+                concrete_missing_fields.insert(positioned_missing_fields.first().unwrap().clone());
             } else {
                 ambiguous_missing_fields.extend(positioned_missing_fields);
             }

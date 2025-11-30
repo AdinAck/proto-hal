@@ -15,6 +15,8 @@ mod tests {
     }
 
     mod cordic {
+        use super::addr_of_rcc;
+
         use crate as hal;
 
         use hal::{cordic, rcc};
@@ -33,6 +35,7 @@ mod tests {
                 let cordicen = hal::modify! {
                     @critical_section(cs),
                     rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
+                    @base_addr(rcc, addr_of_rcc())
                 };
 
                 let cordic = hal::unmask! {
@@ -40,12 +43,14 @@ mod tests {
                     cordic(p.cordic),
                 };
 
-                cordic::csr::modify_in_cs(cs, |_, w| {
-                    w.func(cordic.csr.func)
-                        .sqrt()
-                        .scale(cordic.csr.scale)
-                        .preserve()
-                });
+                hal::modify! {
+                    @critical_section(cs),
+                    cordic::csr {
+                        func(cordic.csr.func) => Sqrt,
+                        scale(&cordic.csr.scale),
+                    },
+                    @base_addr(cordic, addr_of_cordic()),
+                };
 
                 assert!({
                     let csr = unsafe {
@@ -83,8 +88,10 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { hal::peripherals() };
 
-                let cordicen = hal::write! {
+                let cordicen = hal::modify! {
+                    @critical_section(cs),
                     rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
+                    @base_addr(rcc, addr_of_rcc())
                 };
 
                 let cordic = hal::unmask! {
@@ -99,6 +106,7 @@ mod tests {
 
                 hal::write! {
                     cordic::wdata::arg(&mut arg) => 0xdeadbeef,
+                    @base_addr(cordic, addr_of_cordic()),
                 }
 
                 assert_eq!(unsafe { MOCK_CORDIC }[1], 0xdeadbeef);
@@ -112,29 +120,36 @@ mod tests {
 
                 let p = unsafe { hal::peripherals() };
 
-                let rcc::ahb1enr::States { cordicen, .. } =
-                    rcc::ahb1enr::modify_in_cs(cs, |_, w| {
-                        w.cordicen(p.rcc.ahb1enr.cordicen).enabled()
-                    });
-                let cordic = p.cordic.unmask(cordicen);
+                let cordicen = hal::modify! {
+                    @critical_section(cs),
+                    rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
+                    @base_addr(rcc, addr_of_rcc())
+                };
 
-                let cordic::csr::States { ressize, .. } =
-                    cordic::csr::modify_in_cs(cs, |_, w| w.ressize(cordic.csr.ressize).q15());
+                let cordic = hal::unmask! {
+                    cordic(p.cordic),
+                    rcc::ahb1enr::cordicen(cordicen)
+                };
 
-                // multiple fields are entitled to these states, so the state must be explicitly frozen.
-                let (_, [res0_nres_ent, res1_nres_ent]) = cordic.csr.nres.freeze();
-                let (_, [res0_ressize_ent, res1_ressize_ent]) = ressize.freeze();
+                let ressize = hal::modify! {
+                    @critical_section(cs),
+                    cordic::csr::ressize(cordic.csr.ressize) => Q15,
+                    @base_addr(cordic, addr_of_cordic()),
+                };
 
-                let (mut res0, mut res1) = (
-                    cordic.rdata.res0.unmask(res0_nres_ent, res0_ressize_ent),
-                    cordic.rdata.res1.unmask(res1_nres_ent, res1_ressize_ent),
-                );
+                let (mut res0, mut res1) = hal::unmask! {
+                    cordic::rdata::res0(cordic.rdata.res0),
+                    cordic::rdata::res1(cordic.rdata.res1),
+                    cordic::csr::ressize(ressize),
+                    cordic::csr::nres(cordic.csr.nres),
+                };
 
                 let rdata = hal::read! {
                     cordic::rdata {
                         res0(&mut res0),
                         res1(&mut res1),
-                    }
+                    },
+                    @base_addr(cordic, addr_of_cordic()),
                 };
 
                 assert_eq!(rdata.res0, 0xbeef);
@@ -144,6 +159,10 @@ mod tests {
     }
 
     mod crc {
+        use core::any::{Any, TypeId};
+
+        use super::addr_of_rcc;
+
         use crate as hal;
 
         use hal::{crc, rcc};
@@ -159,15 +178,27 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { hal::peripherals() };
 
-                let rcc::ahb1enr::States { crcen, .. } =
-                    rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
-                let crc = p.crc.unmask(crcen);
+                let crcen = hal::modify! {
+                    @critical_section(cs),
+                    rcc::ahb1enr::crcen(p.rcc.ahb1enr.crcen) => Enabled,
+                    @base_addr(rcc, addr_of_rcc())
+                };
+
+                let crc = hal::unmask! {
+                    crc(p.crc),
+                    rcc::ahb1enr::crcen(crcen),
+                };
 
                 let idr = hal::write! {
                     crc::idr::idr(crc.idr.idr) => 0xdeadbeef,
+                    @base_addr(crc, addr_of_crc()),
                 };
 
                 assert_eq!(0xdeadbeef, unsafe { MOCK_CRC[1] });
+                assert_eq!(
+                    idr.type_id(),
+                    TypeId::of::<crc::idr::idr::Idr<proto_hal::stasis::UInt32<0xdeadbeef>>>()
+                );
             });
         }
 
@@ -176,17 +207,26 @@ mod tests {
             critical_section::with(|cs| {
                 let p = unsafe { hal::peripherals() };
 
-                let rcc::ahb1enr::States { crcen, .. } =
-                    rcc::ahb1enr::modify_in_cs(cs, |_, w| w.crcen(p.rcc.ahb1enr.crcen).enabled());
-                let crc = p.crc.unmask(crcen);
+                let crcen = hal::modify! {
+                    @critical_section(cs),
+                    rcc::ahb1enr::crcen(p.rcc.ahb1enr.crcen) => Enabled,
+                    @base_addr(rcc, addr_of_rcc())
+                };
+
+                let crc = hal::unmask! {
+                    crc(p.crc),
+                    rcc::ahb1enr::crcen(crcen),
+                };
 
                 // "rst" need not be specified because it has an inert variant
-                // crc::cr::write(|w| {
-                //     w.polysize(crc.cr.polysize)
-                //         .preserve()
-                //         .rev_in(crc.cr.rev_in)
-                //         .preserve()
-                // });
+                hal::write! {
+                    crc::cr {
+                        polysize(crc.cr.polysize) => P32,
+                        rev_in(crc.cr.rev_in) => NoEffect,
+                        rev_out(crc.cr.rev_out) => NoEffect,
+                    },
+                    @base_addr(crc, addr_of_crc())
+                };
             });
         }
     }
@@ -204,7 +244,7 @@ mod tests {
 
             assert_eq!(
                 p.rcc.ahb1enr.flashen.type_id(),
-                TypeId::of::<rcc::ahb1enr::flashen::Enabled>()
+                TypeId::of::<rcc::ahb1enr::flashen::Flashen<rcc::ahb1enr::flashen::Enabled>>()
             );
         }
     }

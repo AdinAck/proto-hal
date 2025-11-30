@@ -19,6 +19,25 @@ impl Default for Numericity {
 }
 
 impl Numericity {
+    pub fn variants<'cx>(
+        &self,
+        model: &'cx Model,
+    ) -> Option<impl Iterator<Item = View<'cx, VariantNode>>> {
+        match self {
+            Numericity::Numeric(..) => None,
+            Numericity::Enumerated(enumerated) => Some(enumerated.variants(model)),
+        }
+    }
+
+    /// View an inert variant if one exists. If there is more than one, the variant returned
+    /// is not guaranteed to be any particular one, nor consistent. If the numericity is
+    /// [`Numeric`](Numericity::Numeric), [`None`] is returned.
+    pub fn some_inert<'cx>(&self, model: &'cx Model) -> Option<&'cx Variant> {
+        self.variants(model)?
+            .map(|view| &view.variant)
+            .find(|variant| variant.inert)
+    }
+
     pub(in crate::structures) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
         match self {
             Numericity::Numeric(..) => {
@@ -61,8 +80,7 @@ impl Enumerated {
     }
 
     /// View an inert variant if one exists. If there is more than one, the variant returned
-    /// is not guaranteed to be any particular one, nor consistent. If the numericity is
-    /// [`Numeric`](Numericity::Numeric), [`None`] is returned.
+    /// is not guaranteed to be any particular one, nor consistent.
     pub fn some_inert<'cx>(&self, model: &'cx Model) -> Option<&'cx Variant> {
         self.variants(model)
             .map(|view| &view.variant)

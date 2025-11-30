@@ -11,7 +11,7 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, scan_entitlements, suggestions, unique_field_ident},
+        utils::{render_diagnostics, scan_entitlements, module_suggestions, unique_field_ident},
     },
     parsing::semantic::{self, policies},
 };
@@ -131,11 +131,11 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         }
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let constraints = (!constraints.is_empty()).then_some(quote! {
-        where #(#constraints)*
+        where #(#constraints,)*
     });
 
     let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });

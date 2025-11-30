@@ -9,7 +9,9 @@ use crate::codegen::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{render_diagnostics, return_rank::ReturnRank, suggestions, unique_register_ident},
+        utils::{
+            module_suggestions, render_diagnostics, return_rank::ReturnRank, unique_register_ident,
+        },
     },
     parsing::{
         semantic::{self, policies},
@@ -49,7 +51,7 @@ pub fn read_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input(&input, |_| true);

@@ -9,7 +9,7 @@ use crate::codegen::macros::{
     diagnostic::Diagnostics,
     gates::{
         fragments,
-        utils::{mask, render_diagnostics, suggestions, unique_field_ident},
+        utils::{mask, render_diagnostics, module_suggestions, unique_field_ident},
     },
     parsing::{
         semantic::{self, policies},
@@ -63,7 +63,7 @@ fn write_untracked(scheme: Scheme, model: &Model, tokens: TokenStream) -> TokenS
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let mut parameter_idents = Vec::new();

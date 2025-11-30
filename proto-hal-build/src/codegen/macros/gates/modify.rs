@@ -14,8 +14,8 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            mask, render_diagnostics, return_rank::ReturnRank, scan_entitlements, static_initial,
-            suggestions, unique_field_ident, unique_register_ident,
+            mask, module_suggestions, render_diagnostics, return_rank::ReturnRank,
+            scan_entitlements, static_initial, unique_field_ident, unique_register_ident,
         },
     },
     parsing::{
@@ -62,7 +62,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input(&input, |field_item| {
@@ -93,7 +93,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let mut generics = Vec::new();
     let mut parameter_idents = Vec::new();
     let mut parameter_tys = Vec::new();
-    let mut return_tys = Vec::new();
+    let mut transition_return_tys = Vec::new();
     let mut constraints = Vec::new();
     let mut read_reg_idents = Vec::new();
     let mut read_addrs = Vec::new();
@@ -193,7 +193,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             }
 
             if let Some(return_ty) = return_ty {
-                return_tys.push(return_ty);
+                transition_return_tys.push(return_ty);
                 conjures.push(fragments::conjure());
             }
 
@@ -243,20 +243,22 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });
     let semicolon = in_place.then_some(quote! { ; });
 
-    let return_ty_with_arrow = return_ty
-        .as_ref()
-        .map(|return_ty| quote! { -> (#return_ty) });
-
     let return_binding = return_idents
         .as_ref()
         .map(|return_idents| quote! { let (#return_idents) = #return_init; });
+
+    let return_y = return_ty.as_ref().map(|return_ty| quote! { , #return_ty });
+
+    let return_x = return_idents
+        .as_ref()
+        .map(|return_idents| quote! { , #return_idents });
 
     let body = quote! {
         #cs
 
         #return_def
 
-        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) #return_ty_with_arrow #constraints {
+        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#(#transition_return_tys),* #return_y) #constraints {
             #(
                 let #read_reg_idents = unsafe {
                     ::core::ptr::read_volatile(#read_addrs as *const u32)
@@ -274,15 +276,19 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 };
             )*
 
-            (#return_idents)
+            unsafe { (#(#conjures),* #return_x) }
         }
 
-        gate(#(#arguments)*)
+        gate(#(#arguments),*)
     };
 
     let body = if cs.is_none() {
         quote! {
+
             ::proto_hal::critical_section::with(|_| {
+                #suggestions
+                #errors
+
                 #body
             })
         }
@@ -366,16 +372,30 @@ fn field_is_unentangled<'cx>(
     field: &View<'cx, FieldNode>,
 ) -> bool {
     for other_field_item in input.visit_fields() {
+        let other_field_numericity = other_field_item.field().resolvable();
+
         for entitlement_set in other_field_item
             .field()
             .write_entitlements()
-            .iter()
-            .chain(other_field_item.field().ontological_entitlements().iter())
+            .into_iter()
+            .chain(
+                other_field_item
+                    .field()
+                    .ontological_entitlements()
+                    .into_iter(),
+            )
             .chain(
                 other_field_item
                     .field()
                     .hardware_write_entitlements()
-                    .iter(),
+                    .into_iter(),
+            )
+            .chain(
+                other_field_numericity
+                    .iter()
+                    .flat_map(|numericity| numericity.variants(model))
+                    .flatten()
+                    .flat_map(|variant| variant.statewise_entitlements().into_iter()),
             )
         {
             for entitlement in *entitlement_set.as_ref() {

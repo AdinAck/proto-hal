@@ -10,7 +10,7 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            render_diagnostics, return_rank::ReturnRank, suggestions, unique_field_ident,
+            module_suggestions, render_diagnostics, return_rank::ReturnRank, unique_field_ident,
             unique_register_ident,
         },
     },
@@ -52,7 +52,7 @@ pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input(&input, |_| true);

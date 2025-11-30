@@ -10,8 +10,8 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            mask, render_diagnostics, return_rank::ReturnRank, suggestions, unique_field_ident,
-            unique_register_ident,
+            mask, module_suggestions, render_diagnostics, return_rank::ReturnRank,
+            unique_field_ident, unique_register_ident,
         },
     },
     parsing::{
@@ -49,7 +49,7 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
         };
     }
 
-    let suggestions = suggestions(&args, &diagnostics);
+    let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
     let return_rank =
