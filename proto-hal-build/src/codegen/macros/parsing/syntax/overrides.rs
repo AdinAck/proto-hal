@@ -25,10 +25,16 @@ impl Parse for Override {
                 let peripheral_ident = block.parse()?;
                 block.parse::<Comma>()?;
                 let addr = block.parse::<Expr>()?;
+
                 Self::BaseAddress(peripheral_ident, addr)
             }
             "critical_section" => Self::CriticalSection(block.parse()?),
-            _unknown => Self::Unknown(ident),
+            _unknown => {
+                // pop unused tokens
+                block.parse_terminated(Expr::parse, Comma)?;
+
+                Self::Unknown(ident)
+            }
         })
     }
 }
