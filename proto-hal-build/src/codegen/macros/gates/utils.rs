@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 use indexmap::{IndexMap, IndexSet};
 use model::structures::{
     entitlement::Entitlement,
-    field::{Field, FieldIndex, numericity::Numericity},
+    field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
     register::Register,
@@ -19,7 +19,7 @@ use crate::codegen::macros::{
     parsing::{
         semantic::{
             self, FieldEntry, FieldItem, PeripheralEntry, RegisterItem,
-            policies::{Refine, field::RequireBinding},
+            policies::{self, Refine, field::RequireBinding},
         },
         syntax,
     },
@@ -195,4 +195,50 @@ pub fn static_initial<'cx>(
         .unwrap_or(0);
 
     NonZeroU32::new((inert & !mask.map(|value| value.get()).unwrap_or(0)) | statics)
+}
+
+pub fn field_is_entangled<'cx, EntryPolicy>(
+    model: &'cx Model,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
+    field: &View<'cx, FieldNode>,
+) -> bool
+where
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
+{
+    for other_field_item in input.visit_fields() {
+        let other_field_numericity = other_field_item.field().resolvable();
+
+        for entitlement_set in other_field_item
+            .field()
+            .write_entitlements()
+            .into_iter()
+            .chain(
+                other_field_item
+                    .field()
+                    .ontological_entitlements()
+                    .into_iter(),
+            )
+            .chain(
+                other_field_item
+                    .field()
+                    .hardware_write_entitlements()
+                    .into_iter(),
+            )
+            .chain(
+                other_field_numericity
+                    .iter()
+                    .flat_map(|numericity| numericity.variants(model))
+                    .flatten()
+                    .flat_map(|variant| variant.statewise_entitlements().into_iter()),
+            )
+        {
+            for entitlement in *entitlement_set.as_ref() {
+                if entitlement.field(model).index() == field.index() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }

@@ -52,7 +52,7 @@ pub fn constraints<'cx>(
     }
 
     if binding.is_mutated()
-        && let Some(write_entitlements) = write_entitlements(input, field, input_ty, span)
+        && let Some(write_entitlements) = write_entitlements(input, model, field, input_ty, span)
     {
         constraints.extend(write_entitlements);
     }
@@ -80,6 +80,7 @@ fn write_entitlements<'cx>(
         policies::peripheral::ForbidPath,
         policies::field::RequireBinding<'cx>,
     >,
+    model: &Model,
     field: &View<'cx, FieldNode>,
     input_ty: &TokenStream,
     span: Span,
@@ -102,8 +103,12 @@ fn write_entitlements<'cx>(
             entitlement_field.module_name().to_string(),
         )?;
 
-        let (entitlement_input_generic, ..) =
-            fragments::generics(entitlement_register_item, entitlement_field_item);
+        let (entitlement_input_generic, ..) = fragments::generics(
+            model,
+            input,
+            entitlement_register_item,
+            entitlement_field_item,
+        );
 
         let entitlement_input_ty = fragments::input_ty(
             &entitlement_register_item.path(),
@@ -171,8 +176,12 @@ fn statewise_entitlements<'cx>(
             entitlement_field.module_name().to_string(),
         )?;
 
-        let (entitlement_input_generic, entitlement_output_generic) =
-            fragments::generics(entitlement_register_item, entitlement_field_item);
+        let (entitlement_input_generic, entitlement_output_generic) = fragments::generics(
+            model,
+            input,
+            entitlement_register_item,
+            entitlement_field_item,
+        );
 
         let entitlement_return_ty = fragments::transition_return_ty(
             &entitlement_register_item.path(),

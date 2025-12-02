@@ -92,7 +92,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 static_initial(model, register_item).map(|value| value.get().to_token_stream()),
                 |register_item, field_item| {
                     let (input_generic, output_generic) =
-                        fragments::generics(register_item, field_item);
+                        fragments::generics(model, &input, register_item, field_item);
 
                     Some(match (field_item.entry(), input_generic, output_generic) {
                         (RequireBinding::DynamicTransition(..), ..) => {
@@ -126,7 +126,8 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 rebinds.push(binding.as_ref());
             }
 
-            let (input_generic, output_generic) = fragments::generics(register_item, field_item);
+            let (input_generic, output_generic) =
+                fragments::generics(model, &input, register_item, field_item);
 
             let input_ty = fragments::input_ty(
                 &register_path,

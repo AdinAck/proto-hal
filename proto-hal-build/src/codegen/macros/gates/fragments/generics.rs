@@ -1,14 +1,24 @@
+use model::structures::model::Model;
 use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 
-use crate::codegen::macros::parsing::semantic::{
-    self, FieldItem, RegisterItem, policies::field::RequireBinding,
+use crate::codegen::macros::{
+    gates::utils::field_is_entangled,
+    parsing::semantic::{
+        self, FieldEntry, FieldItem, RegisterItem,
+        policies::{self, Refine, field::RequireBinding},
+    },
 };
 
-pub fn generics<'cx>(
+pub fn generics<'cx, EntryPolicy>(
+    model: &'cx Model,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
     register_item: &RegisterItem<'cx, RequireBinding<'cx>>,
     field_item: &FieldItem<'cx, RequireBinding<'cx>>,
-) -> (Option<Ident>, Option<Ident>) {
+) -> (Option<Ident>, Option<Ident>)
+where
+    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
+{
     let input_generic = format_ident!(
         "{}{}{}",
         register_item.peripheral().type_name(),
@@ -17,8 +27,9 @@ pub fn generics<'cx>(
     );
 
     match field_item.entry() {
-        RequireBinding::View(..) => (Some(input_generic), None),
-        RequireBinding::Dynamic(..) | RequireBinding::DynamicTransition(..) => (None, None),
+        RequireBinding::View(..) if field_is_entangled(model, input, field_item.field()) => {
+            (Some(input_generic), None)
+        }
         RequireBinding::Static(.., transition) => (
             Some(input_generic.clone()),
             if let semantic::Transition::Expr(expr) = transition
@@ -29,5 +40,6 @@ pub fn generics<'cx>(
                 None
             },
         ),
+        _ => (None, None),
     }
 }

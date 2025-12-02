@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use model::structures::{
-    entitlement::EntitlementIndex,
-    field::{FieldNode, numericity::Numericity},
-    model::{Model, View},
+    entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
 };
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
@@ -14,8 +12,9 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            mask, module_suggestions, render_diagnostics, return_rank::ReturnRank,
-            scan_entitlements, static_initial, unique_field_ident, unique_register_ident,
+            field_is_entangled, mask, module_suggestions, render_diagnostics,
+            return_rank::ReturnRank, scan_entitlements, static_initial, unique_field_ident,
+            unique_register_ident,
         },
     },
     parsing::{
@@ -70,7 +69,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             return false;
         };
 
-        field_is_unentangled(model, &input, field_item.field())
+        !field_is_entangled(model, &input, field_item.field())
     });
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
@@ -160,7 +159,8 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 rebinds.push(binding.as_ref());
             }
 
-            let (input_generic, output_generic) = fragments::generics(register_item, field_item);
+            let (input_generic, output_generic) =
+                fragments::generics(model, &input, register_item, field_item);
 
             let input_ty = fragments::input_ty(
                 &register_path,
@@ -370,47 +370,4 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     }
 
     diagnostics
-}
-
-fn field_is_unentangled<'cx>(
-    model: &'cx Model,
-    input: &Input<'cx>,
-    field: &View<'cx, FieldNode>,
-) -> bool {
-    for other_field_item in input.visit_fields() {
-        let other_field_numericity = other_field_item.field().resolvable();
-
-        for entitlement_set in other_field_item
-            .field()
-            .write_entitlements()
-            .into_iter()
-            .chain(
-                other_field_item
-                    .field()
-                    .ontological_entitlements()
-                    .into_iter(),
-            )
-            .chain(
-                other_field_item
-                    .field()
-                    .hardware_write_entitlements()
-                    .into_iter(),
-            )
-            .chain(
-                other_field_numericity
-                    .iter()
-                    .flat_map(|numericity| numericity.variants(model))
-                    .flatten()
-                    .flat_map(|variant| variant.statewise_entitlements().into_iter()),
-            )
-        {
-            for entitlement in *entitlement_set.as_ref() {
-                if entitlement.field(model).index() == field.index() {
-                    return false;
-                }
-            }
-        }
-    }
-
-    true
 }
