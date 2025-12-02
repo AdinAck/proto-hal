@@ -125,7 +125,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         if register_item.fields().values().any(|field_item| {
             matches!(
                 field_item.entry(),
-                RequireBinding::Dynamic(..) | RequireBinding::Static(..)
+                RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
             )
         }) {
             let static_initial = static_initial(model, register_item)
@@ -143,7 +143,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 register_item,
                 Some(initial),
                 |r, f| {
-                    let RequireBinding::Dynamic(..) = f.entry() else {
+                    let RequireBinding::DynamicTransition(..) = f.entry() else {
                         None?
                     };
 
@@ -247,18 +247,24 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         .as_ref()
         .map(|return_idents| quote! { let (#return_idents) = #return_init; });
 
-    let return_y = return_ty.as_ref().map(|return_ty| quote! { , #return_ty });
+    let signature_return_tys = {
+        let tys = transition_return_tys.iter().chain(return_ty.iter());
 
-    let return_x = return_idents
-        .as_ref()
-        .map(|return_idents| quote! { , #return_idents });
+        quote! { #(#tys),* }
+    };
+
+    let body_returns = {
+        let items = conjures.iter().chain(return_idents.iter());
+
+        quote! { #(#items),* }
+    };
 
     let body = quote! {
         #cs
 
         #return_def
 
-        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#(#transition_return_tys),* #return_y) #constraints {
+        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#signature_return_tys) #constraints {
             #(
                 let #read_reg_idents = unsafe {
                     ::core::ptr::read_volatile(#read_addrs as *const u32)
@@ -276,7 +282,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 };
             )*
 
-            unsafe { (#(#conjures),* #return_x) }
+            unsafe { (#body_returns) }
         }
 
         gate(#(#arguments),*)
