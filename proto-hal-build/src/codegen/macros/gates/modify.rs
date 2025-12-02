@@ -12,7 +12,7 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            field_is_entangled, mask, module_suggestions, render_diagnostics,
+            binding_suggestions, field_is_entangled, mask, module_suggestions, render_diagnostics,
             return_rank::ReturnRank, scan_entitlements, static_initial, unique_field_ident,
             unique_register_ident,
         },
@@ -61,7 +61,12 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         };
     }
 
-    let suggestions = module_suggestions(&args, &diagnostics);
+    let module_suggestions = module_suggestions(&args, &diagnostics);
+    let binding_suggestions = binding_suggestions(&args, &diagnostics);
+    let suggestions = quote! {
+        #module_suggestions
+        #binding_suggestions
+    };
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input(&input, |field_item| {
@@ -247,7 +252,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         .as_ref()
         .map(|return_idents| quote! { let (#return_idents) = #return_init; });
 
-    let signature_return_tys = {
+    let return_tys = {
         let tys = transition_return_tys.iter().chain(return_ty.iter());
 
         quote! { #(#tys),* }
@@ -264,7 +269,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
         #return_def
 
-        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#signature_return_tys) #constraints {
+        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#return_tys) #constraints {
             #(
                 let #read_reg_idents = unsafe {
                     ::core::ptr::read_volatile(#read_addrs as *const u32)

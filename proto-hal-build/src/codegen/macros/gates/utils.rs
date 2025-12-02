@@ -1,6 +1,6 @@
 pub mod return_rank;
 
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, ops::Deref};
 
 use indexmap::{IndexMap, IndexSet};
 use model::structures::{
@@ -81,6 +81,30 @@ pub fn module_suggestions(args: &syntax::Gate, diagnostics: &Diagnostics) -> Opt
                         use #path;
                     }
                 })
+                .collect(),
+        )
+    }
+}
+
+pub fn binding_suggestions(args: &syntax::Gate, diagnostics: &Diagnostics) -> Option<TokenStream> {
+    fn bindings_in_tree<'t>(
+        tree: &'t syntax::Tree,
+    ) -> Box<dyn Iterator<Item = &'t syntax::Binding> + 't> {
+        match &tree.node {
+            syntax::Node::Branch(children) => Box::new(children.iter().flat_map(bindings_in_tree)),
+            syntax::Node::Leaf(entry) => Box::new(entry.binding.iter()),
+        }
+    }
+
+    if diagnostics.is_empty() {
+        None
+    } else {
+        Some(
+            args.trees
+                .iter()
+                .flat_map(|tree| bindings_in_tree(tree))
+                .map(Deref::deref)
+                .map(|binding| quote! { let _ = #binding; })
                 .collect(),
         )
     }
