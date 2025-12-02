@@ -1,4 +1,15 @@
 [workspace]
-members = ["proto-hal", "proto-hal-build", "ir", "tests/g4", "tests/abstract"]
-exclude = ["debug-bin"]
+members = ["proto-hal", "proto-hal-build", "model", "tests/g4/out", "tests/abstract/out", "proto-hal-macros"]
+exclude = ["debug-bin", "tests/abstract/macros"]
 resolver = "2"
+
+[workspace.dependencies]
+colored = "3.0.0"
+derive_more = { version = "2.0.1", features = ["as_ref", "deref", "deref_mut", "from"] }
+indexmap = "2.11.4"
+Inflector = "0.11.4"
+proc-macro2 = { version = "1.0.101", features = ["span-locations"] }
+quote = "1.0.41"
+syn = { version = "2.0.106", features = ["full", "extra-traits"] }
+ters = "0.2.0"
+tiva = "0.3.0"

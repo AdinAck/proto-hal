@@ -1,4 +1,4 @@
-use g4_model::DeviceVariant;
+use g4_model::{DeviceVariant, model};
 
 fn main() {
     env_logger::init();
@@ -9,6 +9,6 @@ fn main() {
         DeviceVariant::G484,
     ] {
         println!("=== Variant: {variant:?} ===");
-        proto_hal_build::codegen::validate(|| g4_model::generate(variant));
+        proto_hal_build::codegen::render::validate(&model(variant));
     }
 }

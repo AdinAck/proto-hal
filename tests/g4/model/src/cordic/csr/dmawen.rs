@@ -1,21 +1,10 @@
-use proto_hal_build::ir::{
-    access::Access,
-    structures::{
-        field::{Field, Numericity},
-        variant::Variant,
-    },
-};
+use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
 
-pub fn generate() -> Field {
-    Field::new(
-        "dmawen",
-        18,
-        1,
-        Access::read_write(Numericity::enumerated([
-            Variant::new("Disabled", 0).docs(["No DMA write requests are generated."]),
-            Variant::new("Enabled", 1).docs([
-                "Requests are generated on the DMA write channel whenever no operation is pending.",
-            ]),
-        ])),
-    )
+pub fn dmawen<'cx>(csr: &mut RegisterEntry<'cx>) {
+    let mut dmaren = csr.add_store_field(Field::new("dmawen", 18, 1));
+
+    dmaren.add_variant(Variant::new("Disabled", 0).docs(["No DMA write requests are generated."]));
+    dmaren.add_variant(Variant::new("Enabled", 1).docs([
+        "Requests are generated on the DMA write channel whenever no operation is pending.",
+    ]));
 }

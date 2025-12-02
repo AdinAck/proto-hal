@@ -1,0 +1,12 @@
+[package]
+name = "abstract-macros"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+model = { package = "abstract-model", path = "../model" }
+proto-hal-build = { path = "../../../proto-hal-build" }
+proto-hal-macros = { path = "../../../proto-hal-macros" }
+
+[lib]
+proc-macro = true

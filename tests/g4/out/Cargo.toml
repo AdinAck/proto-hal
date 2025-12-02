@@ -1,0 +1,24 @@
+[package]
+name = "g4"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proto-hal = { path = "../../../proto-hal" }
+macros = { package = "g4-macros", path = "../macros" }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[build-dependencies]
+model = { package = "g4-model", path = "../model" }
+proto-hal-build = { path = "../../../proto-hal-build" }
+
+[features]
+default = ["g484"]
+g431 = []
+g441 = []
+g474 = []
+g484 = []
+
+interrupts = []

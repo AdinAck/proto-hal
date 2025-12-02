@@ -1,0 +1,17 @@
+[package]
+name = "model"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+colored = { workspace = true }
+derive_more = { workspace = true }
+indexmap = { workspace = true }
+Inflector = { workspace = true }
+log = "0.4.27"
+prettyplease = "0.2.32"
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+ters = { workspace = true }
+tiva = { workspace = true }

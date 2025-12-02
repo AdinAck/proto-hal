@@ -1,7 +1,6 @@
-use proto_hal_build::ir::{
-    structures::{hal::Hal, interrupts::Interrupt},
-    utils::diagnostic::Diagnostics,
-};
+use proto_hal_build::model::structures::{interrupts::Interrupt, model::Model};
+
+use crate::{cordic::cordic, crc::crc, rcc::rcc};
 
 pub mod cordic;
 pub mod crc;
@@ -15,7 +14,7 @@ pub enum DeviceVariant {
     G484,
 }
 
-pub fn generate(variant: DeviceVariant) -> (Hal, Diagnostics) {
+pub fn model(variant: DeviceVariant) -> Model {
     let extra_interrupts = |interrupt| {
         if matches!(variant, DeviceVariant::G474 | DeviceVariant::G484) {
             interrupt
@@ -24,7 +23,7 @@ pub fn generate(variant: DeviceVariant) -> (Hal, Diagnostics) {
         }
     };
 
-    let hal = Hal::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts([
+    let mut model = Model::new().with_interrupts([
         Interrupt::handler("WWDG").docs(["Window Watchdog"]),
         Interrupt::handler("PVD_PVM").docs(["PVD through EXTI line detection"]),
         Interrupt::handler("RTC_TAMP_CSS_LSE"),
@@ -129,7 +128,11 @@ pub fn generate(variant: DeviceVariant) -> (Hal, Diagnostics) {
         Interrupt::handler("FMAC"),
     ]);
 
-    let diagnostics = hal.validate();
+    // Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts()
 
-    (hal, diagnostics)
+    let rcc::Output { cordicen, crcen } = rcc(&mut model);
+    cordic(&mut model, cordicen);
+    crc(&mut model, crcen);
+
+    model
 }

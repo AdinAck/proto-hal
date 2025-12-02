@@ -1,54 +1,46 @@
-use proto_hal_build::ir::{
-    access::Access,
-    structures::{
-        entitlement::Entitlement,
-        field::{Field, Numericity},
-        variant::Variant,
-    },
+use proto_hal_build::model::structures::{
+    entitlement::Entitlement, field::Field, model::RegisterEntry, variant::Variant,
 };
 
-pub fn generate() -> Field {
-    let scale = |variant: &str| format!("cordic::csr::scale::{variant}");
+pub struct Entitlements {
+    pub n0: Entitlement,
+    pub n1: Entitlement,
+    pub n2: Entitlement,
+    pub n3: Entitlement,
+    pub n4: Entitlement,
+}
+
+pub fn func<'cx>(csr: &mut RegisterEntry<'cx>, entitlements: Entitlements) {
+    let mut func = csr.add_store_field(Field::new("func", 0, 4));
 
     let variants = [
-        ("cos", vec![Entitlement::to(scale("N0"))]),
-        ("sin", vec![Entitlement::to(scale("N0"))]),
-        ("atan2", vec![Entitlement::to(scale("N0"))]),
-        ("magnitude", vec![Entitlement::to(scale("N0"))]),
+        ("cos", vec![entitlements.n0]),
+        ("sin", vec![entitlements.n0]),
+        ("atan2", vec![entitlements.n0]),
+        ("magnitude", vec![entitlements.n0]),
         ("atan", vec![]),
-        ("cosh", vec![Entitlement::to(scale("N0"))]),
-        ("sinh", vec![Entitlement::to(scale("N0"))]),
-        ("atanh", vec![Entitlement::to(scale("N0"))]),
+        ("cosh", vec![entitlements.n0]),
+        ("sinh", vec![entitlements.n0]),
+        ("atanh", vec![entitlements.n0]),
         (
             "ln",
             vec![
-                Entitlement::to(scale("N1")),
-                Entitlement::to(scale("N2")),
-                Entitlement::to(scale("N3")),
-                Entitlement::to(scale("N4")),
+                entitlements.n1,
+                entitlements.n2,
+                entitlements.n3,
+                entitlements.n4,
             ],
         ),
         (
             "sqrt",
-            vec![
-                Entitlement::to(scale("N0")),
-                Entitlement::to(scale("N1")),
-                Entitlement::to(scale("N2")),
-            ],
+            vec![entitlements.n0, entitlements.n1, entitlements.n2],
         ),
     ];
 
-    let variants = variants
-        .into_iter()
-        .enumerate()
-        .map(|(bits, (ident, entitlements))| {
-            Variant::new(ident, bits as u32).entitlements(entitlements)
-        });
+    let variants = variants.into_iter().enumerate();
 
-    Field::new(
-        "func",
-        0,
-        4,
-        Access::read_write(Numericity::enumerated(variants)),
-    )
+    for (bits, (ident, entitlements)) in variants {
+        let mut variant = func.add_variant(Variant::new(ident, bits as _));
+        variant.statewise_entitlements(entitlements);
+    }
 }

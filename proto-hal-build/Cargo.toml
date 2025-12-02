@@ -4,5 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ir = { path = "../ir" }
-colored = "3.0.0"
+colored = { workspace = true }
+derive_more.workspace = true
+indexmap = { workspace = true }
+Inflector = { workspace = true }
+model = { path = "../model" }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+ters = { workspace = true }

@@ -1,19 +1,11 @@
-use proto_hal_build::ir::{
-    access::Access,
-    structures::{
-        field::{Field, Numericity},
-        variant::Variant,
-    },
-};
+use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
 
-pub fn generate() -> Field {
-    Field::new(
-        "rst",
-        0,
-        1,
-        Access::read_write_asymmetrical(
-            Numericity::enumerated([Variant::new("Clear", 0), Variant::new("Set", 1)]),
-            Numericity::enumerated([Variant::new("Noop", 0).inert(), Variant::new("Set", 1)]),
-        ),
-    )
+pub fn rst<'cx>(cr: &mut RegisterEntry<'cx>) {
+    let mut rst = cr.add_read_write_field(Field::new("rst", 0, 1));
+
+    rst.add_read_variant(Variant::new("Clear", 0));
+    rst.add_read_variant(Variant::new("Set", 1));
+
+    rst.add_write_variant(Variant::new("Noop", 0).inert());
+    rst.add_write_variant(Variant::new("Set", 1));
 }

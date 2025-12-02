@@ -1,0 +1,19 @@
+[package]
+name = "g4-macros"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+model = { package = "g4-model", path = "../model" }
+proto-hal-build = { path = "../../../proto-hal-build" }
+proto-hal-macros = { path = "../../../proto-hal-macros" }
+
+[features]
+default = ["g484"]
+g431 = []
+g441 = []
+g474 = []
+g484 = []
+
+[lib]
+proc-macro = true

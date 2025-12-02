@@ -1,20 +1,23 @@
-use proto_hal_build::ir::{
-    access::Access,
-    structures::{
-        field::{Field, Numericity},
-        variant::Variant,
-    },
+use proto_hal_build::model::structures::{
+    entitlement::Entitlement, field::Field, model::RegisterEntry, variant::Variant,
 };
 
-pub fn generate() -> Field {
-    Field::new(
-        "argsize",
-        22,
-        1,
-        Access::read_write(Numericity::enumerated([
-            Variant::new("Q31", 0).docs(["1 sign bit, 31 fractional bits."]),
-            Variant::new("Q15", 1).docs(["1 sign bit, 15 fractional bits."]),
-        ])),
-    )
-    .docs(["The value format used for arguments."])
+pub struct Output {
+    pub q15: Entitlement,
+    pub q31: Entitlement,
+}
+
+pub fn argsize<'cx>(csr: &mut RegisterEntry<'cx>) -> Output {
+    let mut argsize = csr.add_store_field(
+        Field::new("argsize", 22, 1).docs(["The value format used for arguments."]),
+    );
+
+    Output {
+        q31: argsize
+            .add_variant(Variant::new("Q31", 0).docs(["1 sign bit, 31 fractional bits."]))
+            .make_entitlement(),
+        q15: argsize
+            .add_variant(Variant::new("Q15", 1).docs(["1 sign bit, 15 fractional bits."]))
+            .make_entitlement(),
+    }
 }

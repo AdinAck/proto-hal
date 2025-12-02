@@ -1,180 +1,160 @@
-use core::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+//! This module contains the infrastructure proto-hal employs to coerce the Rust compiler into
+//! enforcing *stasis*.
+//!
+//! Stasis is the foundational principle upon which proto-hal operates. The idea that
+//! types can portray hardware state, and transitioning *state* is represented as transmuting
+//! *type*.
 
-/// A trait providing an interface to freeze stateful types.
-pub trait Freeze: Sized {
-    fn freeze<const N: usize>(self) -> (Frozen<Self, N>, [Entitlement<Self>; N]) {
-        (
-            Frozen { resource: self },
-            core::array::from_fn(|_| Entitlement { _p: PhantomData }), // this may introduce overhead, will have to investigate (seems not to)
-        )
-    }
+use core::marker::PhantomData;
+
+/// Implementors of this trait are type-states corresponding to some parent resource.
+///
+/// # Safety
+/// Implementing this trait is a contract that the implementor is a type-state of the parent.
+/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
+/// undefined behavior.
+pub unsafe trait State<Parent>: Conjure {
+    /// The physical value the state denotes.
+    const VALUE: u32;
 }
 
-/// A struct to represent an entitlement
-/// to a type frozen in a particular state.
-pub struct Entitlement<Resource>
-where
-    Resource: Freeze,
-{
-    _p: PhantomData<Resource>,
+/// Implementors of this trait are type-stated resources with entitlement constraints.
+/// Many kinds of resources can be entitled in any of the following ways:
+///
+/// ## Statewise
+/// State inhabitancy can be dependent on other state(s) inhabitancy.
+///
+/// ### Example
+/// If a state of a field is entitled to a some set of other states in other fields, then
+/// transitioning *to* this state requires proof that the dependency states will be inhabited
+/// when the transition is complete.
+///
+/// ## Affordance
+/// The ability to and quality of interacting with a field can be dependent on state(s)
+/// inhabitancy.
+///
+/// ### Example
+/// If write access to a field is entitled to some set of other states in other fields, then
+/// *writing to* this field requires proof that the dependency states are inhabited.
+///
+/// ## Ontology
+/// The existance a field can be dependent on state(s) inhabitancy.
+///
+/// ### Example
+/// The interpretation of the bits in a register is not always fixed. In other words, the
+/// *fields* of a register can change. Some fields within the same register may be
+/// superpositioned if the fields themselves are entitled to complementary states.
+///
+/// # Safety
+/// Implementing this trait is a contract that the implementor is a resource in which said resource
+/// implementing this trait conforms to the device model.
+/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
+/// undefined behavior.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has entitlements, but `{Locus}` is not one of them",
+    label = "not entitled to `{Locus}`",
+    // note = "learn more: <docs link>"
+)]
+pub unsafe trait Entitled<Locus> {}
+
+/// Implementors of this trait are type-stated resources. Since device resources have no size,
+/// they must be "conjured" when the type context requires them to be.
+pub trait Conjure {
+    /// Produce the resource out of thin air.
+    ///
+    /// # Safety
+    ///
+    /// If the production of the resource is contextually unsound (meaning it violates or is
+    /// performed external to the device model) this action renders hardware invariance claims
+    /// to be moot.
+    unsafe fn conjure() -> Self;
 }
 
-impl<P> From<P> for Entitlement<P>
-where
-    P: Freeze,
-{
-    fn from(_: P) -> Self {
-        Self { _p: PhantomData }
-    }
-}
-
-impl<P> Conjure for Entitlement<P>
-where
-    P: Freeze,
-{
-    unsafe fn conjure() -> Self {
-        Self { _p: PhantomData }
-    }
-}
-
-/// A struct to hold stateful types where
-/// the state is frozen.
-pub struct Frozen<Resource, const ENTITLEMENTS: usize>
-where
-    Resource: Freeze,
-{
+/// A container for a resource that is forbidden from being *changed*.
+pub struct Frozen<Resource, Key> {
+    /// The resource which is frozen.
     resource: Resource,
+    /// The resource consumed to unfreeze the frozen resource.
+    _key: PhantomData<Key>,
 }
 
-impl<Resource: Freeze, const ENTITLEMENTS: usize> Deref for Frozen<Resource, ENTITLEMENTS> {
-    type Target = Resource;
-
-    fn deref(&self) -> &Self::Target {
-        &self.resource
+impl<Resource, Key> Frozen<Resource, Key>
+where
+    Resource: Conjure,
+{
+    /// Freeze a resource, ensuring the resource is not destructively
+    /// mutated or moved.
+    ///
+    /// # Safety
+    ///
+    /// If the specified key [`K`] is invalid given the entanglements of the resource,
+    /// the invariances assumed by the freezing of the resource are rendered moot.
+    pub unsafe fn freeze<K>(resource: Resource) -> Frozen<Resource, K> {
+        Frozen {
+            resource,
+            _key: PhantomData,
+        }
     }
-}
 
-impl<Resource: Freeze, const ENTITLEMENTS: usize> DerefMut for Frozen<Resource, ENTITLEMENTS> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.resource
-    }
-}
-
-impl<Resource: Freeze, const ENTITLEMENTS: usize> Frozen<Resource, ENTITLEMENTS> {
-    pub fn release(
-        self,
-        #[expect(unused)] entitlements: [Entitlement<Resource>; ENTITLEMENTS],
-    ) -> Resource {
+    /// Provide the required key to retrieve the resource.
+    pub fn unfreeze(self, #[expect(unused)] key: Key) -> Resource {
         self.resource
     }
 }
 
-pub trait EntitlementLock: Sized {
-    type Resource: Freeze;
-}
-
-impl<Resource: Freeze> EntitlementLock for Resource {
-    type Resource = Self;
-}
-
-impl<Resource: Freeze> EntitlementLock for Entitlement<Resource> {
-    type Resource = Resource;
-}
-
-/// Indicates a type-state is
-/// entitled to another type-state.
-///
-/// # Safety
-///
-/// If a type implements this trait
-/// erroneously, the generated
-/// peripheral interfaces will be invalid.
-pub unsafe trait Entitled<State> {}
-
-/// A marker type for
-/// an unsatisfied entitlement.
-pub struct Unsatisfied;
-
-/// A marker type for
-/// an unavailable resource.
-pub struct Unavailable;
-
-/// A marker type for an unresolved state.
-pub struct Unresolved;
-
-/// To satisfy state-wise entitlement constrains when the states are not tracked,
-/// this impl is needed.
-unsafe impl Entitled<Self> for Unresolved {}
-
-pub trait PartialConjure {
-    type Target;
-
-    /// # Safety
-    /// Produce a value where the invariants of the value's existance
-    /// are upheld by the user.
-    unsafe fn partial_conjure() -> Self::Target;
-}
-
-pub trait Conjure {
-    /// # Safety
-    /// Produce a value where the invariants of the value's existence
-    /// are upheld by the user.
-    unsafe fn conjure() -> Self;
-}
-
-impl<T> PartialConjure for T
+impl<Resource, Key> Conjure for Frozen<Resource, Key>
 where
-    T: Conjure,
+    Resource: Conjure,
 {
-    type Target = Self;
-
-    unsafe fn partial_conjure() -> Self::Target {
-        unsafe { Self::conjure() }
-    }
-}
-
-pub trait Emplace<Writer> {
-    fn set(&self, w: &mut Writer);
-}
-
-// Effectively "!Unresolved".
-pub trait Corporeal {}
-
-pub trait Position<T> {}
-pub trait Outgoing<T>: Position<T> {}
-pub trait Incoming<T>: Position<T> + Corporeal + Conjure {
-    type Raw;
-    const RAW: Self::Raw;
-}
-
-impl Conjure for Unresolved {
     unsafe fn conjure() -> Self {
-        Self
+        Self {
+            resource: unsafe { Conjure::conjure() },
+            _key: PhantomData,
+        }
     }
 }
 
-impl<Writer> Emplace<Writer> for Unresolved {
-    fn set(&self, #[expect(unused)] w: &mut Writer) {
-        // do nothing
-    }
+/// A marker type for a dynamic state.
+pub struct Dynamic {
+    _sealed: (),
 }
 
-impl<T> Position<T> for Unresolved {}
-
-impl Conjure for Unavailable {
+impl Conjure for Dynamic {
     unsafe fn conjure() -> Self {
-        Self
+        Dynamic { _sealed: () }
     }
 }
 
-impl<Writer> Emplace<Writer> for Unavailable {
-    fn set(&self, #[expect(unused)] w: &mut Writer) {
-        // do nothing
-    }
+macro_rules! numerics {
+    {
+        $($name:ident ($ty:ty) $(,)?)*
+    } => {
+        $(
+            pub struct $name<const V: $ty> {
+                _sealed: (),
+            }
+
+            impl<const V: $ty> Conjure for $name<V> {
+                unsafe fn conjure() -> Self {
+                    Self { _sealed: () }
+                }
+            }
+
+            impl<const V: $ty> $name<V> {
+                pub fn value() -> $ty {
+                    V
+                }
+            }
+        )*
+    };
 }
 
-impl Corporeal for Unavailable {}
-impl<T> Position<T> for Unavailable {}
+numerics! {
+    Bool(bool),
+    UInt8(u8),
+    Int8(i8),
+    UInt16(u16),
+    Int16(i16),
+    UInt32(u32),
+    Int32(i32),
+}
