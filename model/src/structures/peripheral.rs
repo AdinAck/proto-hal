@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use derive_more::{AsRef, Deref};
 use indexmap::IndexMap;
 use inflector::Inflector as _;
@@ -89,15 +91,21 @@ impl<'cx> View<'cx, PeripheralNode> {
             .unwrap_or(0)
     }
 
+    /// The domain of the device in which the peripheral occupies.
+    #[inline]
+    pub fn domain(&self) -> Range<u32> {
+        self.base_addr..(self.base_addr + self.width())
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.ident.clone().to_string());
 
         if !self.base_addr.is_multiple_of(4) {
-            diagnostics.insert(
-                Diagnostic::error("peripheral address must be word aligned.")
-                    .with_context(new_context.clone()),
-            );
+            diagnostics.insert(Diagnostic::address_unaligned(
+                self.base_addr,
+                new_context.clone(),
+            ));
         }
 
         let mut sorted_registers = self.registers().collect::<Vec<_>>();
@@ -108,13 +116,12 @@ impl<'cx> View<'cx, PeripheralNode> {
             let rhs = &window[1];
 
             if lhs.offset + 4 > rhs.offset {
-                diagnostics.insert(
-                    Diagnostic::error(format!(
-                        "registers [{}] and [{}] overlap.",
-                        lhs.ident, rhs.ident
-                    ))
-                    .with_context(new_context.clone()),
-                );
+                diagnostics.insert(Diagnostic::overlap(
+                    &lhs.module_name(),
+                    &rhs.module_name(),
+                    &format!("0x{:x}...0x{:x}", rhs.offset, lhs.offset + 3),
+                    new_context.clone(),
+                ));
             }
         }
 

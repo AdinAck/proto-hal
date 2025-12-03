@@ -20,12 +20,12 @@ pub fn validate(hal: &Model) {
 
     let warning_count = diagnostics
         .iter()
-        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Warning))
+        .filter(|diagnostic| matches!(diagnostic.rank(), diagnostic::Rank::Warning))
         .count();
 
     let error_count = diagnostics
         .iter()
-        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Error))
+        .filter(|diagnostic| matches!(diagnostic.rank(), diagnostic::Rank::Error))
         .count();
 
     if error_count == 0 {

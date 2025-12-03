@@ -12,12 +12,12 @@ fn generate(hal: &Model, output: impl FnOnce(&Model) -> Result<HashMap<String, S
 
     let warning_count = diagnostics
         .iter()
-        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Warning))
+        .filter(|diagnostic| matches!(diagnostic.rank(), diagnostic::Rank::Warning))
         .count();
 
     let error_count = diagnostics
         .iter()
-        .filter(|diagnostic| matches!(diagnostic.kind(), diagnostic::Kind::Error))
+        .filter(|diagnostic| matches!(diagnostic.rank(), diagnostic::Rank::Error))
         .count();
 
     match (warning_count, error_count) {

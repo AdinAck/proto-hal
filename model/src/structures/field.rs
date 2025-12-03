@@ -3,13 +3,12 @@ pub mod numericity;
 
 use std::{collections::HashSet, ops::Range};
 
-use colored::Colorize;
 use derive_more::{AsRef, Deref};
 use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident, Index, Path, Type, parse_quote};
+use syn::{Ident, Index};
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
@@ -110,36 +109,43 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
-    pub(crate) fn reset_ty(&self, path: Path, register_reset: Option<u32>) -> Type {
+    pub(crate) fn get_reset(&self, register_reset: u32) -> u32 {
+        let mask = u32::MAX >> (32 - self.width);
+        (register_reset >> self.offset) & mask
+    }
+
+    pub(crate) fn reset_ty(
+        &self,
+        path: &TokenStream,
+        register_reset: Option<u32>,
+    ) -> Option<TokenStream> {
         let Some(read) = self.access.get_read() else {
-            return parse_quote! { ::proto_hal::stasis::Dynamic };
+            return Some(quote! { ::proto_hal::stasis::Dynamic });
         };
 
         if !self.is_resolvable() {
-            return parse_quote! { ::proto_hal::stasis::Dynamic };
+            return Some(quote! { ::proto_hal::stasis::Dynamic });
         }
 
         let register_reset =
             register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
 
-        let mask = u32::MAX >> (32 - self.width);
-        let reset = (register_reset >> self.offset) & mask;
+        let reset = self.get_reset(register_reset);
 
         match &read {
             Numericity::Numeric(numeric) => {
                 let (.., ty) = numeric.ty(self.width);
                 let reset = Index::from(reset as usize);
 
-                parse_quote! { ::proto_hal::stasis::#ty<#reset> }
+                Some(quote! { ::proto_hal::stasis::#ty<#reset> })
             }
             Numericity::Enumerated(enumerated) => {
                 let ty = enumerated
                     .variants(self.model)
-                    .find(|variant| variant.bits == reset)
-                    .expect("exactly one variant must correspond to the reset value")
+                    .find(|variant| variant.bits == reset)?
                     .type_name();
 
-                parse_quote! { #path::#ty }
+                Some(quote! { #path::#ty })
             }
         }
     }
@@ -155,17 +161,16 @@ impl<'cx> View<'cx, FieldNode> {
                     let mut sorted_variants = enumerated.variants(self.model).collect::<Vec<_>>();
                     sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
 
-                    if let Some(largest_variant) =
-                        sorted_variants.iter().map(|variant| variant.bits).max()
-                    {
-                        let variant_limit = (1u64 << self.width) - 1;
-                        if largest_variant as u64 > variant_limit {
-                            diagnostics.insert(
-                                Diagnostic::error(format!(
-                            "field variants exceed field width. (largest variant: {largest_variant}, largest possible: {variant_limit})",
-                        ))
-                                .with_context(new_context.clone()),
-                            );
+                    let variant_limit = (1u64 << self.width) - 1;
+
+                    for variant in &sorted_variants {
+                        if variant.bits as u64 > variant_limit {
+                            diagnostics.insert(Diagnostic::exceeds_domain(
+                                &variant.type_name(),
+                                &variant.bits,
+                                &format!("...0x{:x}", variant_limit),
+                                new_context.clone(),
+                            ));
                         }
                     }
 
@@ -175,14 +180,12 @@ impl<'cx> View<'cx, FieldNode> {
                         let rhs = &window[1];
 
                         if lhs.bits == rhs.bits {
-                            diagnostics.insert(
-                                Diagnostic::error(format!(
-                                    "variants [{}] and [{}] have overlapping bit values",
-                                    lhs.ident.to_string().bold(),
-                                    rhs.ident.to_string().bold()
-                                ))
-                                .with_context(new_context.clone()),
-                            );
+                            diagnostics.insert(Diagnostic::overlap(
+                                &lhs.type_name(),
+                                &rhs.type_name(),
+                                &lhs.bits,
+                                new_context.clone(),
+                            ));
                         }
                     }
                 }
@@ -208,23 +211,18 @@ impl<'cx> View<'cx, FieldNode> {
             && let Numericity::Enumerated(enumerated) = read
             && enumerated.variants(self.model).any(|variant| variant.inert)
         {
-            diagnostics.insert(
-                Diagnostic::error("read-only variants cannot be inert")
-                    .notes([
-                        "for more information, refer to the \"Inertness\" section in `notes.md`",
-                    ])
-                    .with_context(new_context.clone()),
-            );
+            diagnostics.insert(Diagnostic::read_cannot_be_inert(new_context.clone()));
         }
 
+        // TODO: these are old...
         let reserved = ["reset", "_new_state", "_old_state"];
 
         if reserved.contains(&self.module_name().to_string().as_str()) {
-            diagnostics.insert(
-                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
-                    .notes([format!("reserved field keywords are: {reserved:?}")])
-                    .with_context(new_context.clone()),
-            );
+            diagnostics.insert(Diagnostic::reserved(
+                &self.module_name(),
+                reserved.iter(),
+                new_context.clone(),
+            ));
         }
 
         diagnostics
@@ -275,6 +273,7 @@ impl Field {
     }
 
     /// The domain of the parent register in which the field occupies.
+    #[inline]
     pub fn domain(&self) -> Range<u8> {
         self.offset..(self.offset + self.width)
     }

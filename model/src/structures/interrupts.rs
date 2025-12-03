@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use colored::Colorize;
 use derive_more::{Deref, DerefMut};
 use proc_macro2::Span;
 use quote::{ToTokens, quote};
@@ -73,13 +72,12 @@ impl Interrupts {
             if let InterruptKind::Handler(ident) = &interrupt.kind
                 && let Some(existing) = seen.insert(ident, i)
             {
-                diagnostics.insert(
-                    Diagnostic::error(format!(
-                        "interrupt [{}] at position {i} is already defined at position {existing}",
-                        ident.to_string().bold()
-                    ))
-                    .with_context(context.clone()),
-                );
+                diagnostics.insert(Diagnostic::interrupt_exists(
+                    ident,
+                    &i,
+                    &existing,
+                    context.clone(),
+                ));
             }
         }
 
