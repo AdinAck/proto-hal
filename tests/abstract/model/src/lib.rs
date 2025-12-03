@@ -138,8 +138,8 @@ mod tests {
 
             let diagnostic = diagnostics.next().unwrap();
 
-            assert!(matches!(diagnostic.kind(), diagnostic::Kind::Error));
-            // TODO: match exact diagnostic kind
+            assert!(matches!(diagnostic.rank(), diagnostic::Rank::Error));
+            assert!(matches!(diagnostic.kind(), diagnostic::Kind::Overlap));
             assert!(diagnostics.next().is_none());
         }
     }
@@ -186,8 +186,8 @@ mod tests {
 
             let diagnostic = diagnostics.next().unwrap();
 
-            assert!(matches!(diagnostic.kind(), diagnostic::Kind::Error));
-            // TODO: match exact diagnostic kind
+            assert!(matches!(diagnostic.rank(), diagnostic::Rank::Error));
+            assert!(matches!(diagnostic.kind(), diagnostic::Kind::Overlap));
             assert!(diagnostics.next().is_none());
         }
     }

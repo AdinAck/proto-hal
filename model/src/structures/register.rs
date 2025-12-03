@@ -4,13 +4,13 @@ use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Ident, parse_quote};
+use syn::Ident;
 
 use crate::{
     diagnostic::{Context, Diagnostic, Diagnostics},
     structures::{
         Node,
-        field::{FieldIndex, FieldNode},
+        field::{FieldIndex, FieldNode, numericity::Numericity},
         model::View,
         peripheral::PeripheralIndex,
     },
@@ -97,11 +97,14 @@ impl<'cx> View<'cx, RegisterNode> {
 
         if !self.offset.is_multiple_of(4) {
             diagnostics.insert(
-                Diagnostic::error(format!(
-                    "register offset must be word aligned. (offset {} does not satisfy: offset % 4 == 0)",
-                    self.offset
-                ))
-                    .with_context(new_context.clone()),
+                Diagnostic::address_unaligned(
+                    self.parent().base_addr + self.offset,
+                    new_context.clone(),
+                )
+                .notes([format!(
+                    "register offset is specified as {}",
+                    format!("0x{:x}", self.offset).bold()
+                )]),
             );
         }
 
@@ -128,18 +131,22 @@ impl<'cx> View<'cx, RegisterNode> {
                 }
 
                 diagnostics.insert(
-                    Diagnostic::error(format!(
-                        "fields [{}] and [{}] overlap.",
-                        field.module_name().to_string().bold(),
-                        other.module_name().to_string().bold()
-                    ))
-                    .with_context(new_context.clone())
+                    Diagnostic::overlap(
+                        &field.module_name(),
+                        &other.module_name(),
+                        &format!(
+                            "{}...{}",
+                            field.domain().start.max(other.domain().start),
+                            field.domain().end.min(other.domain().end - 1),
+                        ),
+                        new_context.clone(),
+                    )
                     .notes(
                         if ontological_entitlements.is_some() || other_ontological_entitlements.is_some() {
                             vec![format!(
-                                "overlapping fields have non-trivial intersecting entitlement spaces {:?} and {:?}",
-                                ontological_entitlements.map(|x| x.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>()),
-                                other_ontological_entitlements.map(|x| x.iter().map(|e| e.render_entirely(self.model).to_string()).collect::<Vec<_>>()),
+                                "overlapping fields have non-trivial intersecting entitlement spaces [{}] and [{}]",
+                                ontological_entitlements.map(|x| x.iter().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
+                                other_ontological_entitlements.map(|x| x.iter().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
                             )]
                         } else {
                             vec![]
@@ -150,33 +157,48 @@ impl<'cx> View<'cx, RegisterNode> {
         }
 
         if let Some(field) = sorted_fields.last()
-            && field.offset + field.width > 32
+            && field.domain().end > 32
         {
-            diagnostics.insert(
-                Diagnostic::error(format!(
-                    "field [{}] exceeds register width.",
-                    field.module_name().to_string().bold()
-                ))
-                .with_context(new_context.clone()),
-            );
+            diagnostics.insert(Diagnostic::exceeds_domain(
+                &field.module_name(),
+                &format!("{}...{}", field.domain().start, field.domain().end - 1),
+                &"0...31",
+                new_context.clone(),
+            ));
         }
 
-        if self.is_resolvable() && self.reset.is_none() {
-            diagnostics.insert(
-                Diagnostic::error(
-                    "a reset value must be specified for registers containing resolvable fields",
-                )
-                .notes([format!(
-                    "resolvable fields: {}",
-                    sorted_fields
-                        .iter()
-                        .filter(|field| field.is_resolvable())
-                        .map(|field| field.module_name().to_string().bold().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )])
-                .with_context(new_context.clone()),
-            );
+        match self.reset {
+            Some(reset) => {
+                // every resolvable field should have a valid reset
+
+                for field in self.fields() {
+                    let Some(Numericity::Enumerated(enumerated)) = field.resolvable() else {
+                        continue;
+                    };
+
+                    let field_reset = field.get_reset(reset);
+
+                    if enumerated
+                        .variants(self.model)
+                        .any(|variant| variant.bits == field_reset)
+                    {
+                        continue;
+                    }
+
+                    diagnostics.insert(Diagnostic::invalid_reset(
+                        &field,
+                        enumerated.variants(self.model),
+                        field_reset,
+                        reset,
+                        new_context.clone(),
+                    ));
+                }
+            }
+            None => {
+                if self.is_resolvable() {
+                    diagnostics.insert(Diagnostic::expected_reset(self, new_context.clone()));
+                }
+            }
         }
 
         for field in sorted_fields {
@@ -212,7 +234,7 @@ impl<'cx> View<'cx, RegisterNode> {
                 let ontological_entitlements = field.ontological_entitlements();
 
                 let reset_ty = if ontological_entitlements.is_none() {
-                    let reset_ty = field.reset_ty(parse_quote! { #ident }, self.reset);
+                    let reset_ty = field.reset_ty(&quote! { #ident }, self.reset);
 
                     quote! { #ident::#ty<#reset_ty> }
                 } else {

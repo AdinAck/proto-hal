@@ -82,14 +82,15 @@ impl Variant {
         let mut diagnostics = Diagnostics::new();
         let new_context = context.clone().and(self.module_name().clone().to_string());
 
+        // TODO: these are old...
         let reserved = ["variant", "generic", "preserve", "dynamic"]; // note: waiting for const type inference
 
         if reserved.contains(&self.module_name().to_string().as_str()) {
-            diagnostics.insert(
-                Diagnostic::error(format!("\"{}\" is a reserved keyword", self.module_name()))
-                    .notes([format!("reserved variant keywords are: {reserved:?}")])
-                    .with_context(new_context.clone()),
-            );
+            diagnostics.insert(Diagnostic::reserved(
+                &self.type_name(),
+                reserved.iter(),
+                new_context.clone(),
+            ));
         }
 
         diagnostics

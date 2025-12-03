@@ -204,13 +204,16 @@ impl Model {
             let rhs = &window[1];
 
             if lhs.base_addr + lhs.width() > rhs.base_addr {
-                diagnostics.insert(
-                    Diagnostic::error(format!(
-                        "peripherals [{}] and [{}] overlap.",
-                        lhs.ident, rhs.ident
-                    ))
-                    .with_context(new_context.clone()),
-                );
+                diagnostics.insert(Diagnostic::overlap(
+                    &lhs.module_name(),
+                    &rhs.module_name(),
+                    &format!(
+                        "0x{:08x}...0x{:08x}",
+                        rhs.domain().start,
+                        lhs.domain().end - 4
+                    ),
+                    new_context.clone(),
+                ));
             }
         }
 
@@ -224,14 +227,12 @@ impl Model {
                 let field = entitlement.field(self);
 
                 if !field.is_resolvable() {
-                    diagnostics.insert(
-                        Diagnostic::error(format!(
-                            "entitlement [{}] resides within unresolvable field [{}] and as such cannot be entitled to",
-                            entitlement.render_entirely(self).to_string().split_whitespace().collect::<String>().bold(),
-                            field.module_name().to_string().bold()
-                        ))
-                            .with_context(index.into_context(self)),
-                    );
+                    diagnostics.insert(Diagnostic::unresolvable(
+                        self,
+                        entitlement,
+                        &field,
+                        index.into_context(self),
+                    ));
 
                     continue;
                 };

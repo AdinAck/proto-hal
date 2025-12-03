@@ -54,6 +54,13 @@ impl Entitlement {
             #prefix::#variant_ident
         }
     }
+
+    pub fn to_string(&self, model: &Model) -> String {
+        self.render_entirely(model)
+            .to_string()
+            .split_whitespace()
+            .collect()
+    }
 }
 
 pub type Entitlements = IndexSet<Entitlement>;
