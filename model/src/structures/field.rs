@@ -53,7 +53,7 @@ impl<'cx> View<'cx, FieldNode> {
             Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
             Access::Store(store) => Some(&store.numericity),
             Access::VolatileStore(volatile_store) => {
-                let Some(write_entitlements) = self.write_entitlements() else {
+                let Some(hardware_write_entitlements) = self.hardware_write_entitlements() else {
                     // no entitlements means all states are entitled to,
                     // so they are exhaustive
                     None?
@@ -61,7 +61,7 @@ impl<'cx> View<'cx, FieldNode> {
 
                 let mut entitlement_fields = IndexMap::new();
 
-                for entitlement in *write_entitlements {
+                for entitlement in *hardware_write_entitlements {
                     let field = entitlement.field(self.model);
                     entitlement_fields
                         .entry(field.index)
@@ -70,13 +70,26 @@ impl<'cx> View<'cx, FieldNode> {
                         .insert(entitlement.0);
                 }
 
-                // if the write access entitlements are non-exhaustive
+                // if the hardware write access entitlements are non-exhaustive
                 // (meaning some states exist in which hardware does *not*
                 // have write access) then the field is resolvable
 
                 for (field, entitlements) in entitlement_fields.values() {
-                    let Numericity::Enumerated(enumerated) = field.resolvable().unwrap() else {
-                        unreachable!("entitled field must be enumerated")
+                    // avoid infinite recursion...
+                    let enumerated = if field.index() == self.index() {
+                        let Numericity::Enumerated(enumerated) = &volatile_store.numericity else {
+                            unreachable!(
+                                "this field must be enumerated if it produced an entitlement"
+                            )
+                        };
+
+                        enumerated
+                    } else {
+                        let Numericity::Enumerated(enumerated) = field.resolvable().unwrap() else {
+                            unreachable!("entitled field must be enumerated")
+                        };
+
+                        enumerated
                     };
 
                     let total = enumerated

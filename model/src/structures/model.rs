@@ -218,16 +218,16 @@ impl Model {
             diagnostics.extend(peripheral.validate(&Context::new()));
         }
 
-        // traverse the hal tree given the entitlement path and ensure the path exists
+        // ensure entitlements reside within resolvable fields
         for (index, entitlements) in &self.entitlements {
             for entitlement in entitlements {
                 let field = entitlement.field(self);
 
-                if field.resolvable().is_none() {
+                if !field.is_resolvable() {
                     diagnostics.insert(
                         Diagnostic::error(format!(
                             "entitlement [{}] resides within unresolvable field [{}] and as such cannot be entitled to",
-                            entitlement.render_entirely(self).to_string().bold(),
+                            entitlement.render_entirely(self).to_string().split_whitespace().collect::<String>().bold(),
                             field.module_name().to_string().bold()
                         ))
                             .with_context(index.into_context(self)),

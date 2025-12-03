@@ -128,8 +128,6 @@ pub fn model(variant: DeviceVariant) -> Model {
         Interrupt::handler("FMAC"),
     ]);
 
-    // Model::new([rcc::generate(), cordic::generate(), crc::generate()]).interrupts()
-
     let rcc::Output { cordicen, crcen } = rcc(&mut model);
     cordic(&mut model, cordicen);
     crc(&mut model, crcen);
