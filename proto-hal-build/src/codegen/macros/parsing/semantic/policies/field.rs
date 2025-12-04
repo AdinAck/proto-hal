@@ -105,7 +105,7 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
                 Self::DynamicTransition(binding, transition)
             }
             FieldEntry::StaticTransition(binding, transition) => Self::Static(binding, transition),
-            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_must_be_view(binding))?,
+            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_cannot_be_consumed(binding))?,
             FieldEntry::UnboundDynamicTransition(..) => Err(Diagnostic::expected_binding(cx))?,
         })
     }
@@ -137,7 +137,7 @@ impl<'cx> Refine<'cx> for BindingOnly<'cx> {
             FieldEntry::Empty => Err(Diagnostic::expected_binding(cx))?,
             FieldEntry::View(binding) => binding,
             FieldEntry::BoundDynamic(binding) => binding,
-            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_must_be_view(binding))?,
+            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_cannot_be_consumed(binding))?,
             FieldEntry::BoundDynamicTransition(.., transition)
             | FieldEntry::UnboundDynamicTransition(transition)
             | FieldEntry::StaticTransition(.., transition) => {

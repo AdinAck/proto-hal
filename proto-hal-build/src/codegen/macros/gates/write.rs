@@ -13,8 +13,8 @@ use crate::codegen::macros::{
     gates::{
         fragments,
         utils::{
-            module_suggestions, render_diagnostics, scan_entitlements, static_initial,
-            unique_field_ident,
+            binding_suggestions, module_suggestions, render_diagnostics, scan_entitlements,
+            static_initial, unique_field_ident,
         },
     },
     parsing::{
@@ -64,7 +64,12 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
         };
     }
 
-    let suggestions = module_suggestions(&args, &diagnostics);
+    let module_suggestions = module_suggestions(&args, &diagnostics);
+    let binding_suggestions = binding_suggestions(&args, &diagnostics);
+    let suggestions = quote! {
+        #module_suggestions
+        #binding_suggestions
+    };
     let errors = render_diagnostics(diagnostics);
 
     let mut generics = Vec::new();
