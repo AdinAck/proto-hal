@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-proto-hal-build = { path = "../../../proto-hal-build" }
+proto-hal-build = { path = "../../../build" }

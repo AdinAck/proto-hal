@@ -8,7 +8,7 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
 
-proto-hal-build = { path = "../proto-hal-build" }
+build = { package = "proto-hal-build", path = "../build" }
 
 [lib]
 proc-macro = true

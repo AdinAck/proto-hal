@@ -12,7 +12,7 @@ critical-section = { version = "1.2.0", features = ["std"] }
 
 [build-dependencies]
 model = { package = "g4-model", path = "../model" }
-proto-hal-build = { path = "../../../proto-hal-build" }
+proto-hal-build = { path = "../../../build" }
 
 [features]
 default = ["g484"]
