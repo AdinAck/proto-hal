@@ -13,7 +13,7 @@ fn main() -> Result<(), String> {
         Err("device variant must be specified")?
     };
 
-    proto_hal_build::codegen::render::generate(&model(variant));
+    proto_hal_build::render(&model(variant));
 
     Ok(())
 }

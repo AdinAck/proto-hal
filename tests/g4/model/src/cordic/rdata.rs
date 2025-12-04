@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Entitlement, Register, model::PeripheralEntry};
+use proto_hal_model::{Entitlement, Register, model::PeripheralEntry};
 
 pub mod res;
 pub mod res0;

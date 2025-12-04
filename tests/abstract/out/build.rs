@@ -1,5 +1,5 @@
 use model::model;
 
 fn main() {
-    proto_hal_build::codegen::render::generate(&model());
+    proto_hal_build::render(&model());
 }

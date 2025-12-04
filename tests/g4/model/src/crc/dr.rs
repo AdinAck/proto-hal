@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Field, Register, model::PeripheralEntry};
+use proto_hal_model::{Field, Register, model::PeripheralEntry};
 
 pub fn dr<'cx>(crc: &mut PeripheralEntry<'cx>) {
     let mut dr = crc.add_register(Register::new("dr", 0));
