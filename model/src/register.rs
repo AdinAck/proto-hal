@@ -7,13 +7,11 @@ use quote::quote;
 use syn::Ident;
 
 use crate::{
+    Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{
-        Node,
-        field::{FieldIndex, FieldNode, numericity::Numericity},
-        model::View,
-        peripheral::PeripheralIndex,
-    },
+    field::{FieldIndex, FieldNode, numericity::Numericity},
+    model::View,
+    peripheral::PeripheralIndex,
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]

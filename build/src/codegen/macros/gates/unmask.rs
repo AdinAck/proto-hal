@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
-use model::structures::{
+use model::{
+    Model,
     entitlement::{Entitlement, Entitlements},
-    model::Model,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote};

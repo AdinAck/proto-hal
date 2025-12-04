@@ -1,4 +1,4 @@
-use model::structures::{
+use model::{
     field::FieldNode,
     model::{Model, View},
     peripheral::PeripheralNode,

@@ -1,4 +1,4 @@
-use model::structures::{field::FieldNode, model::Model};
+use model::{Model, field::FieldNode};
 use syn::Ident;
 
 use crate::codegen::macros::{

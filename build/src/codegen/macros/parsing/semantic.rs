@@ -8,7 +8,7 @@ mod transition;
 mod utils;
 
 use indexmap::IndexMap;
-use model::structures::{
+use model::{
     field::FieldNode,
     model::{Model, View},
     peripheral::PeripheralNode,
@@ -204,9 +204,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use model::structures::{
-        field::Field, model::Model, peripheral::Peripheral, register::Register,
-    };
+    use model::{Model, field::Field, peripheral::Peripheral, register::Register};
     use quote::quote;
     use syn::{Ident, Path, parse_quote};
 

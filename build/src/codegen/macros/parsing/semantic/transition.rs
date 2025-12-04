@@ -1,6 +1,6 @@
-use model::structures::{
+use model::{
+    Model,
     field::{FieldNode, numericity::Numericity},
-    model::Model,
     variant::Variant,
 };
 use proc_macro2::Span;

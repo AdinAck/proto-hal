@@ -1,9 +1,6 @@
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement,
-    field::Field,
+use proto_hal_build::model::{
+    Entitlement, Field, Register, Variant,
     model::{PeripheralEntry, RegisterEntry},
-    register::Register,
-    variant::Variant,
 };
 
 pub struct Output {

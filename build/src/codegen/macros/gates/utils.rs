@@ -3,7 +3,7 @@ pub mod return_rank;
 use std::{num::NonZeroU32, ops::Deref};
 
 use indexmap::{IndexMap, IndexSet};
-use model::structures::{
+use model::{
     entitlement::Entitlement,
     field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},

@@ -1,6 +1,4 @@
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, field::Field, model::RegisterEntry,
-};
+use proto_hal_build::model::{Entitlement, Field, model::RegisterEntry};
 
 pub fn res<'cx>(rdata: &mut RegisterEntry<'cx>, q31: Entitlement) {
     let mut res = rdata.add_read_field(Field::new("res", 0, 32));

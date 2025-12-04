@@ -5,7 +5,7 @@ use derive_more::{AsRef, Deref};
 use indexmap::{IndexMap, IndexSet};
 use ters::ters;
 
-use crate::structures::{
+use crate::{
     entitlement::Entitlement,
     field::{Field, FieldNode},
     model::{Model, View},

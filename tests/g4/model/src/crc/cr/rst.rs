@@ -1,4 +1,4 @@
-use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
+use proto_hal_build::model::{Field, Variant, model::RegisterEntry};
 
 pub fn rst<'cx>(cr: &mut RegisterEntry<'cx>) {
     let mut rst = cr.add_read_write_field(Field::new("rst", 0, 1));

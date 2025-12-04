@@ -9,19 +9,17 @@ use syn::Ident;
 use ters::ters;
 
 use crate::{
+    Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{
-        Node,
-        entitlement::{Entitlement, EntitlementIndex, Entitlements},
-        field::{
-            Field, FieldIndex, FieldNode,
-            access::{self, Access},
-        },
-        interrupts::{Interrupt, Interrupts},
-        peripheral::{PeripheralIndex, PeripheralNode},
-        register::{Register, RegisterIndex, RegisterNode},
-        variant::{Variant, VariantIndex, VariantNode},
+    entitlement::{Entitlement, EntitlementIndex, Entitlements},
+    field::{
+        Field, FieldIndex, FieldNode,
+        access::{self, Access},
     },
+    interrupts::{Interrupt, Interrupts},
+    peripheral::{PeripheralIndex, PeripheralNode},
+    register::{Register, RegisterIndex, RegisterNode},
+    variant::{Variant, VariantIndex, VariantNode},
 };
 
 use super::peripheral::Peripheral;

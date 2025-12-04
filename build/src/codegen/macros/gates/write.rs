@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use indexmap::IndexSet;
-use model::structures::{
-    entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
-};
+use model::{Model, entitlement::EntitlementIndex, field::numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};

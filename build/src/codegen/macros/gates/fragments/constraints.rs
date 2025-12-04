@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use model::structures::{
+use model::{
     field::{FieldNode, numericity::Numericity},
     model::{Model, View},
 };

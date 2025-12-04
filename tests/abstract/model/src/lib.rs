@@ -1,8 +1,6 @@
 #![allow(clippy::disallowed_names)]
 
-use proto_hal_build::model::structures::{
-    field::Field, model::Model, peripheral::Peripheral, register::Register, variant::Variant,
-};
+use proto_hal_build::model::{Field, Model, Peripheral, Register, Variant};
 
 pub fn model() -> Model {
     let mut model = Model::new();
@@ -39,7 +37,7 @@ mod tests {
     mod hal {
         use proto_hal_build::model::{
             diagnostic,
-            structures::{model::Model, peripheral::Peripheral, register::Register},
+            {Model, peripheral::Peripheral, register::Register},
         };
 
         /// Create an empty model.
@@ -147,7 +145,7 @@ mod tests {
     mod peripherals {
         use proto_hal_build::model::{
             diagnostic,
-            structures::{model::Model, peripheral::Peripheral, register::Register},
+            {Model, peripheral::Peripheral, register::Register},
         };
 
         #[test]

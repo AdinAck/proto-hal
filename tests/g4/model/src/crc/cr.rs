@@ -3,7 +3,7 @@ pub mod rev_in;
 pub mod rev_out;
 pub mod rst;
 
-use proto_hal_build::model::structures::{model::PeripheralEntry, register::Register};
+use proto_hal_build::model::{Register, model::PeripheralEntry};
 
 use polysize::polysize;
 use rev_in::rev_in;

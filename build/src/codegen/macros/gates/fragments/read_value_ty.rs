@@ -1,4 +1,4 @@
-use model::structures::field::numericity::Numericity;
+use model::field::numericity::Numericity;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Path};

@@ -1,6 +1,4 @@
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, model::PeripheralEntry, register::Register,
-};
+use proto_hal_build::model::{Entitlement, Register, model::PeripheralEntry};
 
 pub mod res;
 pub mod res0;

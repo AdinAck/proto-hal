@@ -1,4 +1,4 @@
-use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
+use proto_hal_build::model::{Field, Variant, model::RegisterEntry};
 
 pub fn polysize<'cx>(cr: &mut RegisterEntry<'cx>) {
     let mut polysize = cr.add_store_field(Field::new("polysize", 3, 2));
