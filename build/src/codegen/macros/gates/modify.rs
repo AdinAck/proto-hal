@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use model::structures::{
-    entitlement::EntitlementIndex, field::numericity::Numericity, model::Model,
-};
+use model::{Model, entitlement::EntitlementIndex, field::numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
 use syn::{Expr, Ident};

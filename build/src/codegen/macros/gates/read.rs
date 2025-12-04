@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use model::structures::{field::access::Access, model::Model};
+use model::{Model, field::access::Access};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};

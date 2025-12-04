@@ -4,13 +4,11 @@ use quote::quote;
 use syn::Ident;
 
 use crate::{
+    Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{
-        Node,
-        entitlement::Entitlements,
-        field::{Field, FieldIndex},
-        model::View,
-    },
+    entitlement::Entitlements,
+    field::{Field, FieldIndex},
+    model::View,
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]

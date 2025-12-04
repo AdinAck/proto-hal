@@ -8,13 +8,11 @@ use quote::quote;
 use syn::Ident;
 
 use crate::{
+    Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{
-        Node,
-        entitlement::Entitlements,
-        model::View,
-        register::{RegisterIndex, RegisterNode},
-    },
+    entitlement::Entitlements,
+    model::View,
+    register::{RegisterIndex, RegisterNode},
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]

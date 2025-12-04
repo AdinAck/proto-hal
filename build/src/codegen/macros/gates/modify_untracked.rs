@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Deref};
 
-use model::structures::model::Model;
+use model::Model;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};

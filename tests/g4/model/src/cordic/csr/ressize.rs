@@ -1,6 +1,4 @@
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, field::Field, model::RegisterEntry, variant::Variant,
-};
+use proto_hal_build::model::{Entitlement, Field, Variant, model::RegisterEntry};
 
 pub struct Output {
     pub q15: Entitlement,

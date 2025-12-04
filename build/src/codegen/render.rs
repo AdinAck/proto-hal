@@ -3,7 +3,7 @@ use std::fs;
 use colored::Colorize as _;
 use model::{
     diagnostic::{self, Diagnostic},
-    structures::{interrupts::InterruptKind, model::Model},
+    {Model, interrupts::InterruptKind},
 };
 
 /// Validate a HAL model is properly defined and codegen succeeds.

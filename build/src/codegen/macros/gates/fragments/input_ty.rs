@@ -1,4 +1,4 @@
-use model::structures::field::Field;
+use model::field::Field;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Path};

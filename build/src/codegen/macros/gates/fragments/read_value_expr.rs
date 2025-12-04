@@ -1,4 +1,4 @@
-use model::structures::{
+use model::{
     field::{FieldNode, numericity::Numericity},
     peripheral::Peripheral,
     register::Register,

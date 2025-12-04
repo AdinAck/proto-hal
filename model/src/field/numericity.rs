@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use syn::{Ident, parse_quote};
 
-use crate::structures::{
+use crate::{
     model::{Model, View},
     variant::{Variant, VariantIndex, VariantNode},
 };
@@ -38,7 +38,7 @@ impl Numericity {
             .find(|variant| variant.inert)
     }
 
-    pub(in crate::structures) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
+    pub(crate) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
         match self {
             Numericity::Numeric(..) => {
                 *self = Numericity::Enumerated(Enumerated {

@@ -1,4 +1,4 @@
-use model::structures::{field::Field, peripheral::Peripheral, register::Register};
+use model::{field::Field, peripheral::Peripheral, register::Register};
 
 /// The key used to query the parsed gate input for peripheral-level items.
 #[derive(Debug, Hash, PartialEq, Eq)]

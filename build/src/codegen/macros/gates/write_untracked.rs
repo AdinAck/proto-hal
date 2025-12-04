@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use model::structures::model::Model;
+use model::Model;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Ident};
@@ -9,7 +9,7 @@ use crate::codegen::macros::{
     diagnostic::Diagnostics,
     gates::{
         fragments,
-        utils::{mask, render_diagnostics, module_suggestions, unique_field_ident},
+        utils::{mask, module_suggestions, render_diagnostics, unique_field_ident},
     },
     parsing::{
         semantic::{self, policies},

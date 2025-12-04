@@ -1,4 +1,4 @@
-use model::structures::model::Model;
+use model::Model;
 use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 

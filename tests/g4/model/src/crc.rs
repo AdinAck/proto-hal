@@ -2,9 +2,7 @@ pub mod cr;
 pub mod dr;
 pub mod idr;
 
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, model::Model, peripheral::Peripheral,
-};
+use proto_hal_build::model::{Entitlement, Model, Peripheral};
 
 use cr::cr;
 use dr::dr;

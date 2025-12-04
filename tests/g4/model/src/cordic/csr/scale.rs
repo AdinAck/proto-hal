@@ -1,8 +1,6 @@
 use std::array;
 
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, field::Field, model::RegisterEntry, variant::Variant,
-};
+use proto_hal_build::model::{Entitlement, Field, Variant, model::RegisterEntry};
 
 pub fn scale<'cx>(csr: &mut RegisterEntry<'cx>) -> [Entitlement; 8] {
     let mut scale = csr.add_store_field(Field::new("scale", 8, 3));

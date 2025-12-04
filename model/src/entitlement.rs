@@ -3,14 +3,12 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
+    Node,
     diagnostic::Context,
-    structures::{
-        Node,
-        field::{FieldIndex, FieldNode},
-        model::{Model, View},
-        peripheral::PeripheralIndex,
-        variant::{VariantIndex, VariantNode},
-    },
+    field::{FieldIndex, FieldNode},
+    model::{Model, View},
+    peripheral::PeripheralIndex,
+    variant::{VariantIndex, VariantNode},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

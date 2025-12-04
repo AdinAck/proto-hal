@@ -2,9 +2,7 @@ pub mod arg;
 pub mod arg0;
 pub mod arg1;
 
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, model::PeripheralEntry, register::Register,
-};
+use proto_hal_build::model::{Entitlement, Register, model::PeripheralEntry};
 
 use arg::arg;
 use arg0::arg0;

@@ -1,4 +1,4 @@
-use model::structures::field::{FieldNode, numericity::Numericity};
+use model::field::{FieldNode, numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Ident, Path};

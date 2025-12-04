@@ -11,14 +11,12 @@ use quote::{format_ident, quote};
 use syn::{Ident, Index};
 
 use crate::{
+    Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    structures::{
-        Node,
-        entitlement::Entitlements,
-        field::{access::Access, numericity::Numericity},
-        model::View,
-        register::RegisterIndex,
-    },
+    entitlement::Entitlements,
+    field::{access::Access, numericity::Numericity},
+    model::View,
+    register::RegisterIndex,
 };
 
 use super::variant::Variant;

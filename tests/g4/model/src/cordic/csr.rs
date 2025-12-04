@@ -10,7 +10,7 @@ pub mod ressize;
 pub mod rrdy;
 pub mod scale;
 
-use proto_hal_build::model::structures::{model::PeripheralEntry, register::Register};
+use proto_hal_build::model::{Register, model::PeripheralEntry};
 
 use argsize::argsize;
 use dmaren::dmaren;

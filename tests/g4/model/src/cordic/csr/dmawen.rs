@@ -1,4 +1,4 @@
-use proto_hal_build::model::structures::{field::Field, model::RegisterEntry, variant::Variant};
+use proto_hal_build::model::{Field, Variant, model::RegisterEntry};
 
 pub fn dmawen<'cx>(csr: &mut RegisterEntry<'cx>) {
     let mut dmaren = csr.add_store_field(Field::new("dmawen", 18, 1));

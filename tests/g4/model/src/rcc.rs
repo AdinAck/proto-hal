@@ -1,9 +1,7 @@
 pub mod ahb1enr;
 pub mod ahb2enr;
 
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, model::Model, peripheral::Peripheral,
-};
+use proto_hal_build::model::{Entitlement, Model, Peripheral};
 
 use crate::rcc::{ahb1enr::ahb1enr, ahb2enr::ahb2enr};
 

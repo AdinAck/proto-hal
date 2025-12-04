@@ -1,6 +1,4 @@
-use proto_hal_build::model::structures::{
-    field::Field, model::PeripheralEntry, register::Register,
-};
+use proto_hal_build::model::{Field, Register, model::PeripheralEntry};
 
 pub fn idr<'cx>(crc: &mut PeripheralEntry<'cx>) {
     let mut idr = crc.add_register(Register::new("idr", 4).reset(0));

@@ -2,9 +2,7 @@ mod csr;
 mod rdata;
 mod wdata;
 
-use proto_hal_build::model::structures::{
-    entitlement::Entitlement, model::Model, peripheral::Peripheral,
-};
+use proto_hal_build::model::{Entitlement, Model, Peripheral};
 
 use csr::csr;
 use rdata::rdata;
