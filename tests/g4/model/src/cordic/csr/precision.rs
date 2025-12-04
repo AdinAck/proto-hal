@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Field, Variant, model::RegisterEntry};
+use proto_hal_model::{Field, Variant, model::RegisterEntry};
 
 pub fn precision<'cx>(csr: &mut RegisterEntry<'cx>) {
     let mut precision = csr.add_store_field(Field::new("precision", 4, 4));

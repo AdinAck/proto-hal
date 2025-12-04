@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Field, Variant, model::RegisterEntry};
+use proto_hal_model::{Field, Variant, model::RegisterEntry};
 
 pub fn rev_out<'cx>(cr: &mut RegisterEntry<'cx>) {
     let mut rev_out = cr.add_store_field(Field::new("rev_out", 7, 1));

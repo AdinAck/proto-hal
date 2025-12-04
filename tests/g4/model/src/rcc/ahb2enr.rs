@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Field, Register, Variant, model::PeripheralEntry};
+use proto_hal_model::{Field, Register, Variant, model::PeripheralEntry};
 
 pub fn ahb2enr<'cx>(rcc: &mut PeripheralEntry<'cx>) {
     let mut ahb2enr = rcc.add_register(Register::new("ahb2enr", 0x4c).reset(0));

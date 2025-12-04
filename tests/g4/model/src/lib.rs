@@ -1,4 +1,4 @@
-use proto_hal_build::model::{Model, interrupts::Interrupt};
+use proto_hal_model::{Model, interrupts::Interrupt};
 
 use crate::{cordic::cordic, crc::crc, rcc::rcc};
 

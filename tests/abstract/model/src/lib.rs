@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_names)]
 
-use proto_hal_build::model::{Field, Model, Peripheral, Register, Variant};
+use proto_hal_model::{Field, Model, Peripheral, Register, Variant};
 
 pub fn model() -> Model {
     let mut model = Model::new();
@@ -35,7 +35,7 @@ pub fn model() -> Model {
 #[cfg(test)]
 mod tests {
     mod hal {
-        use proto_hal_build::model::{
+        use proto_hal_model::{
             diagnostic,
             {Model, peripheral::Peripheral, register::Register},
         };
@@ -143,7 +143,7 @@ mod tests {
     }
 
     mod peripherals {
-        use proto_hal_build::model::{
+        use proto_hal_model::{
             diagnostic,
             {Model, peripheral::Peripheral, register::Register},
         };

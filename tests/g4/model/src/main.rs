@@ -9,6 +9,6 @@ fn main() {
         DeviceVariant::G484,
     ] {
         println!("=== Variant: {variant:?} ===");
-        proto_hal_build::codegen::render::validate(&model(variant));
+        proto_hal_model::validate(&model(variant));
     }
 }
