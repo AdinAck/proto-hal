@@ -20,7 +20,7 @@ pub enum Kind {
     NoCorrespondingVariant,
     UnexpectedBinding,
     ExpectedBinding,
-    BindingMustBeView,
+    BindingCannotBeConsumed,
     BindingCannotBeView,
     BindingCannotBeDynamic,
     UnexpectedTransition,
@@ -158,11 +158,11 @@ impl Diagnostic {
         Self::new(Kind::ExpectedBinding, "expected binding", offending)
     }
 
-    /// binding must be a view (&foo)
-    pub fn binding_must_be_view(binding: &Binding) -> Self {
+    /// binding cannot be consumed. must be a view "(&foo)" or transitioned "=> ..."
+    pub fn binding_cannot_be_consumed(binding: &Binding) -> Self {
         Self::new(
-            Kind::BindingMustBeView,
-            "binding must be a view (&foo)",
+            Kind::BindingCannotBeConsumed,
+            "binding cannot be consumed. must be a view \"(&foo)\" or transitioned \"=> ...\"",
             binding.as_ref(),
         )
     }
