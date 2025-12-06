@@ -84,6 +84,15 @@ pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
 
     let return_ty = return_ty.map(|return_ty| quote! { -> #return_ty });
 
+    let unsafe_ = input
+        .visit_fields()
+        .any(|field| {
+            let (peripheral, register) = field.field().parents();
+
+            field.field().partial || register.partial || peripheral.partial
+        })
+        .then_some(quote! { unsafe });
+
     quote! {
         #suggestions
         #errors
@@ -91,7 +100,7 @@ pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
         {
             #return_def
 
-            fn gate(#(#parameters,)*) #return_ty {
+            #unsafe_ fn gate(#(#parameters,)*) #return_ty {
                 #(
                     let #reg_idents = unsafe {
                         ::core::ptr::read_volatile(#addrs as *const u32)

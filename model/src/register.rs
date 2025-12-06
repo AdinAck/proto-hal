@@ -42,6 +42,8 @@ pub struct Register {
     pub offset: u32,
     pub reset: Option<u32>,
     pub docs: Vec<String>,
+
+    pub partial: bool,
 }
 
 impl Register {
@@ -51,6 +53,7 @@ impl Register {
             offset,
             reset: None,
             docs: Vec::new(),
+            partial: false,
         }
     }
 
@@ -69,6 +72,21 @@ impl Register {
             .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
 
         self
+    }
+
+    /// Mark the fields in this register as *partially implemented*.
+    ///
+    /// This is useful when:
+    /// 1. The HAL author knows the description is incomplete.
+    /// 1. proto-hal is incapable of properly encapsulating
+    ///    the invariances of the fields in this register.
+    ///
+    /// This will cause all interactions with the fields in this register to be `unsafe`.
+    pub fn partial(self) -> Self {
+        Self {
+            partial: true,
+            ..self
+        }
     }
 
     pub fn module_name(&self) -> Ident {
