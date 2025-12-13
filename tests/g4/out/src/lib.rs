@@ -30,7 +30,7 @@ mod tests {
         #[test]
         fn basic() {
             critical_section::with(|cs| {
-                let p = unsafe { hal::peripherals() };
+                let p = unsafe { hal::assume_reset() };
 
                 let cordicen = hal::modify! {
                     @critical_section(cs),
@@ -86,7 +86,7 @@ mod tests {
         #[test]
         fn wdata() {
             critical_section::with(|cs| {
-                let p = unsafe { hal::peripherals() };
+                let p = unsafe { hal::assume_reset() };
 
                 let cordicen = hal::modify! {
                     @critical_section(cs),
@@ -118,7 +118,7 @@ mod tests {
             critical_section::with(|cs| {
                 unsafe { MOCK_CORDIC[2] = 0xdeadbeef };
 
-                let p = unsafe { hal::peripherals() };
+                let p = unsafe { hal::assume_reset() };
 
                 let cordicen = hal::modify! {
                     @critical_section(cs),
@@ -187,7 +187,7 @@ mod tests {
         #[test]
         fn basic() {
             critical_section::with(|cs| {
-                let p = unsafe { hal::peripherals() };
+                let p = unsafe { hal::assume_reset() };
 
                 let crcen = hal::modify! {
                     @critical_section(cs),
@@ -216,7 +216,7 @@ mod tests {
         #[test]
         fn inert() {
             critical_section::with(|cs| {
-                let p = unsafe { hal::peripherals() };
+                let p = unsafe { hal::assume_reset() };
 
                 let crcen = hal::modify! {
                     @critical_section(cs),
@@ -251,7 +251,7 @@ mod tests {
 
         #[test]
         fn reset() {
-            let p = unsafe { hal::peripherals() };
+            let p = unsafe { hal::assume_reset() };
 
             assert_eq!(
                 p.rcc.ahb1enr.flashen.type_id(),

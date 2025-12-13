@@ -280,6 +280,49 @@ impl<'cx> View<'cx, RegisterNode> {
         }
     }
 
+    fn generate_dynamic(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
+        let field_idents = fields
+            .iter()
+            .map(|field| field.module_name())
+            .collect::<Vec<_>>();
+
+        let reset_tys = fields
+            .iter()
+            .map(|field| {
+                let ident = field.module_name();
+                let ty = field.type_name();
+
+                let ontological_entitlements = field.ontological_entitlements();
+
+                let reset_ty = if ontological_entitlements.is_none() {
+                    quote! { #ident::#ty<::proto_hal::stasis::Dynamic> }
+                } else {
+                    quote! { #ident::Masked }
+                };
+
+                quote! { #reset_ty }
+            })
+            .collect::<Vec<_>>();
+
+        quote! {
+            pub struct Dynamic {
+                #(
+                    pub #field_idents: #reset_tys,
+                )*
+            }
+
+            impl ::proto_hal::stasis::Conjure for Dynamic {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        #(
+                            #field_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        )*
+                    }
+                }
+            }
+        }
+    }
+
     pub fn generate(&self) -> TokenStream {
         let mut body = quote! {};
 
@@ -288,6 +331,7 @@ impl<'cx> View<'cx, RegisterNode> {
 
         body.extend(self.generate_fields(&fields));
         body.extend(self.generate_reset(&fields));
+        body.extend(self.generate_dynamic(&fields));
 
         let docs = &self.docs;
         quote! {

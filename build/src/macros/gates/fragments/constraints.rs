@@ -47,7 +47,7 @@ pub fn constraints<'cx>(
 
     if let Some(generic) = output_generic {
         constraints.push(
-            quote_spanned! { span => #generic: ::proto_hal::stasis::State<#register_path::#field_ident::Field> },
+            quote_spanned! { span => #generic: ::proto_hal::stasis::Physical<#register_path::#field_ident::Field> },
         );
     }
 

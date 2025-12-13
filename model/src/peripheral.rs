@@ -195,7 +195,32 @@ impl<'cx> View<'cx, PeripheralNode> {
                 unsafe fn conjure() -> Self {
                     Self {
                         #(
-                            #register_idents: unsafe { <#register_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
+                            #register_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        )*
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_dynamic(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
+        let register_idents = registers
+            .iter()
+            .map(|register| register.module_name())
+            .collect::<Vec<_>>();
+
+        quote! {
+            pub struct Dynamic {
+                #(
+                    pub #register_idents: #register_idents::Dynamic,
+                )*
+            }
+
+            impl ::proto_hal::stasis::Conjure for Dynamic {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        #(
+                            #register_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                         )*
                     }
                 }
@@ -237,6 +262,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         body.extend(self.generate_registers(&registers));
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_reset(&registers));
+        body.extend(self.generate_dynamic(&registers));
         body.extend(self.generate_entitlement_impls(ontological_entitlements.as_deref().copied()));
 
         let docs = &self.docs;

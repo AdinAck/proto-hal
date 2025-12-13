@@ -525,7 +525,8 @@ impl<'cx> View<'cx, FieldNode> {
                 let (raw_ty, ty) = numeric.ty(self.width);
 
                 Some(quote! {
-                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {}
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::Physical<Field> for ::proto_hal::stasis::#ty<V> {
                         const VALUE: u32 = V as _;
                     }
                 })
@@ -545,7 +546,8 @@ impl<'cx> View<'cx, FieldNode> {
                             }
                         }
 
-                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {
+                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {}
+                        unsafe impl ::proto_hal::stasis::Physical<Field> for #variants {
                             const VALUE: u32 = #variant_values;
                         }
                     )*

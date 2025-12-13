@@ -7,16 +7,28 @@
 
 use core::marker::PhantomData;
 
-/// Implementors of this trait are type-states corresponding to some parent resource.
+/// Implementors of this trait are type-states corresponding to some parent resource
+/// with a physical value.
 ///
 /// # Safety
-/// Implementing this trait is a contract that the implementor is a type-state of the parent.
-/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
-/// undefined behavior.
-pub unsafe trait State<Parent>: Conjure {
+/// Inherits from [`State`].
+///
+/// Implementing this trait is a contract that the implementor is a type-state of the
+/// parent and the assigned physical value is correct.
+/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results
+/// in undefined behavior.
+pub unsafe trait Physical<Parent>: State<Parent> {
     /// The physical value the state denotes.
     const VALUE: u32;
 }
+
+/// Implementors of this trait are type-states corresponding to some parent resource.
+///
+/// # Safety
+/// Implementing this trait is a contract that the implementor is a type-state of the
+/// parent. If this is untrue, [stasis](TODO: link docs) is broken, which ultimately
+/// results in undefined behavior.
+pub unsafe trait State<Parent>: Conjure {}
 
 /// Implementors of this trait are type-stated resources with entitlement constraints.
 /// Many kinds of resources can be entitled in any of the following ways:
@@ -118,6 +130,8 @@ where
 pub struct Dynamic {
     _sealed: (),
 }
+
+unsafe impl<Parent> State<Parent> for Dynamic {}
 
 impl Conjure for Dynamic {
     unsafe fn conjure() -> Self {
