@@ -43,10 +43,12 @@ mod tests {
                     cordic(p.cordic),
                 };
 
+                let func = cordic.csr.func.into_dynamic();
+
                 hal::modify! {
                     @critical_section(cs),
                     cordic::csr {
-                        func(cordic.csr.func) => Sqrt,
+                        func(func) => Sqrt,
                         scale(&cordic.csr.scale),
                     },
                     @base_addr(cordic, addr_of_cordic()),

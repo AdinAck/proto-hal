@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use indexmap::IndexSet;
-use model::{Model, entitlement::EntitlementIndex, field::numericity::Numericity};
+use model::Model;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};
@@ -11,8 +11,8 @@ use crate::macros::{
     gates::{
         fragments,
         utils::{
-            binding_suggestions, module_suggestions, render_diagnostics, scan_entitlements,
-            static_initial, unique_field_ident,
+            binding_suggestions, module_suggestions, render_diagnostics, static_initial,
+            unique_field_ident, validate_entitlements,
         },
     },
     parsing::{
@@ -333,44 +333,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         }
     }
 
-    // entitlements
-    for field in input.visit_fields() {
-        let (RequireBinding::Dynamic(..) | RequireBinding::Static(..)) = field.entry() else {
-            continue;
-        };
-
-        // check for write entitlements
-        if let Some(write_entitlements) =
-            model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
-        {
-            scan_entitlements(
-                input,
-                model,
-                &mut diagnostics,
-                field.ident(),
-                write_entitlements,
-            );
-        }
-
-        // check for statewise entitlements
-        let Some(Numericity::Enumerated(enumerated)) = field.field().resolvable() else {
-            continue;
-        };
-
-        for variant in enumerated.variants(model) {
-            if let Some(statewise_entitlements) =
-                model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
-            {
-                scan_entitlements(
-                    input,
-                    model,
-                    &mut diagnostics,
-                    field.ident(),
-                    statewise_entitlements,
-                );
-            }
-        }
-    }
+    validate_entitlements(input, model, &mut diagnostics);
 
     diagnostics
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use model::{Model, entitlement::EntitlementIndex, field::numericity::Numericity};
+use model::Model;
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
 use syn::{Expr, Ident};
@@ -11,8 +11,8 @@ use crate::macros::{
         fragments,
         utils::{
             binding_suggestions, field_is_entangled, mask, module_suggestions, render_diagnostics,
-            return_rank::ReturnRank, scan_entitlements, static_initial, unique_field_ident,
-            unique_register_ident,
+            return_rank::ReturnRank, static_initial, unique_field_ident, unique_register_ident,
+            validate_entitlements,
         },
     },
     parsing::{
@@ -133,9 +133,14 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             let static_initial = static_initial(model, register_item)
                 .map(|value| value.get())
                 .map(|static_initial| quote! { | #static_initial });
-            let mask = mask(register_item.fields().values())
-                .map(|value| !value.get())
-                .map(|mask| quote! { & #mask });
+            let mask = mask(
+                register_item
+                    .fields()
+                    .values()
+                    .filter(|field| field.entry().transition().is_some()),
+            )
+            .map(|value| !value.get())
+            .map(|mask| quote! { & #mask });
             let initial = quote! {
                 (#register_ident #mask) #static_initial
             };
@@ -151,7 +156,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
                     let i = unique_field_ident(r.peripheral(), r.register(), f.field());
 
-                    Some(quote! { #i(#return_idents) as u32 })
+                    Some(quote! { (#i.1)(#return_idents) as u32 })
                 },
             ));
         }
@@ -195,8 +200,8 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 constraints.push(local_constraints);
             }
 
-            if let Some(return_ty) = return_ty {
-                transition_return_tys.push(return_ty);
+            if let Some(return_ty) = &return_ty {
+                transition_return_tys.push(return_ty.clone());
                 conjures.push(fragments::conjure());
             }
 
@@ -214,15 +219,19 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 field_item.field(),
             ));
 
-            let value_ty =
+            let write_value_ty = if field_item.entry().transition().is_some() {
                 field_item.field().access.get_write().map(|write| {
                     fragments::write_value_ty(&register_path, field_item.ident(), write)
-                });
+                })
+            } else {
+                None
+            };
 
-            parameter_tys.push(fragments::write_parameter_ty(
+            parameter_tys.push(fragments::modify_parameter_ty(
                 binding,
                 &input_ty,
-                value_ty.as_ref(),
+                write_value_ty.as_ref(),
+                return_ty.as_ref(),
             ));
 
             arguments.push(fragments::modify_argument(
@@ -342,44 +351,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
 
     let mut diagnostics = Vec::new();
 
-    // entitlements
-    for field in input.visit_fields() {
-        let (RequireBinding::Dynamic(..) | RequireBinding::Static(..)) = field.entry() else {
-            continue;
-        };
-
-        // check for write entitlements
-        if let Some(write_entitlements) =
-            model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
-        {
-            scan_entitlements(
-                input,
-                model,
-                &mut diagnostics,
-                field.ident(),
-                write_entitlements,
-            );
-        }
-
-        // check for statewise entitlements
-        let Some(Numericity::Enumerated(enumerated)) = field.field().resolvable() else {
-            continue;
-        };
-
-        for variant in enumerated.variants(model) {
-            if let Some(statewise_entitlements) =
-                model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
-            {
-                scan_entitlements(
-                    input,
-                    model,
-                    &mut diagnostics,
-                    field.ident(),
-                    statewise_entitlements,
-                );
-            }
-        }
-    }
+    validate_entitlements(input, model, &mut diagnostics);
 
     diagnostics
 }

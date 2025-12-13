@@ -31,6 +31,7 @@ pub enum Kind {
     MissingFields,
     CannotUnmaskFundamental,
     UnincumbentField,
+    EntangledDynamicTransition,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -281,6 +282,19 @@ impl Diagnostic {
                 "field \"{field_ident}\" is not entitled to nor has entitlements within this gate"
             ),
             field_ident,
+        )
+    }
+
+    /// field "foo" possesses statewise entanglements and as such cannot be
+    /// dynamically transitioned
+    pub fn entangled_dynamic_transition(offending: &Ident) -> Self {
+        Self::new(
+            Kind::EntangledDynamicTransition,
+            format!(
+                "field \"{offending}\" possesses statewise entanglements \
+                and as such cannot be dynamically transitioned"
+            ),
+            offending,
         )
     }
 }
