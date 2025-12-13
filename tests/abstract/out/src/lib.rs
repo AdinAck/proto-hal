@@ -20,8 +20,18 @@ mod tests {
         use hal::foo::foo0::a;
 
         #[test]
+        fn acquire() {
+            let p = unsafe { crate::acquire() };
+
+            assert_eq!(
+                TypeId::of::<a::A<::proto_hal::stasis::Dynamic>>(),
+                p.foo.foo0.a.type_id()
+            );
+        }
+
+        #[test]
         fn fundamental_peripherals() {
-            let p = unsafe { crate::peripherals() };
+            let p = unsafe { crate::assume_reset() };
 
             assert_eq!(TypeId::of::<a::A<a::V3>>(), p.foo.foo0.a.type_id());
         }
@@ -114,7 +124,7 @@ mod tests {
 
         #[test]
         fn access() {
-            let mut p = unsafe { crate::peripherals() };
+            let mut p = unsafe { crate::acquire() };
 
             let a = p.foo.foo0.a;
 

@@ -272,7 +272,19 @@ impl Model {
         }
 
         quote! {
-            pub struct Peripherals {
+            pub struct Dynamic {
+                // fundamental
+                #(
+                    pub #fundamental_peripheral_idents: #fundamental_peripheral_idents::Dynamic,
+                )*
+
+                // conditional
+                #(
+                    pub #conditional_peripheral_idents: #conditional_peripheral_idents::Masked,
+                )*
+            }
+
+            pub struct Reset {
                 // fundamental
                 #(
                     pub #fundamental_peripheral_idents: #fundamental_peripheral_idents::Reset,
@@ -284,23 +296,48 @@ impl Model {
                 )*
             }
 
-            /// # Safety
-            /// This function assumes and requires all of the following:
-            /// 1. The peripherals are in the reset state.
-            /// 1. The peripherals are not accessed anywhere else.
+            /// Acquire the device peripherals for use. Any previous configuration
+            /// will persist and may be retained or overridden.
             ///
-            /// These invariances can easily be achieved by limiting the call-site of this function to one place
-            /// and ensuring no other binaries are running on the target.
-            pub unsafe fn peripherals() -> Peripherals {
-                Peripherals {
+            /// # Safety
+            /// This function assumes and requires no more than one instance of
+            /// the device to exist at any time.
+            ///
+            /// An example of satisfying this precondition is to call [`acquire`]
+            /// once on a single core microcontroller running bare-metal firmware.
+            pub unsafe fn acquire() -> Dynamic {
+                Dynamic {
                     // fundamental
                     #(
-                        #fundamental_peripheral_idents: unsafe { <#fundamental_peripheral_idents::Reset as ::proto_hal::stasis::Conjure>::conjure() },
+                        #fundamental_peripheral_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     )*
 
                     // conditional
                     #(
-                        #conditional_peripheral_idents: unsafe { <#conditional_peripheral_idents::Masked as ::proto_hal::stasis::Conjure>::conjure() },
+                        #conditional_peripheral_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                    )*
+                }
+            }
+
+            /// Acquire the device peripherals for use, assuming the peripherals
+            /// are in their respective reset configurations.
+            ///
+            /// # Safety
+            /// This function inherits the safety precondition of [`acquire`].
+            ///
+            /// Additionally, assumes and requires that all peripherals
+            /// are in their respective reset state according to the
+            /// [device model](TODO).
+            pub unsafe fn assume_reset() -> Reset {
+                Reset {
+                    // fundamental
+                    #(
+                        #fundamental_peripheral_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                    )*
+
+                    // conditional
+                    #(
+                        #conditional_peripheral_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     )*
                 }
             }
