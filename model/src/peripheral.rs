@@ -47,6 +47,8 @@ pub struct Peripheral {
     pub ident: Ident,
     pub base_addr: u32,
     pub docs: Vec<String>,
+
+    pub partial: bool,
 }
 
 impl Peripheral {
@@ -55,6 +57,7 @@ impl Peripheral {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             base_addr,
             docs: Vec::new(),
+            partial: false,
         }
     }
 
@@ -67,6 +70,21 @@ impl Peripheral {
             .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
 
         self
+    }
+
+    /// Mark the fields in this peripheral as *partially implemented*.
+    ///
+    /// This is useful when:
+    /// 1. The HAL author knows the description is incomplete.
+    /// 1. proto-hal is incapable of properly encapsulating
+    ///    the invariances of the fields in this peripheral.
+    ///
+    /// This will cause all interactions with the fields in this peripheral to be `unsafe`.
+    pub fn partial(self) -> Self {
+        Self {
+            partial: true,
+            ..self
+        }
     }
 
     pub fn module_name(&self) -> Ident {

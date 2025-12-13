@@ -262,12 +262,21 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         quote! { #(#items),* }
     };
 
+    let unsafe_ = input
+        .visit_fields()
+        .any(|field| {
+            let (peripheral, register) = field.field().parents();
+
+            field.field().partial || register.partial || peripheral.partial
+        })
+        .then_some(quote! { unsafe });
+
     let body = quote! {
         #cs
 
         #return_def
 
-        fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#return_tys) #constraints {
+        #unsafe_ fn gate #generics (#(#parameter_idents: #parameter_tys,)*) -> (#return_tys) #constraints {
             #(
                 let #read_reg_idents = unsafe {
                     ::core::ptr::read_volatile(#read_addrs as *const u32)

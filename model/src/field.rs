@@ -233,6 +233,8 @@ pub struct Field {
     pub offset: u8,
     pub width: u8,
     pub docs: Vec<String>,
+
+    pub partial: bool,
 }
 
 impl Field {
@@ -242,6 +244,7 @@ impl Field {
             offset,
             width,
             docs: Vec::new(),
+            partial: false,
         }
     }
 
@@ -254,6 +257,21 @@ impl Field {
             .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
 
         self
+    }
+
+    /// Mark this field as *partially implemented*.
+    ///
+    /// This is useful when:
+    /// 1. The HAL author knows the description is incomplete.
+    /// 1. proto-hal is incapable of properly encapsulating
+    ///    the invariances of the field.
+    ///
+    /// This will cause all interactions with this field to be `unsafe`.
+    pub fn partial(self) -> Self {
+        Self {
+            partial: true,
+            ..self
+        }
     }
 
     pub fn module_name(&self) -> Ident {

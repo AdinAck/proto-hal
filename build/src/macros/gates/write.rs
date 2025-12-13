@@ -224,12 +224,21 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     let rebinds = in_place.then_some(quote! { let (#(#rebinds),*) = });
     let semicolon = in_place.then_some(quote! { ; });
 
+    let unsafe_ = input
+        .visit_fields()
+        .any(|field| {
+            let (peripheral, register) = field.field().parents();
+
+            field.field().partial || register.partial || peripheral.partial
+        })
+        .then_some(quote! { unsafe });
+
     quote! {
         #rebinds {
             #suggestions
             #errors
 
-            fn gate #generics (#(#parameter_idents: #parameter_tys,)*) #return_tys #constraints {
+            #unsafe_ fn gate #generics (#(#parameter_idents: #parameter_tys,)*) #return_tys #constraints {
                 #(
                     unsafe {
                         ::core::ptr::write_volatile(
