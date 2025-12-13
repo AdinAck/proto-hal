@@ -4,7 +4,7 @@ use std::{num::NonZeroU32, ops::Deref};
 
 use indexmap::{IndexMap, IndexSet};
 use model::{
-    entitlement::Entitlement,
+    entitlement::{Entitlement, EntitlementIndex},
     field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
@@ -18,7 +18,7 @@ use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     parsing::{
         semantic::{
-            self, FieldEntry, FieldItem, PeripheralEntry, RegisterItem,
+            self, FieldEntry, FieldItem, Gate, PeripheralEntry, RegisterItem,
             policies::{self, Refine, field::RequireBinding},
         },
         syntax,
@@ -265,4 +265,47 @@ where
     }
 
     false
+}
+
+pub fn validate_entitlements<'cx>(
+    input: &Gate<'cx, policies::peripheral::ForbidPath, policies::field::RequireBinding<'cx>>,
+    model: &'cx Model,
+    diagnostics: &mut Diagnostics,
+) {
+    for field in input.visit_fields() {
+        let (RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)) = field.entry()
+        else {
+            continue;
+        };
+
+        // check for write entitlements
+        if let Some(write_entitlements) =
+            model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
+        {
+            scan_entitlements(input, model, diagnostics, field.ident(), write_entitlements);
+        }
+
+        // check for statewise entitlements
+        let Some(Numericity::Enumerated(enumerated)) = field.field().resolvable() else {
+            continue;
+        };
+
+        for variant in enumerated.variants(model) {
+            if let Some(statewise_entitlements) =
+                model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
+            {
+                scan_entitlements(
+                    input,
+                    model,
+                    diagnostics,
+                    field.ident(),
+                    statewise_entitlements,
+                );
+
+                if let RequireBinding::DynamicTransition(..) = field.entry() {
+                    diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
+                }
+            }
+        }
+    }
 }

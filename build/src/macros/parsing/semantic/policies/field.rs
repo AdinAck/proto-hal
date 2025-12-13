@@ -115,10 +115,19 @@ impl<'cx> RequireBinding<'cx> {
     /// View the binding component of the entry.
     pub fn binding(&self) -> &syntax::Binding {
         match self {
-            RequireBinding::View(binding) => binding,
-            RequireBinding::Dynamic(binding) => binding,
-            RequireBinding::DynamicTransition(binding, ..) => binding,
-            RequireBinding::Static(binding, ..) => binding,
+            RequireBinding::View(binding)
+            | RequireBinding::Dynamic(binding)
+            | RequireBinding::DynamicTransition(binding, ..)
+            | RequireBinding::Static(binding, ..) => binding,
+        }
+    }
+
+    /// View the transition component of the entry if present.
+    pub fn transition<'a>(&'a self) -> Option<&'a semantic::Transition<'cx>> {
+        match self {
+            RequireBinding::View(..) | RequireBinding::Dynamic(..) => None,
+            RequireBinding::DynamicTransition(.., transition)
+            | RequireBinding::Static(.., transition) => Some(transition),
         }
     }
 }
