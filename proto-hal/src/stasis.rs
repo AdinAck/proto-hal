@@ -155,7 +155,7 @@ macro_rules! numerics {
             }
 
             impl<const V: $ty> $name<V> {
-                pub fn value() -> $ty {
+                pub fn value(&self) -> $ty {
                     V
                 }
             }
