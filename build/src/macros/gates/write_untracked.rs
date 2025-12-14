@@ -161,7 +161,7 @@ fn reg_write_value<'cx>(scheme: &Scheme, register_item: &RegisterItem<'cx>) -> T
         let ident = unique_field_ident(register_item.peripheral(), register_item.register(), field);
         let shift = fragments::shift(field.offset);
 
-        quote! { #ident as u32 #shift }
+        quote! { (#ident as u32) #shift }
     });
 
     quote! {
