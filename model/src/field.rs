@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident};
+use syn::Ident;
 
 use crate::{
     Node,
@@ -335,7 +335,7 @@ impl<'cx> View<'cx, FieldNode> {
             Some(quote! {
                 pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
                     #ident {
-                        _state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     }
                 }
             })
@@ -364,7 +364,7 @@ impl<'cx> View<'cx, FieldNode> {
 
         quote! {
             pub struct #ident<S> {
-                _state: S,
+                state: S,
             }
 
             #concrete_impl
@@ -375,8 +375,16 @@ impl<'cx> View<'cx, FieldNode> {
             {
                 unsafe fn conjure() -> Self {
                     Self {
-                        _state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
                     }
+                }
+            }
+
+            impl<S> ::core::ops::Deref for #ident<S> {
+                type Target = S;
+
+                fn deref(&self) -> &S {
+                    &self.state
                 }
             }
 
