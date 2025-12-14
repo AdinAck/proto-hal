@@ -536,7 +536,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
 
     /// Add [ontological entitlements](TODO) to the field.
     pub fn ontological_entitlements(
-        &'cx mut self,
+        &mut self,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
@@ -577,7 +577,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
 impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
     /// Add [hardware write access entitlements](TODO) to the field.
     pub fn hardware_write_entitlements(
-        &'cx mut self,
+        &mut self,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) {
         self.model.entitlements.insert(
@@ -592,7 +592,7 @@ where
     Meta: access::IsWrite,
 {
     /// Add [write access entitlements](TODO) to the field.
-    pub fn write_entitlements(&'cx mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
+    pub fn write_entitlements(&mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
         self.model.entitlements.insert(
             EntitlementIndex::Write(self.index),
             entitlements.into_iter().collect(),
@@ -607,10 +607,7 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
     }
 
     /// Add [statewise entitlements](TODO) to the variant.
-    pub fn statewise_entitlements(
-        &'cx mut self,
-        entitlements: impl IntoIterator<Item = Entitlement>,
-    ) {
+    pub fn statewise_entitlements(&mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
         let entitlements = entitlements.into_iter().collect::<IndexSet<Entitlement>>();
 
         // reverse map
