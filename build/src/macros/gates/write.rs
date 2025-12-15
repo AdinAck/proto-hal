@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use model::Model;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -279,7 +279,9 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         let mut concrete_missing_fields = IndexSet::new();
         let mut ambiguous_missing_fields = IndexSet::new();
 
+        // for each bit
         for position in 0..32 {
+            // if a provided field covers this bit, continue to check the next bit
             if provided_fields
                 .values()
                 .any(|field| field.field().domain().contains(&position))
@@ -287,6 +289,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
                 continue;
             }
 
+            // get all fields with domains containing this bit and no inert variant
             let positioned_missing_fields = register_item
                 .register()
                 .fields()
@@ -297,17 +300,30 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
                             .get_write()
                             .is_some_and(|x| x.some_inert(model).is_none())
                 })
-                .map(|field| field.module_name())
-                .collect::<IndexSet<_>>();
+                .map(|field| (field.module_name(), field))
+                .collect::<IndexMap<_, _>>();
 
+            // if there are no fields at this bit, continue to check the next bit
             if positioned_missing_fields.is_empty() {
                 continue;
             }
 
+            // if the fields on this bit overlap with a provided field, they must
+            // be superpositioned and the provided field covers the overlapped
+            // fields which need not be provided
+            if positioned_missing_fields.values().any(|positioned| {
+                provided_fields
+                    .values()
+                    .any(|provided| positioned.overlaps_with(provided.field()))
+            }) {
+                continue;
+            }
+
             if positioned_missing_fields.len() == 1 {
-                concrete_missing_fields.insert(positioned_missing_fields.first().unwrap().clone());
+                concrete_missing_fields
+                    .insert(positioned_missing_fields.first().unwrap().0.clone());
             } else {
-                ambiguous_missing_fields.extend(positioned_missing_fields);
+                ambiguous_missing_fields.extend(positioned_missing_fields.keys().cloned());
             }
         }
 
