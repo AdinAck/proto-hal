@@ -149,14 +149,16 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             reg_write_values.push(fragments::register_write_value(
                 register_item,
                 Some(initial),
-                |r, f| {
-                    let RequireBinding::DynamicTransition(..) = f.entry() else {
-                        None?
-                    };
+                |r, f| match f.entry() {
+                    RequireBinding::DynamicTransition(..) => {
+                        let i = unique_field_ident(r.peripheral(), r.register(), f.field());
 
-                    let i = unique_field_ident(r.peripheral(), r.register(), f.field());
-
-                    Some(quote! { (#i.1)(#return_idents) as u32 })
+                        Some(quote! { (#i.1)(#return_idents) as u32 })
+                    }
+                    RequireBinding::Static(.., semantic::Transition::Expr(expr)) => {
+                        Some(expr.to_token_stream())
+                    }
+                    _ => None,
                 },
             ));
         }
