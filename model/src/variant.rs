@@ -123,7 +123,7 @@ impl<'cx> View<'cx, VariantNode> {
             // any T satisfies this state's entitlement requirements
 
             return quote! {
-                unsafe impl<T> ::proto_hal::stasis::Entitled<T> for #field_ty<#ident> {}
+                unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, T> for #field_ty<#ident> {}
             };
         };
 
@@ -139,7 +139,7 @@ impl<'cx> View<'cx, VariantNode> {
 
         quote! {
             #(
-                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for #field_ty<#ident> {}
+                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #entitlement_paths> for #field_ty<#ident> {}
             )*
         }
     }

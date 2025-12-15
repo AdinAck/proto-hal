@@ -244,7 +244,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 
         Some(quote! {
             #(
-                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for Reset {}
+                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #entitlement_paths> for Reset {}
             )*
         })
     }

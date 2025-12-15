@@ -49,8 +49,8 @@ pub unsafe trait State<Parent>: Conjure {}
 /// If write access to a field is entitled to some set of other states in other fields, then
 /// *writing to* this field requires proof that the dependency states are inhabited.
 ///
-/// ## Ontology
-/// The existance a field can be dependent on state(s) inhabitancy.
+/// ## Ontological
+/// The existance of a field or peripheral can be dependent on state(s) inhabitancy.
 ///
 /// ### Example
 /// The interpretation of the bits in a register is not always fixed. In other words, the
@@ -63,11 +63,17 @@ pub unsafe trait State<Parent>: Conjure {}
 /// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
 /// undefined behavior.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` has entitlements, but `{Locus}` is not one of them",
+    message = "`{Self}` has {Axis} entitlements, but `{Locus}` is not one of them",
     label = "not entitled to `{Locus}`",
     // note = "learn more: <docs link>"
 )]
-pub unsafe trait Entitled<Locus> {}
+pub unsafe trait Entitled<Axis, Locus> {}
+
+pub mod entitlement_axes {
+    pub struct Statewise;
+    pub struct Affordance;
+    pub struct Ontological;
+}
 
 /// Implementors of this trait are type-stated resources. Since device resources have no size,
 /// they must be "conjured" when the type context requires them to be.
