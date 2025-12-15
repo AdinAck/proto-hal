@@ -118,7 +118,7 @@ fn write_entitlements<'cx>(
         );
 
         Some(quote_spanned! { span =>
-            #input_ty: ::proto_hal::stasis::Entitled<#entitlement_input_ty>
+            #input_ty: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Affordance, #entitlement_input_ty>
         })
     });
 
@@ -200,7 +200,7 @@ fn statewise_entitlements<'cx>(
         ));
 
         Some(quote_spanned! { span =>
-            #lhs: ::proto_hal::stasis::Entitled<#rhs>
+            #lhs: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #rhs>
         })
     });
 

@@ -226,7 +226,7 @@ fn make_constraints<'cx>(
         let generic = make_generic(entitlement_register_item, entitlement_field_item);
 
         constraints.push(quote! {
-            #constrained_ty: ::proto_hal::stasis::Entitled<#field_ty_path<#generic>>
+            #constrained_ty: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #field_ty_path<#generic>>
         });
     }
 }

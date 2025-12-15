@@ -324,7 +324,7 @@ impl<'cx> View<'cx, FieldNode> {
             pub struct Field;
 
             #(
-                unsafe impl ::proto_hal::stasis::Entitled<#entitlement_paths> for Field {}
+                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #entitlement_paths> for Field {}
             )*
         }
     }
@@ -390,7 +390,7 @@ impl<'cx> View<'cx, FieldNode> {
             }
 
             #(
-                unsafe impl<S> ::proto_hal::stasis::Entitled<#entitlement_paths> for #ident<S> {}
+                unsafe impl<S> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Affordance, #entitlement_paths> for #ident<S> {}
             )*
         }
     }
