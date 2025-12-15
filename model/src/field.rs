@@ -293,6 +293,10 @@ impl Field {
     pub fn domain(&self) -> Range<u8> {
         self.offset..(self.offset + self.width)
     }
+
+    pub fn overlaps_with(&self, other: &Field) -> bool {
+        self.domain().start < other.domain().end && self.domain().end > other.domain().start
+    }
 }
 
 // codegen
