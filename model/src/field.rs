@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::Ident;
+use syn::{Ident, LitInt};
 
 use crate::{
     Node,
@@ -133,6 +133,7 @@ impl<'cx> View<'cx, FieldNode> {
         match &read {
             Numericity::Numeric(numeric) => {
                 let (.., ty) = numeric.ty(self.width);
+                let reset = LitInt::new(&reset.to_string(), Span::call_site());
 
                 Some(quote! { ::proto_hal::stasis::#ty<#reset> })
             }
