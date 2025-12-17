@@ -156,7 +156,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                         Some(quote! { (#i.1)(#return_idents) as u32 })
                     }
                     RequireBinding::Static(.., semantic::Transition::Expr(expr)) => {
-                        Some(expr.to_token_stream())
+                        Some(quote! { #expr as u32 })
                     }
                     _ => None,
                 },

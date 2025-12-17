@@ -115,7 +115,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                             RequireBinding::Static(.., semantic::Transition::Expr(expr)),
                             ..,
                             None,
-                        ) => expr.to_token_stream(),
+                        ) => quote! { #expr as u32 },
                         (..) => None?,
                     })
                 },
