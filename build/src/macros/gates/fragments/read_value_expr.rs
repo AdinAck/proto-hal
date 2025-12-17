@@ -10,7 +10,8 @@ use syn::{Ident, Path};
 use crate::macros::gates::utils::unique_register_ident;
 
 pub fn read_value_expr(
-    register_path: &Path,
+    peripheral_path: &Path,
+    register_ident: &Ident,
     field_ident: &Ident,
     peripheral: &Peripheral,
     register: &Register,
@@ -35,7 +36,7 @@ pub fn read_value_expr(
     Some(match field.access.get_read()? {
         Numericity::Numeric(..) => value,
         Numericity::Enumerated(..) => quote! {
-            unsafe { #register_path::#field_ident::ReadVariant::from_bits(#value) }
+            unsafe { #peripheral_path::#register_ident::#field_ident::ReadVariant::from_bits(#value) }
         },
     })
 }

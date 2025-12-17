@@ -53,18 +53,19 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let errors = render_diagnostics(diagnostics);
 
     let return_rank =
-        ReturnRank::from_input(&input, |field_item| field_item.field().access.is_read());
+        ReturnRank::from_input_strict(&input, |field_item| field_item.field().access.is_read());
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
     let return_init = fragments::read_return_init(&return_rank);
     let return_idents = match return_rank {
         ReturnRank::Empty => None,
-        ReturnRank::Field { field_item, .. } => {
-            Some(field_item.field().module_name().to_token_stream())
-        }
-        ReturnRank::Register { register_item, .. } => {
-            Some(register_item.register().module_name().to_token_stream())
-        }
+        ReturnRank::Field {
+            field: field_item, ..
+        } => Some(field_item.field().module_name().to_token_stream()),
+        ReturnRank::Register {
+            register: register_item,
+            ..
+        } => Some(register_item.register().module_name().to_token_stream()),
         ReturnRank::Peripheral(map) => {
             let idents = map.keys();
 

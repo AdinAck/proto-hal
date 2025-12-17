@@ -20,8 +20,8 @@ where
     match rank {
         ReturnRank::Empty => None,
         ReturnRank::Field {
-            register_item,
-            field_item,
+            register: register_item,
+            field: field_item,
             ..
         } => read_value_expr(
             &register_item.path(),
@@ -31,7 +31,7 @@ where
             field_item.field(),
         ),
         ReturnRank::Register {
-            register_item,
+            register: register_item,
             fields,
             ..
         } => Some(register_read_return_init(

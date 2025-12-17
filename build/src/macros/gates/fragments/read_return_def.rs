@@ -15,7 +15,7 @@ where
     match rank {
         ReturnRank::Empty | ReturnRank::Field { .. } => None,
         ReturnRank::Register {
-            register_item,
+            register: register_item,
             fields,
             ..
         } => Some(register_read_return_def(

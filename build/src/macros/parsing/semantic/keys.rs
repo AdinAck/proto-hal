@@ -1,55 +1,32 @@
 use model::{field::Field, peripheral::Peripheral, register::Register};
 
-/// The key used to query the parsed gate input for peripheral-level items.
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct PeripheralKey(String);
+macro_rules! key {
+    ( $ty_name: ident, $model_component: ident, $doc: literal ) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+        pub struct $ty_name(String);
 
-impl PeripheralKey {
-    /// Produce the key for the provided peripheral model element.
-    pub fn from_model(peripheral: &Peripheral) -> Self {
-        Self(peripheral.module_name().to_string())
-    }
+        impl $ty_name {
+            /// Produce the key for the provided model component.
+            pub fn from_model(component: &$model_component) -> Self {
+                Self(component.module_name().to_string())
+            }
 
-    /// Speculatively produce a key from the provided identifier.
-    pub fn from_ident(ident: impl Into<String>) -> Self {
-        Self(ident.into())
-    }
-}
-
-/// The key used to query the parsed gate input for register-level items.
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct RegisterKey((String, String));
-
-impl RegisterKey {
-    /// Produce the key for the provided peripheral and register model elements.
-    pub fn from_model(peripheral: &Peripheral, register: &Register) -> Self {
-        Self((
-            peripheral.module_name().to_string(),
-            register.module_name().to_string(),
-        ))
-    }
-
-    /// Speculatively produce a key from the provided identifiers.
-    pub fn from_ident(
-        peripheral_ident: impl Into<String>,
-        register_ident: impl Into<String>,
-    ) -> Self {
-        Self((peripheral_ident.into(), register_ident.into()))
+            /// Speculatively produce a key from the provided identifier.
+            pub fn from_ident(ident: impl Into<String>) -> Self {
+                Self(ident.into())
+            }
+        }
+    };
+    ( $(( $ty_name: ident, $model_component: ident, $doc: literal ) $(,)?)+ ) => {
+        $(
+            key! { $ty_name, $model_component, $doc }
+        )+
     }
 }
 
-/// The key used to query the parsed gate input for field-level items.
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct FieldKey(String);
-
-impl FieldKey {
-    /// Produce the key for the provided field model element.
-    pub fn from_model(field: &Field) -> Self {
-        Self(field.module_name().to_string())
-    }
-
-    /// Speculatively produce a key from the provided identifier.
-    pub fn from_ident(ident: impl Into<String>) -> Self {
-        Self(ident.into())
-    }
+key! {
+    (PeripheralKey, Peripheral, "The key used to query the parsed gate input for peripheral-level items."),
+    (RegisterKey, Register, "The key used to query the parsed gate input for register-level items."),
+    (FieldKey, Field, "The key used to query the parsed gate input for field-level items."),
 }

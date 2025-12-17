@@ -97,7 +97,7 @@ fn write_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_register_item, entitlement_field_item) = input.get_field(
+        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
             entitlement_peripheral.module_name().to_string(),
             entitlement_register.module_name().to_string(),
             entitlement_field.module_name().to_string(),
@@ -111,7 +111,8 @@ fn write_entitlements<'cx>(
         );
 
         let entitlement_input_ty = fragments::input_ty(
-            &entitlement_register_item.path(),
+            &entitlement_peripheral_item.path(),
+            &entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
             entitlement_input_generic.as_ref(),
@@ -170,7 +171,7 @@ fn statewise_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_register_item, entitlement_field_item) = input.get_field(
+        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
             entitlement_peripheral.module_name().to_string(),
             entitlement_register.module_name().to_string(),
             entitlement_field.module_name().to_string(),
@@ -184,7 +185,8 @@ fn statewise_entitlements<'cx>(
         );
 
         let entitlement_return_ty = fragments::transition_return_ty(
-            &entitlement_register_item.path(),
+            &entitlement_peripheral_item.path(),
+            &entitlement_register_item.ident(),
             entitlement_field_item.entry(),
             entitlement_field_item.field(),
             entitlement_field_item.ident(),
@@ -193,7 +195,8 @@ fn statewise_entitlements<'cx>(
 
         let lhs = return_ty.clone();
         let rhs = entitlement_return_ty.unwrap_or(fragments::input_ty(
-            &entitlement_register_item.path(),
+            &entitlement_peripheral_item.path(),
+            &entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
             entitlement_input_generic.as_ref(),

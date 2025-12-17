@@ -15,15 +15,18 @@ where
     match rank {
         ReturnRank::Empty => None,
         ReturnRank::Field {
-            register_item,
-            field_item,
+            register: register_item,
+            field: field_item,
             ..
         } => Some(read_value_ty(
-            &register_item.path(),
+            &per & register_item.path(),
             field_item.ident(),
             field_item.field().access.get_read()?,
         )),
-        ReturnRank::Register { register_item, .. } => {
+        ReturnRank::Register {
+            register: register_item,
+            ..
+        } => {
             let ident = register_item.register().type_name();
 
             Some(quote! { #ident })
