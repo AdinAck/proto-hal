@@ -15,7 +15,7 @@ use crate::macros::{
         },
     },
     parsing::{
-        semantic::{self, FieldItem, RegisterItem, policies},
+        semantic::{self, FieldItem, PeripheralItem, RegisterItem, policies},
         syntax::Override,
     },
 };
@@ -65,20 +65,22 @@ pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
     let mut parameters = Vec::new();
     let mut bindings = Vec::new();
 
-    for register_item in input.visit_registers() {
-        reg_idents.push(unique_register_ident(
-            register_item.peripheral(),
-            register_item.register(),
-        ));
-        addrs.push(fragments::register_address(
-            register_item.peripheral(),
-            register_item.register(),
-            &overridden_base_addrs,
-        ));
+    for peripheral_item in input.visit_peripherals() {
+        for register_item in peripheral_item.registers().values() {
+            reg_idents.push(unique_register_ident(
+                peripheral_item.peripheral(),
+                register_item.register(),
+            ));
+            addrs.push(fragments::register_address(
+                peripheral_item.peripheral(),
+                register_item.register(),
+                &overridden_base_addrs,
+            ));
 
-        for field_item in register_item.fields().values() {
-            parameters.push(make_parameter(register_item, field_item));
-            bindings.push(field_item.entry().as_ref());
+            for field_item in register_item.fields().values() {
+                parameters.push(make_parameter(peripheral_item, register_item, field_item));
+                bindings.push(field_item.entry().as_ref());
+            }
         }
     }
 
@@ -129,16 +131,18 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
 }
 
 fn make_parameter<'cx>(
+    peripheral_item: &PeripheralItem<'cx, policies::peripheral::ForbidPath, EntryPolicy<'cx>>,
     register_item: &RegisterItem<'cx, EntryPolicy<'cx>>,
     field_item: &FieldItem<'cx, EntryPolicy<'cx>>,
 ) -> TokenStream {
     let unique_ident = unique_field_ident(
-        register_item.peripheral(),
+        peripheral_item.peripheral(),
         register_item.register(),
         field_item.field(),
     );
-    let path = register_item.path();
-    let ident = field_item.ident();
+    let peripheral_path = peripheral_item.path();
+    let register_ident = register_item.ident();
+    let field_ident = field_item.ident();
     let ty = field_item.field().type_name();
 
     let ref_ = if let Access::Store(..) = &field_item.field().access {
@@ -147,5 +151,5 @@ fn make_parameter<'cx>(
         quote! { &mut }
     };
 
-    quote! { #unique_ident: #ref_ #path::#ident::#ty<::proto_hal::stasis::Dynamic> }
+    quote! { #unique_ident: #ref_ #peripheral_path::#register_ident::#field_ident::#ty<::proto_hal::stasis::Dynamic> }
 }

@@ -6,7 +6,8 @@ use syn::{Ident, Path, spanned::Spanned as _};
 use crate::macros::parsing::semantic;
 
 pub fn write_argument_value(
-    register_path: &Path,
+    peripheral_path: &Path,
+    register_ident: &Ident,
     field_ident: &Ident,
     field: &FieldNode,
     transition: &semantic::Transition,
@@ -23,7 +24,7 @@ pub fn write_argument_value(
 
     if let Some(Numericity::Enumerated(..)) = field.access.get_write() {
         quote! {{
-            use #register_path::#field_ident::WriteVariant::{self as Variant, *};
+            use #peripheral_path::#register_ident::#field_ident::WriteVariant::{self as Variant, *};
             #block
         }}
     } else {

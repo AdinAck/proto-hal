@@ -79,15 +79,12 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let return_init = fragments::read_return_init(&return_rank);
     let return_idents = match return_rank {
         ReturnRank::Empty => None,
-        ReturnRank::Field {
-            field: field_item, ..
-        } => Some(field_item.field().module_name().to_token_stream()),
-        ReturnRank::Register {
-            register: register_item,
-            ..
-        } => Some(register_item.register().module_name().to_token_stream()),
+        ReturnRank::Field { field, .. } => Some(field.module_name().to_token_stream()),
+        ReturnRank::Register { register, .. } => Some(register.module_name().to_token_stream()),
         ReturnRank::Peripheral(map) => {
-            let idents = map.keys();
+            let idents = map
+                .values()
+                .map(|(_, peripheral, ..)| peripheral.module_name());
 
             Some(quote! { #(#idents),* })
         }
@@ -106,144 +103,155 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
     let mut conjures = Vec::new();
     let mut rebinds = Vec::new();
 
-    for register_item in input.visit_registers() {
-        let register_path = register_item.path();
-        let register_ident =
-            unique_register_ident(register_item.peripheral(), register_item.register());
-        let addr = fragments::register_address(
-            register_item.peripheral(),
-            register_item.register(),
-            &overridden_base_addrs,
-        );
+    for peripheral_item in input.visit_peripherals() {
+        let peripheral_path = peripheral_item.path();
 
-        if register_item
-            .register()
-            .fields()
-            .any(|field| field.access.is_read())
-        {
-            read_reg_idents.push(register_ident.clone());
-            read_addrs.push(addr.clone());
-        }
-
-        if register_item.fields().values().any(|field_item| {
-            matches!(
-                field_item.entry(),
-                RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
-            )
-        }) {
-            let static_initial = static_initial(model, register_item)
-                .map(|value| value.get())
-                .map(|static_initial| quote! { | #static_initial });
-            let mask = mask(
-                register_item
-                    .fields()
-                    .values()
-                    .filter(|field| field.entry().transition().is_some()),
-            )
-            .map(|value| !value.get())
-            .map(|mask| quote! { & #mask });
-            let initial = quote! {
-                (#register_ident #mask) #static_initial
-            };
-
-            write_addrs.push(addr);
-            reg_write_values.push(fragments::register_write_value(
-                register_item,
-                Some(initial),
-                |r, f| match f.entry() {
-                    RequireBinding::DynamicTransition(..) => {
-                        let i = unique_field_ident(r.peripheral(), r.register(), f.field());
-
-                        Some(quote! { (#i.1)(#return_idents) as u32 })
-                    }
-                    RequireBinding::Static(.., semantic::Transition::Expr(expr)) => {
-                        Some(quote! { #expr as u32 })
-                    }
-                    _ => None,
-                },
-            ));
-        }
-
-        for field_item in register_item.fields().values() {
-            let binding = field_item.entry().binding();
-            if binding.is_ident() {
-                rebinds.push(binding.as_ref());
-            }
-
-            let (input_generic, output_generic) =
-                fragments::generics(model, &input, register_item, field_item);
-
-            let input_ty = fragments::input_ty(
-                &register_path,
-                field_item.ident(),
-                field_item.field(),
-                input_generic.as_ref(),
-            );
-
-            let return_ty = fragments::transition_return_ty(
-                &register_path,
-                field_item.entry(),
-                field_item.field(),
-                field_item.ident(),
-                output_generic.as_ref(),
-            );
-
-            if let Some(local_constraints) = fragments::constraints(
-                &input,
-                model,
-                &register_path,
-                binding,
-                field_item.ident(),
-                field_item.field(),
-                input_generic.as_ref(),
-                output_generic.as_ref(),
-                &input_ty,
-                return_ty.as_ref(),
-            ) {
-                constraints.push(local_constraints);
-            }
-
-            if let Some(return_ty) = &return_ty {
-                transition_return_tys.push(return_ty.clone());
-                conjures.push(fragments::conjure());
-            }
-
-            if let Some(generic) = input_generic {
-                generics.push(generic);
-            }
-
-            if let Some(generic) = output_generic {
-                generics.push(generic);
-            }
-
-            parameter_idents.push(unique_field_ident(
+        for register_item in peripheral_item.registers().values() {
+            let register_unique_ident =
+                unique_register_ident(register_item.peripheral(), register_item.register());
+            let addr = fragments::register_address(
                 register_item.peripheral(),
                 register_item.register(),
-                field_item.field(),
-            ));
+                &overridden_base_addrs,
+            );
 
-            let write_value_ty = if field_item.entry().transition().is_some() {
-                field_item.field().access.get_write().map(|write| {
-                    fragments::write_value_ty(&register_path, field_item.ident(), write)
-                })
-            } else {
-                None
-            };
+            if register_item
+                .register()
+                .fields()
+                .any(|field| field.access.is_read())
+            {
+                read_reg_idents.push(register_unique_ident.clone());
+                read_addrs.push(addr.clone());
+            }
 
-            parameter_tys.push(fragments::modify_parameter_ty(
-                binding,
-                &input_ty,
-                write_value_ty.as_ref(),
-                return_ty.as_ref(),
-            ));
+            if register_item.fields().values().any(|field_item| {
+                matches!(
+                    field_item.entry(),
+                    RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
+                )
+            }) {
+                let static_initial = static_initial(model, register_item)
+                    .map(|value| value.get())
+                    .map(|static_initial| quote! { | #static_initial });
+                let mask = mask(
+                    register_item
+                        .fields()
+                        .values()
+                        .filter(|field| field.entry().transition().is_some()),
+                )
+                .map(|value| !value.get())
+                .map(|mask| quote! { & #mask });
+                let initial = quote! {
+                    (#register_unique_ident #mask) #static_initial
+                };
 
-            arguments.push(fragments::modify_argument(
-                &register_path,
-                field_item.ident(),
-                field_item.field(),
-                field_item.entry(),
-                return_idents.as_ref(),
-            ));
+                write_addrs.push(addr);
+                reg_write_values.push(fragments::register_write_value(
+                    register_item,
+                    Some(initial),
+                    |r, f| match f.entry() {
+                        RequireBinding::DynamicTransition(..) => {
+                            let i = unique_field_ident(r.peripheral(), r.register(), f.field());
+
+                            Some(quote! { (#i.1)(#return_idents) as u32 })
+                        }
+                        RequireBinding::Static(.., semantic::Transition::Expr(expr)) => {
+                            Some(quote! { #expr as u32 })
+                        }
+                        _ => None,
+                    },
+                ));
+            }
+
+            for field_item in register_item.fields().values() {
+                let binding = field_item.entry().binding();
+                if binding.is_ident() {
+                    rebinds.push(binding.as_ref());
+                }
+
+                let (input_generic, output_generic) =
+                    fragments::generics(model, &input, register_item, field_item);
+
+                let input_ty = fragments::input_ty(
+                    &peripheral_path,
+                    register_item.ident(),
+                    field_item.ident(),
+                    field_item.field(),
+                    input_generic.as_ref(),
+                );
+
+                let return_ty = fragments::transition_return_ty(
+                    &peripheral_path,
+                    register_item.ident(),
+                    field_item.entry(),
+                    field_item.field(),
+                    field_item.ident(),
+                    output_generic.as_ref(),
+                );
+
+                if let Some(local_constraints) = fragments::constraints(
+                    &input,
+                    model,
+                    &peripheral_path,
+                    binding,
+                    field_item.ident(),
+                    field_item.field(),
+                    input_generic.as_ref(),
+                    output_generic.as_ref(),
+                    &input_ty,
+                    return_ty.as_ref(),
+                ) {
+                    constraints.push(local_constraints);
+                }
+
+                if let Some(return_ty) = &return_ty {
+                    transition_return_tys.push(return_ty.clone());
+                    conjures.push(fragments::conjure());
+                }
+
+                if let Some(generic) = input_generic {
+                    generics.push(generic);
+                }
+
+                if let Some(generic) = output_generic {
+                    generics.push(generic);
+                }
+
+                parameter_idents.push(unique_field_ident(
+                    register_item.peripheral(),
+                    register_item.register(),
+                    field_item.field(),
+                ));
+
+                let write_value_ty = if field_item.entry().transition().is_some() {
+                    field_item.field().access.get_write().map(|write| {
+                        fragments::write_value_ty(
+                            peripheral_path,
+                            register_item.ident(),
+                            field_item.ident(),
+                            write,
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                parameter_tys.push(fragments::modify_parameter_ty(
+                    binding,
+                    &input_ty,
+                    write_value_ty.as_ref(),
+                    return_ty.as_ref(),
+                ));
+
+                arguments.push(fragments::modify_argument(
+                    peripheral_path,
+                    register_item.ident(),
+                    field_item.ident(),
+                    field_item.field(),
+                    field_item.entry(),
+                    return_idents.as_ref(),
+                ));
+            }
         }
     }
 

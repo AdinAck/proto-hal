@@ -1,66 +1,60 @@
-use inflector::Inflector as _;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::Ident;
 
-use crate::macros::{
-    gates::{
-        fragments::{read_value_expr, register_read_return_init},
-        utils::return_rank::ReturnRank,
-    },
-    parsing::semantic::{FieldEntry, policies::Refine},
+use crate::macros::gates::{
+    fragments::{read_value_expr, register_read_return_init},
+    utils::return_rank::ReturnRank,
 };
 
-pub fn read_return_init<'cx, EntryPolicy>(
-    rank: &ReturnRank<'cx, EntryPolicy>,
-) -> Option<TokenStream>
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
-{
+pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
     match rank {
         ReturnRank::Empty => None,
         ReturnRank::Field {
-            register: register_item,
-            field: field_item,
+            peripheral_path,
+            peripheral,
+            register,
+            field,
             ..
         } => read_value_expr(
-            &register_item.path(),
-            field_item.ident(),
-            register_item.peripheral(),
-            register_item.register(),
-            field_item.field(),
+            peripheral_path,
+            &register.ident,
+            &field.ident,
+            &peripheral,
+            &register,
+            &field,
         ),
         ReturnRank::Register {
-            register: register_item,
+            peripheral_path,
+            peripheral,
+            register,
             fields,
             ..
         } => Some(register_read_return_init(
-            register_item.register().type_name(),
-            register_item,
+            &peripheral_path,
+            peripheral,
+            &register.type_name(),
+            &register,
             fields,
         )),
         ReturnRank::Peripheral(map) => {
             let values = map
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        Ident::new(k.to_string().to_pascal_case().as_str(), Span::call_site()),
-                        v,
-                    )
-                })
-                .map(|(ident, registers)| {
+                .values()
+                .map(|(peripheral_path, peripheral, registers)| {
+                    let peripheral_ty = peripheral.type_name();
                     let (register_idents, register_values) = registers
                         .values()
-                        .map(|(register_item, fields)| {
+                        .map(|(register, fields)| {
                             (
-                                register_item.register().module_name(),
+                                register.module_name(),
                                 register_read_return_init(
-                                    format_ident!(
+                                    peripheral_path,
+                                    peripheral,
+                                    &format_ident!(
                                         "{}{}",
-                                        register_item.peripheral().type_name(),
-                                        register_item.register().type_name()
+                                        peripheral.type_name(),
+                                        register.type_name()
                                     ),
-                                    register_item,
+                                    register,
                                     fields,
                                 ),
                             )
@@ -68,7 +62,7 @@ where
                         .collect::<(Vec<_>, Vec<_>)>();
 
                     quote! {
-                        #ident {
+                        #peripheral_ty {
                             #(#register_idents: #register_values,)*
                         }
                     }

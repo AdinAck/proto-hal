@@ -1,12 +1,14 @@
 use indexmap::IndexMap;
 use model::{field::FieldNode, model::View, peripheral::PeripheralNode, register::RegisterNode};
+use syn::Path;
 
 use crate::macros::parsing::semantic::{
     self, FieldEntry, FieldItem, FieldKey, PeripheralKey, RegisterKey,
     policies::{self, Refine},
 };
 
-type PeripheralMap<'cx> = IndexMap<PeripheralKey, (View<'cx, PeripheralNode>, RegisterMap<'cx>)>;
+type PeripheralMap<'cx> =
+    IndexMap<PeripheralKey, (Path, View<'cx, PeripheralNode>, RegisterMap<'cx>)>;
 type RegisterMap<'cx> = IndexMap<RegisterKey, (View<'cx, RegisterNode>, FieldMap<'cx>)>;
 type FieldMap<'cx> = IndexMap<FieldKey, View<'cx, FieldNode>>;
 
@@ -17,6 +19,7 @@ pub enum ReturnRank<'cx> {
     /// Only one field is present.
     Field {
         peripheral_key: PeripheralKey,
+        peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
         register_key: RegisterKey,
         register: View<'cx, RegisterNode>,
@@ -26,6 +29,7 @@ pub enum ReturnRank<'cx> {
     /// Only one register is present.
     Register {
         peripheral_key: PeripheralKey,
+        peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
         register_key: RegisterKey,
         register: View<'cx, RegisterNode>,
@@ -39,6 +43,7 @@ impl<'cx> ReturnRank<'cx> {
     pub fn next(
         self,
         peripheral_key: PeripheralKey,
+        peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
         register_key: RegisterKey,
         register: View<'cx, RegisterNode>,
@@ -53,6 +58,7 @@ impl<'cx> ReturnRank<'cx> {
 
                 ReturnRank::Field {
                     peripheral_key,
+                    peripheral_path,
                     peripheral,
                     register_key,
                     register,
@@ -62,6 +68,7 @@ impl<'cx> ReturnRank<'cx> {
             }
             ReturnRank::Field {
                 peripheral_key: existing_peripheral_key,
+                peripheral_path: existing_peripheral_path,
                 peripheral: existing_peripheral,
                 register_key: existing_register_key,
                 register: existing_register,
@@ -77,6 +84,7 @@ impl<'cx> ReturnRank<'cx> {
 
                     ReturnRank::Register {
                         peripheral_key,
+                        peripheral_path,
                         peripheral,
                         register_key,
                         register,
@@ -94,6 +102,7 @@ impl<'cx> ReturnRank<'cx> {
                     map.insert(
                         existing_peripheral_key,
                         (
+                            existing_peripheral_path,
                             existing_peripheral,
                             IndexMap::from([(
                                 existing_register_key,
@@ -108,8 +117,8 @@ impl<'cx> ReturnRank<'cx> {
                     // insert the *new* field into the *existing* peripheral and/or register or create a *new*
                     // peripheral and/or register as needed
                     map.entry(peripheral_key)
-                        .or_insert((peripheral, IndexMap::new()))
-                        .1
+                        .or_insert((peripheral_path, peripheral, IndexMap::new()))
+                        .2
                         .entry(register_key)
                         .or_insert((register, IndexMap::from([(field_key, field)])));
 
@@ -118,6 +127,7 @@ impl<'cx> ReturnRank<'cx> {
             }
             ReturnRank::Register {
                 peripheral_key: existing_peripheral_key,
+                peripheral_path: existing_peripheral_path,
                 peripheral: existing_peripheral,
                 register_key: existing_register_key,
                 register: existing_register,
@@ -134,6 +144,7 @@ impl<'cx> ReturnRank<'cx> {
 
                     ReturnRank::Register {
                         peripheral_key: existing_peripheral_key,
+                        peripheral_path: existing_peripheral_path,
                         peripheral: existing_peripheral,
                         register_key: existing_register_key,
                         register: existing_register,
@@ -148,6 +159,7 @@ impl<'cx> ReturnRank<'cx> {
                     map.insert(
                         existing_peripheral_key,
                         (
+                            existing_peripheral_path,
                             existing_peripheral,
                             IndexMap::from([(
                                 existing_register_key,
@@ -160,8 +172,8 @@ impl<'cx> ReturnRank<'cx> {
                     // insert the *new* field into the *existing* peripheral and/or register or create a *new*
                     // peripheral and/or register as needed
                     map.entry(peripheral_key)
-                        .or_insert((peripheral, IndexMap::new()))
-                        .1
+                        .or_insert((peripheral_path, peripheral, IndexMap::new()))
+                        .2
                         .entry(register_key)
                         .or_insert((register, IndexMap::from([(field_key, field)])));
 
@@ -176,8 +188,8 @@ impl<'cx> ReturnRank<'cx> {
                 // insert the *new* field into an *existing* peripheral and/or register or create a *new*
                 // peripheral and/or register as needed
                 map.entry(peripheral_key)
-                    .or_insert((peripheral, IndexMap::new()))
-                    .1
+                    .or_insert((peripheral_path, peripheral, IndexMap::new()))
+                    .2
                     .entry(register_key)
                     .or_insert((register, IndexMap::from([(field_key, field)])));
 
@@ -203,6 +215,7 @@ impl<'cx> ReturnRank<'cx> {
                     if filter(field_item) {
                         rank = rank.next(
                             peripheral_key.clone(),
+                            peripheral_item.path().clone(),
                             peripheral_item.peripheral().clone(),
                             register_key.clone(),
                             register_item.register().clone(),
@@ -222,7 +235,7 @@ impl<'cx> ReturnRank<'cx> {
     /// will be considered for the rank.
     pub fn from_input_relaxed<EntryPolicy>(
         input: &'cx semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
-        filter: impl Fn(&FieldItem<'cx, EntryPolicy>) -> bool,
+        filter: impl Fn(&View<'cx, FieldNode>) -> bool,
     ) -> Self
     where
         EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
@@ -234,14 +247,17 @@ impl<'cx> ReturnRank<'cx> {
                 // fill unspecified registers/fields
                 for register in peripheral_item.peripheral().registers() {
                     for field in register.fields() {
-                        rank = rank.next(
-                            PeripheralKey::from_model(peripheral_item.peripheral()),
-                            peripheral_item.peripheral().clone(),
-                            RegisterKey::from_model(&register),
-                            register.clone(),
-                            FieldKey::from_model(&field),
-                            field,
-                        );
+                        if filter(&field) {
+                            rank = rank.next(
+                                PeripheralKey::from_model(peripheral_item.peripheral()),
+                                peripheral_item.path().clone(),
+                                peripheral_item.peripheral().clone(),
+                                RegisterKey::from_model(&register),
+                                register.clone(),
+                                FieldKey::from_model(&field),
+                                field,
+                            );
+                        }
                     }
                 }
             }
@@ -250,21 +266,25 @@ impl<'cx> ReturnRank<'cx> {
                 if register_item.fields().is_empty() {
                     // fill unspecified fields
                     for field in register_item.register().fields() {
-                        rank = rank.next(
-                            PeripheralKey::from_model(peripheral_item.peripheral()),
-                            peripheral_item.peripheral().clone(),
-                            RegisterKey::from_model(register_item.register()),
-                            register_item.register().clone(),
-                            FieldKey::from_model(&field),
-                            field,
-                        );
+                        if filter(&field) {
+                            rank = rank.next(
+                                PeripheralKey::from_model(peripheral_item.peripheral()),
+                                peripheral_item.path().clone(),
+                                peripheral_item.peripheral().clone(),
+                                RegisterKey::from_model(register_item.register()),
+                                register_item.register().clone(),
+                                FieldKey::from_model(&field),
+                                field,
+                            );
+                        }
                     }
                 }
 
                 for (field_key, field_item) in register_item.fields() {
-                    if filter(field_item) {
+                    if filter(field_item.field()) {
                         rank = rank.next(
                             peripheral_key.clone(),
+                            peripheral_item.path().clone(),
                             peripheral_item.peripheral().clone(),
                             register_key.clone(),
                             register_item.register().clone(),
