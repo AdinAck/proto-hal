@@ -52,21 +52,18 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
-    let return_rank =
-        ReturnRank::from_input(&input, |field_item| field_item.field().access.is_read());
+    let return_rank = ReturnRank::from_input_relaxed(&input, |field| field.access.is_read());
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
     let return_init = fragments::read_return_init(&return_rank);
     let return_idents = match return_rank {
         ReturnRank::Empty => None,
-        ReturnRank::Field { field_item, .. } => {
-            Some(field_item.field().module_name().to_token_stream())
-        }
-        ReturnRank::Register { register_item, .. } => {
-            Some(register_item.register().module_name().to_token_stream())
-        }
+        ReturnRank::Field { field, .. } => Some(field.module_name().to_token_stream()),
+        ReturnRank::Register { register, .. } => Some(register.module_name().to_token_stream()),
         ReturnRank::Peripheral(map) => {
-            let idents = map.keys();
+            let idents = map
+                .values()
+                .map(|(_, peripheral, ..)| peripheral.module_name());
 
             Some(quote! { #(#idents),* })
         }
@@ -80,70 +77,75 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let mut write_exprs = Vec::new();
     let mut reg_write_values = Vec::new();
 
-    for register_item in input.visit_registers() {
-        let register_path = register_item.path();
-        let register_ident =
-            unique_register_ident(register_item.peripheral(), register_item.register());
-        let addr = fragments::register_address(
-            register_item.peripheral(),
-            register_item.register(),
-            &overridden_base_addrs,
-        );
+    for peripheral_item in input.visit_peripherals() {
+        let peripheral_path = peripheral_item.path();
 
-        if register_item
-            .register()
-            .fields()
-            .any(|field| field.access.is_read())
-        {
-            read_reg_idents.push(register_ident.clone());
-            read_addrs.push(addr.clone());
-        }
+        for register_item in peripheral_item.registers().values() {
+            let register_unique_ident =
+                unique_register_ident(register_item.peripheral(), register_item.register());
+            let addr = fragments::register_address(
+                peripheral_item.peripheral(),
+                register_item.register(),
+                &overridden_base_addrs,
+            );
 
-        if register_item
-            .fields()
-            .values()
-            .any(|field_item| field_item.entry().is_some())
-        {
-            let initial = &register_ident;
-            let mask = mask(register_item.fields().values()).map(|non_zero| {
-                let inverted = !non_zero.get();
-                quote! { & #inverted }
-            });
-
-            write_addrs.push(addr);
-            reg_write_values.push(fragments::register_write_value(
-                register_item,
-                Some(quote! { #initial #mask }),
-                |r, f| {
-                    let i = unique_field_ident(r.peripheral(), r.register(), f.field());
-
-                    Some(quote! { #i(#return_idents) as u32 })
-                },
-            ));
-        }
-
-        for field_item in register_item.fields().values() {
-            if let Some(write) = field_item.field().access.get_write()
-                && let Some(transition) = field_item.entry().deref()
+            if register_item
+                .register()
+                .fields()
+                .any(|field| field.access.is_read())
             {
-                closure_idents.push(unique_field_ident(
-                    register_item.peripheral(),
-                    register_item.register(),
-                    field_item.field(),
-                ));
+                read_reg_idents.push(register_unique_ident.clone());
+                read_addrs.push(addr.clone());
+            }
 
-                closure_return_tys.push(fragments::write_value_ty(
-                    &register_path,
-                    field_item.ident(),
-                    write,
-                ));
+            if register_item
+                .fields()
+                .values()
+                .any(|field_item| field_item.entry().is_some())
+            {
+                let initial = &register_unique_ident;
+                let mask = mask(register_item.fields().values()).map(|non_zero| {
+                    let inverted = !non_zero.get();
+                    quote! { & #inverted }
+                });
 
-                write_exprs.push(fragments::write_argument_value(
-                    &register_path,
-                    field_item.ident(),
-                    field_item.field(),
-                    transition,
+                write_addrs.push(addr);
+                reg_write_values.push(fragments::register_write_value(
+                    register_item,
+                    Some(quote! { #initial #mask }),
+                    |r, f| {
+                        let i = unique_field_ident(r.peripheral(), r.register(), f.field());
+
+                        Some(quote! { #i(#return_idents) as u32 })
+                    },
                 ));
+            }
+
+            for field_item in register_item.fields().values() {
+                if let Some(write) = field_item.field().access.get_write()
+                    && let Some(transition) = field_item.entry().deref()
+                {
+                    closure_idents.push(unique_field_ident(
+                        register_item.peripheral(),
+                        register_item.register(),
+                        field_item.field(),
+                    ));
+
+                    closure_return_tys.push(fragments::write_value_ty(
+                        peripheral_path,
+                        register_item.ident(),
+                        field_item.ident(),
+                        write,
+                    ));
+
+                    write_exprs.push(fragments::write_argument_value(
+                        peripheral_path,
+                        register_item.ident(),
+                        field_item.ident(),
+                        field_item.field(),
+                        transition,
+                    ));
+                }
             }
         }
     }

@@ -4,7 +4,8 @@ use quote::quote;
 use syn::{Ident, Path};
 
 pub fn input_ty(
-    register_path: &Path,
+    peripheral_path: &Path,
+    register_ident: &Ident,
     field_ident: &Ident,
     field: &Field,
     input_generic: Option<&Ident>,
@@ -12,8 +13,8 @@ pub fn input_ty(
     let ty_name = field.type_name();
 
     if let Some(generic) = input_generic {
-        quote! { #register_path::#field_ident::#ty_name<#generic> }
+        quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#generic> }
     } else {
-        quote! { #register_path::#field_ident::#ty_name<::proto_hal::stasis::Dynamic> }
+        quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<::proto_hal::stasis::Dynamic> }
     }
 }

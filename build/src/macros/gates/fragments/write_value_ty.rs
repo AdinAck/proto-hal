@@ -4,14 +4,15 @@ use quote::quote;
 use syn::{Ident, Path};
 
 pub fn write_value_ty(
-    register_path: &Path,
+    peripheral_path: &Path,
+    register_ident: &Ident,
     field_ident: &Ident,
     write_numericity: &Numericity,
 ) -> TokenStream {
     match write_numericity {
         Numericity::Numeric(..) => quote! { u32 },
         Numericity::Enumerated(..) => quote! {
-            #register_path::#field_ident::WriteVariant
+            #peripheral_path::#register_ident::#field_ident::WriteVariant
         },
     }
 }

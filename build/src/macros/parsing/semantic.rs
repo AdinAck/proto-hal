@@ -14,7 +14,7 @@ use model::{
     peripheral::PeripheralNode,
     register::RegisterNode,
 };
-use syn::{Ident, Path, parse_quote};
+use syn::{Ident, Path};
 use ters::ters;
 
 use crate::macros::{
@@ -29,7 +29,8 @@ pub use entry::{FieldEntry, PeripheralEntry};
 pub use keys::*;
 pub use transition::Transition;
 
-type PeripheralMap<'cx, EntryPolicy> = IndexMap<PeripheralKey, PeripheralItem<'cx, EntryPolicy>>;
+type PeripheralMap<'cx, PeripheralEntryPolicy, FieldEntryPolicy> =
+    IndexMap<PeripheralKey, PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>>;
 type RegisterMap<'cx, EntryPolicy> = IndexMap<RegisterKey, RegisterItem<'cx, EntryPolicy>>;
 type FieldMap<'cx, EntryPolicy> = IndexMap<FieldKey, FieldItem<'cx, EntryPolicy>>;
 
@@ -41,9 +42,7 @@ where
     FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
-    peripherals: PeripheralMap<'cx, PeripheralEntryPolicy>,
-    #[get]
-    registers: RegisterMap<'cx, FieldEntryPolicy>,
+    peripherals: PeripheralMap<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
 }
 
 impl<'cx, PeripheralEntryPolicy, FieldEntryPolicy>
@@ -56,40 +55,30 @@ where
     pub fn parse(args: &'cx syntax::Gate, model: &'cx Model) -> (Self, Diagnostics) {
         let mut diagnostics = Diagnostics::new();
         let mut peripherals = Default::default();
-        let mut registers = Default::default();
 
         for tree in &args.trees {
-            if let Err(e) = parse_peripheral::<PeripheralEntryPolicy, _>(
-                model,
-                &mut peripherals,
-                &mut registers,
-                tree,
-            ) {
+            if let Err(e) =
+                parse_peripheral::<PeripheralEntryPolicy, _>(model, &mut peripherals, tree)
+            {
                 diagnostics.extend(e);
             }
         }
 
-        (
-            Self {
-                peripherals,
-                registers,
-            },
-            diagnostics,
-        )
+        (Self { peripherals }, diagnostics)
     }
 
     /// Query for a peripheral-level item with the provided identifier.
     pub fn get_peripheral(
         &self,
         ident: impl Into<String>,
-    ) -> Option<&PeripheralItem<'cx, PeripheralEntryPolicy>> {
+    ) -> Option<&PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>> {
         self.peripherals.get(&PeripheralKey::from_ident(ident))
     }
 
     /// Visit all peripheral-level items.
     pub fn visit_peripherals(
         &self,
-    ) -> impl Iterator<Item = &PeripheralItem<'cx, PeripheralEntryPolicy>> {
+    ) -> impl Iterator<Item = &PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>> {
         self.peripherals.values()
     }
 
@@ -98,40 +87,48 @@ where
         &self,
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
-    ) -> Option<&RegisterItem<'cx, FieldEntryPolicy>> {
-        self.registers
-            .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
+    ) -> Option<(
+        &PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
+        &RegisterItem<'cx, FieldEntryPolicy>,
+    )> {
+        let peripheral_item = self.get_peripheral(peripheral_ident)?;
+
+        peripheral_item
+            .registers
+            .get(&RegisterKey::from_ident(register_ident))
+            .map(|register_item| (peripheral_item, register_item))
     }
 
     /// Visit all register-level items.
     pub fn visit_registers(&self) -> impl Iterator<Item = &RegisterItem<'cx, FieldEntryPolicy>> {
-        self.registers.values()
+        self.visit_peripherals()
+            .flat_map(|peripheral_item| peripheral_item.registers.values())
     }
 
     /// Query for a field-level item with the provided peripheral, register, and field identifiers.
+    #[expect(clippy::type_complexity)]
     pub fn get_field(
         &self,
         peripheral_ident: impl Into<String>,
         register_ident: impl Into<String>,
         field_ident: impl Into<String>,
     ) -> Option<(
+        &PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
         &RegisterItem<'cx, FieldEntryPolicy>,
         &FieldItem<'cx, FieldEntryPolicy>,
     )> {
-        self.registers
-            .get(&RegisterKey::from_ident(peripheral_ident, register_ident))
-            .and_then(|register_item| {
-                register_item
-                    .fields
-                    .get(&FieldKey::from_ident(field_ident))
-                    .map(|field_item| (register_item, field_item))
-            })
+        let (peripheral_item, register_item) =
+            self.get_register(peripheral_ident, register_ident)?;
+
+        register_item
+            .fields
+            .get(&FieldKey::from_ident(field_ident))
+            .map(|field_item| (peripheral_item, register_item, field_item))
     }
 
     /// Visit all field-level items.
     pub fn visit_fields(&self) -> impl Iterator<Item = &FieldItem<'cx, FieldEntryPolicy>> {
-        self.registers
-            .values()
+        self.visit_registers()
             .flat_map(|register_item| register_item.fields.values())
     }
 }
@@ -140,9 +137,10 @@ where
 ///
 /// *Note: This item DOES NOT contain child registers, and DOES contain a binding.*
 #[ters]
-pub struct PeripheralItem<'cx, EntryPolicy>
+pub struct PeripheralItem<'cx, PeripheralEntryPolicy, FieldEntryPolicy>
 where
-    EntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
     path: Path,
@@ -151,7 +149,9 @@ where
     #[get]
     peripheral: View<'cx, PeripheralNode>,
     #[get]
-    entry: EntryPolicy,
+    entry: Option<PeripheralEntryPolicy>,
+    #[get]
+    registers: RegisterMap<'cx, FieldEntryPolicy>,
 }
 
 /// A register-level item present in the gate.
@@ -162,8 +162,6 @@ pub struct RegisterItem<'cx, EntryPolicy>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
-    #[get]
-    peripheral_path: Path,
     #[get]
     ident: &'cx Ident,
     #[get]
@@ -188,18 +186,6 @@ where
     field: View<'cx, FieldNode>,
     #[get]
     entry: EntryPolicy,
-}
-
-impl<'cx, EntryPolicy> RegisterItem<'cx, EntryPolicy>
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
-{
-    /// The path to the register including segments *before* the peripheral.
-    pub fn path(&self) -> Path {
-        let peripheral_path = self.peripheral_path();
-        let ident = self.ident();
-        parse_quote! { #peripheral_path::#ident }
-    }
 }
 
 #[cfg(test)]
@@ -243,7 +229,7 @@ mod tests {
 
         assert_eq!(peripheral.path(), &peripheral_path);
         assert_eq!(
-            **peripheral.entry(),
+            **peripheral.entry().as_ref().expect("expected entry"),
             &syn::parse2::<syntax::Binding>(quote! { #peripheral_binding }).unwrap()
         );
         assert_eq!(peripheral.peripheral().ident, peripheral_name);
@@ -287,7 +273,7 @@ mod tests {
 
         assert_eq!(peripheral0.path(), &peripheral0_path);
         assert_eq!(
-            **peripheral0.entry(),
+            **peripheral0.entry().as_ref().expect("expected binding"),
             &syn::parse2::<syntax::Binding>(quote! { #peripheral0_binding }).unwrap()
         );
         assert_eq!(peripheral0.peripheral().ident, peripheral0_name);
@@ -318,14 +304,12 @@ mod tests {
                 &args, &model,
             );
 
-        let register = gate
+        let (peripheral, register) = gate
             .get_register(peripheral_name, register_name)
             .expect("register should exist");
 
-        assert_eq!(
-            register.path(),
-            parse_quote!( #peripheral_path::#register_ident )
-        );
+        assert_eq!(peripheral.path(), &parse_quote!( #peripheral_path ));
+        assert_eq!(register.ident().to_string(), register_ident.to_string());
         assert!(register.fields().is_empty());
         assert!(e.is_empty(), "semantic parsing should succeed");
     }
@@ -387,11 +371,11 @@ mod tests {
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
-        let (register, field) = gate
+        let (peripheral, register, field) = gate
             .get_field(peripheral_name, register_name, field_name)
             .expect("field should exist");
 
-        assert_eq!(register.peripheral_path(), &peripheral_path);
+        assert_eq!(peripheral.path(), &peripheral_path);
         assert_eq!(register.peripheral().ident, peripheral_name);
         assert_eq!(register.register().ident, register_name);
 

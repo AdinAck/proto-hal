@@ -72,37 +72,43 @@ fn write_untracked(scheme: Scheme, model: &Model, tokens: TokenStream) -> TokenS
     let mut parameter_write_values = Vec::new();
     let mut reg_write_values = Vec::new();
 
-    for register_item in input.visit_registers() {
-        let register_path = register_item.path();
+    for peripheral_item in input.visit_peripherals() {
+        let peripheral_path = peripheral_item.path();
 
-        reg_write_values.push(reg_write_value(&scheme, register_item));
+        for register_item in peripheral_item.registers().values() {
+            let register_ident = register_item.ident();
 
-        addrs.push(fragments::register_address(
-            register_item.peripheral(),
-            register_item.register(),
-            &overridden_base_addrs,
-        ));
+            reg_write_values.push(reg_write_value(&scheme, register_item));
 
-        for field_item in register_item.fields().values() {
-            if let Some(write) = field_item.field().access.get_write() {
-                parameter_idents.push(unique_field_ident(
-                    register_item.peripheral(),
-                    register_item.register(),
-                    field_item.field(),
-                ));
+            addrs.push(fragments::register_address(
+                register_item.peripheral(),
+                register_item.register(),
+                &overridden_base_addrs,
+            ));
 
-                parameter_tys.push(fragments::write_value_ty(
-                    &register_path,
-                    field_item.ident(),
-                    write,
-                ));
+            for field_item in register_item.fields().values() {
+                if let Some(write) = field_item.field().access.get_write() {
+                    parameter_idents.push(unique_field_ident(
+                        register_item.peripheral(),
+                        register_item.register(),
+                        field_item.field(),
+                    ));
 
-                parameter_write_values.push(fragments::write_argument_value(
-                    &register_path,
-                    field_item.ident(),
-                    field_item.field(),
-                    field_item.entry(),
-                ));
+                    parameter_tys.push(fragments::write_value_ty(
+                        peripheral_path,
+                        register_ident,
+                        field_item.ident(),
+                        write,
+                    ));
+
+                    parameter_write_values.push(fragments::write_argument_value(
+                        peripheral_path,
+                        register_ident,
+                        field_item.ident(),
+                        field_item.field(),
+                        field_item.entry(),
+                    ));
+                }
             }
         }
     }

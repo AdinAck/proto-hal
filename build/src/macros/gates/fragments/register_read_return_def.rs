@@ -1,35 +1,30 @@
 use indexmap::IndexMap;
+use model::{field::FieldNode, model::View, register::RegisterNode};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Ident;
+use syn::{Ident, Path};
 
-use crate::macros::{
-    gates::fragments::read_value_ty,
-    parsing::semantic::{FieldEntry, FieldItem, FieldKey, RegisterItem, policies::Refine},
-};
+use crate::macros::{gates::fragments::read_value_ty, parsing::semantic::FieldKey};
 
-pub fn register_read_return_def<'cx, EntryPolicy>(
-    register_ident: Ident,
-    register_item: &RegisterItem<'cx, EntryPolicy>,
-    fields: &IndexMap<&FieldKey, &FieldItem<'cx, EntryPolicy>>,
-) -> TokenStream
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
-{
-    let field_idents = fields
-        .values()
-        .map(|field_item| field_item.field().module_name());
+pub fn register_read_return_def<'cx>(
+    peripheral_path: &Path,
+    regester_ty: &Ident,
+    register_item: &View<'cx, RegisterNode>,
+    fields: &IndexMap<FieldKey, View<'cx, FieldNode>>,
+) -> TokenStream {
+    let field_idents = fields.values().map(|field_item| field_item.module_name());
 
     let field_tys = fields.values().filter_map(|field_item| {
         Some(read_value_ty(
-            &register_item.path(),
-            field_item.ident(),
-            field_item.field().access.get_read()?,
+            peripheral_path,
+            &register_item.ident,
+            &field_item.ident,
+            field_item.access.get_read()?,
         ))
     });
 
     quote! {
-        struct #register_ident {
+        struct #regester_ty {
             #(
                 #field_idents: #field_tys,
             )*

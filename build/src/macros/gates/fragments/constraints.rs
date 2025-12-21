@@ -23,7 +23,8 @@ pub fn constraints<'cx>(
         policies::field::RequireBinding<'cx>,
     >,
     model: &Model,
-    register_path: &Path,
+    peripheral_path: &Path,
+    register_ident: &Ident,
     binding: &Binding,
     field_ident: &Ident,
     field: &View<'cx, FieldNode>,
@@ -41,13 +42,13 @@ pub fn constraints<'cx>(
 
     if let Some(generic) = input_generic {
         constraints.push(
-            quote_spanned! { span => #generic: ::proto_hal::stasis::State<#register_path::#field_ident::Field> },
+            quote_spanned! { span => #generic: ::proto_hal::stasis::State<#peripheral_path::#register_ident::#field_ident::Field> },
         );
     }
 
     if let Some(generic) = output_generic {
         constraints.push(
-            quote_spanned! { span => #generic: ::proto_hal::stasis::Physical<#register_path::#field_ident::Field> },
+            quote_spanned! { span => #generic: ::proto_hal::stasis::Physical<#peripheral_path::#register_ident::#field_ident::Field> },
         );
     }
 
@@ -97,7 +98,7 @@ fn write_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_register_item, entitlement_field_item) = input.get_field(
+        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
             entitlement_peripheral.module_name().to_string(),
             entitlement_register.module_name().to_string(),
             entitlement_field.module_name().to_string(),
@@ -111,7 +112,8 @@ fn write_entitlements<'cx>(
         );
 
         let entitlement_input_ty = fragments::input_ty(
-            &entitlement_register_item.path(),
+            entitlement_peripheral_item.path(),
+            entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
             entitlement_input_generic.as_ref(),
@@ -170,7 +172,7 @@ fn statewise_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_register_item, entitlement_field_item) = input.get_field(
+        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
             entitlement_peripheral.module_name().to_string(),
             entitlement_register.module_name().to_string(),
             entitlement_field.module_name().to_string(),
@@ -184,7 +186,8 @@ fn statewise_entitlements<'cx>(
         );
 
         let entitlement_return_ty = fragments::transition_return_ty(
-            &entitlement_register_item.path(),
+            entitlement_peripheral_item.path(),
+            entitlement_register_item.ident(),
             entitlement_field_item.entry(),
             entitlement_field_item.field(),
             entitlement_field_item.ident(),
@@ -193,7 +196,8 @@ fn statewise_entitlements<'cx>(
 
         let lhs = return_ty.clone();
         let rhs = entitlement_return_ty.unwrap_or(fragments::input_ty(
-            &entitlement_register_item.path(),
+            entitlement_peripheral_item.path(),
+            entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
             entitlement_input_generic.as_ref(),

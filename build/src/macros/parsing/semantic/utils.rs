@@ -22,8 +22,7 @@ use crate::macros::{
 
 pub fn parse_peripheral<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
     model: &'cx Model,
-    peripheral_map: &mut PeripheralMap<'cx, PeripheralEntryPolicy>,
-    register_map: &mut RegisterMap<'cx, FieldEntryPolicy>,
+    peripheral_map: &mut PeripheralMap<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
     tree: &'cx Tree,
 ) -> Result<(), Diagnostics>
 where
@@ -42,35 +41,39 @@ where
         parse_quote! { #leading_colon #peripheral_path }
     };
 
+    let peripheral_key = PeripheralKey::from_model(&peripheral);
+
+    if let Some(existing) = peripheral_map.get(&peripheral_key)
+        && existing.entry().is_some()
+    {
+        Err(Diagnostic::item_already_specified(path))?
+    }
+
+    let peripheral_item = peripheral_map
+        .entry(peripheral_key)
+        .or_insert(PeripheralItem {
+            path: peripheral_path,
+            ident: peripheral_ident,
+            peripheral: peripheral.clone(),
+            entry: None,
+            registers: Default::default(),
+        });
+
     let Some(register_ident) = segments.next() else {
         // path ends on peripheral item
         match &tree.node {
             Node::Leaf(entry) => {
-                if peripheral_map
-                    .insert(
-                        PeripheralKey::from_model(&peripheral),
-                        PeripheralItem {
-                            path: path.clone(),
-                            ident: peripheral_ident,
-                            peripheral,
-                            entry: PeripheralEntryPolicy::refine(
-                                peripheral_ident,
-                                PeripheralEntry::parse(entry, peripheral_ident)?,
-                            )?,
-                        },
-                    )
-                    .is_some()
-                {
-                    Err(Diagnostic::item_already_specified(path))?
-                }
+                peripheral_item.entry.replace(PeripheralEntryPolicy::refine(
+                    peripheral_ident,
+                    PeripheralEntry::parse(entry, peripheral_ident)?,
+                )?);
             }
             Node::Branch(children) => {
                 for child in children {
                     if let Err(e) = parse_register(
                         model,
-                        register_map,
+                        &mut peripheral_item.registers,
                         child,
-                        &peripheral_path,
                         peripheral.clone(),
                     ) {
                         diagnostics.extend(e);
@@ -93,10 +96,9 @@ where
 
         match &tree.node {
             Node::Leaf(..) => {
-                register_map.insert(
-                    RegisterKey::from_model(&peripheral, &register),
+                peripheral_item.registers.insert(
+                    RegisterKey::from_model(&register),
                     RegisterItem {
-                        peripheral_path: peripheral_path.clone(),
                         ident: register_ident,
                         peripheral,
                         register,
@@ -108,9 +110,8 @@ where
                 for child in children {
                     if let Err(e) = parse_field(
                         model,
-                        register_map,
+                        &mut peripheral_item.registers,
                         child,
-                        peripheral_path.clone(),
                         peripheral.clone(),
                         register_ident,
                         register.clone(),
@@ -130,10 +131,9 @@ where
 
     put_field(
         model,
-        register_map,
+        &mut peripheral_item.registers,
         tree,
         field_ident,
-        peripheral_path,
         peripheral,
         register_ident,
         register,
@@ -150,7 +150,6 @@ fn parse_register<'cx, EntryPolicy>(
     model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
-    peripheral_path: &Path,
     peripheral: View<'cx, PeripheralNode>,
 ) -> Result<(), Diagnostics>
 where
@@ -172,7 +171,6 @@ where
             register_map,
             tree,
             field_ident,
-            peripheral_path.clone(),
             peripheral,
             register_ident,
             register,
@@ -187,7 +185,6 @@ where
                         model,
                         register_map,
                         child,
-                        peripheral_path.clone(),
                         peripheral.clone(),
                         register_ident,
                         register.clone(),
@@ -199,9 +196,8 @@ where
             // zero
             Node::Leaf(..) => {
                 register_map.insert(
-                    RegisterKey::from_model(&peripheral, &register),
+                    RegisterKey::from_model(&register),
                     RegisterItem {
-                        peripheral_path: peripheral_path.clone(),
                         ident: register_ident,
                         peripheral,
                         register,
@@ -223,7 +219,6 @@ fn parse_field<'cx, EntryPolicy>(
     model: &'cx Model,
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
-    peripheral_path: Path,
     peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
     register: View<'cx, RegisterNode>,
@@ -241,7 +236,6 @@ where
         register_map,
         tree,
         field_segment,
-        peripheral_path,
         peripheral,
         register_ident,
         register,
@@ -254,7 +248,6 @@ fn put_field<'cx, EntryPolicy>(
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     field_ident: &'cx Ident,
-    peripheral_path: Path,
     peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
     register: View<'cx, RegisterNode>,
@@ -268,9 +261,8 @@ where
         Node::Branch(..) => Err(Diagnostic::path_cannot_contine(&tree.path, field_ident))?,
         Node::Leaf(entry) => {
             if register_map
-                .entry(RegisterKey::from_model(&peripheral, register.as_ref()))
+                .entry(RegisterKey::from_model(&register))
                 .or_insert(RegisterItem {
-                    peripheral_path,
                     ident: register_ident,
                     peripheral,
                     register,
