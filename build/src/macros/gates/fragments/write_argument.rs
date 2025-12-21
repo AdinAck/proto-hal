@@ -17,7 +17,8 @@ pub fn write_argument<'cx>(
     match entry {
         RequireBinding::View(binding)
         | RequireBinding::Dynamic(binding)
-        | RequireBinding::Static(binding, ..) => binding.to_token_stream(),
+        | RequireBinding::Static(binding, ..)
+        | RequireBinding::Consumed(binding) => binding.to_token_stream(),
         RequireBinding::DynamicTransition(binding, transition) => {
             let binding = binding.as_ref();
             let value = write_argument_value(

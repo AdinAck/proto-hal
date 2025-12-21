@@ -80,8 +80,6 @@ impl<'cx> Refine<'cx> for TransitionOnly<'cx> {
 }
 
 /// The binding component of the entry must be specified.
-///
-/// *Note: This policy does not accept "consume" bindings.*
 pub enum RequireBinding<'cx> {
     /// The entry is a view (see [`Entry`]).
     View(&'cx syntax::Binding),
@@ -91,6 +89,8 @@ pub enum RequireBinding<'cx> {
     DynamicTransition(&'cx syntax::Binding, semantic::Transition<'cx>),
     /// The entry is static (see [`Entry`]).
     Static(&'cx syntax::Binding, semantic::Transition<'cx>),
+    /// The entry is just a static binding.
+    Consumed(&'cx syntax::Binding),
 }
 
 impl<'cx> Refine<'cx> for RequireBinding<'cx> {
@@ -105,7 +105,7 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
                 Self::DynamicTransition(binding, transition)
             }
             FieldEntry::StaticTransition(binding, transition) => Self::Static(binding, transition),
-            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_cannot_be_consumed(binding))?,
+            FieldEntry::Consumed(binding) => Self::Consumed(binding),
             FieldEntry::UnboundDynamicTransition(..) => Err(Diagnostic::expected_binding(cx))?,
         })
     }
@@ -118,14 +118,17 @@ impl<'cx> RequireBinding<'cx> {
             RequireBinding::View(binding)
             | RequireBinding::Dynamic(binding)
             | RequireBinding::DynamicTransition(binding, ..)
-            | RequireBinding::Static(binding, ..) => binding,
+            | RequireBinding::Static(binding, ..)
+            | RequireBinding::Consumed(binding) => binding,
         }
     }
 
     /// View the transition component of the entry if present.
     pub fn transition<'a>(&'a self) -> Option<&'a semantic::Transition<'cx>> {
         match self {
-            RequireBinding::View(..) | RequireBinding::Dynamic(..) => None,
+            RequireBinding::View(..)
+            | RequireBinding::Dynamic(..)
+            | RequireBinding::Consumed(..) => None,
             RequireBinding::DynamicTransition(.., transition)
             | RequireBinding::Static(.., transition) => Some(transition),
         }

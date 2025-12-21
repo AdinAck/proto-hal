@@ -191,6 +191,7 @@ fn statewise_entitlements<'cx>(
             entitlement_field_item.entry(),
             entitlement_field_item.field(),
             entitlement_field_item.ident(),
+            entitlement_input_generic.as_ref(),
             entitlement_output_generic.as_ref(),
         );
 
