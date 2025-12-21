@@ -106,6 +106,7 @@ where
     }
 
     /// Query for a field-level item with the provided peripheral, register, and field identifiers.
+    #[expect(clippy::type_complexity)]
     pub fn get_field(
         &self,
         peripheral_ident: impl Into<String>,

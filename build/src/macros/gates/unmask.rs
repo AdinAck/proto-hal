@@ -178,20 +178,24 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         let Some(ontological_entitlements) =
             peripheral_item.peripheral().ontological_entitlements()
         else {
-            diagnostics.push(Diagnostic::cannot_unmask_fundamental(
-                peripheral_item.ident(),
-            ));
+            if peripheral_item.entry().is_some() {
+                diagnostics.push(Diagnostic::cannot_unmask_fundamental(
+                    peripheral_item.ident(),
+                ));
+            }
 
             continue;
         };
 
-        entitlement_fields.extend(scan_entitlements(
-            input,
-            model,
-            &mut diagnostics,
-            peripheral_item.ident(),
-            ontological_entitlements,
-        ));
+        if peripheral_item.entry().is_some() {
+            entitlement_fields.extend(scan_entitlements(
+                input,
+                model,
+                &mut diagnostics,
+                peripheral_item.ident(),
+                ontological_entitlements,
+            ));
+        }
     }
 
     for field_item in input.visit_fields() {

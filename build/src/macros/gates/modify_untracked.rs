@@ -52,8 +52,7 @@ pub fn modify_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
     let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
-    let return_rank =
-        ReturnRank::from_input_strict(&input, |field_item| field_item.field().access.is_read());
+    let return_rank = ReturnRank::from_input_relaxed(&input, |field| field.access.is_read());
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
     let return_init = fragments::read_return_init(&return_rank);

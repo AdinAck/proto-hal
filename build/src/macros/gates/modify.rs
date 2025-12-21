@@ -107,6 +107,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         let peripheral_path = peripheral_item.path();
 
         for register_item in peripheral_item.registers().values() {
+            let register_ident = register_item.ident();
             let register_unique_ident =
                 unique_register_ident(register_item.peripheral(), register_item.register());
             let addr = fragments::register_address(
@@ -173,7 +174,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                     fragments::generics(model, &input, register_item, field_item);
 
                 let input_ty = fragments::input_ty(
-                    &peripheral_path,
+                    peripheral_path,
                     register_item.ident(),
                     field_item.ident(),
                     field_item.field(),
@@ -181,7 +182,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 );
 
                 let return_ty = fragments::transition_return_ty(
-                    &peripheral_path,
+                    peripheral_path,
                     register_item.ident(),
                     field_item.entry(),
                     field_item.field(),
@@ -192,7 +193,8 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
                     model,
-                    &peripheral_path,
+                    peripheral_path,
+                    register_ident,
                     binding,
                     field_item.ident(),
                     field_item.field(),

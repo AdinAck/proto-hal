@@ -43,7 +43,9 @@ where
 
     let peripheral_key = PeripheralKey::from_model(&peripheral);
 
-    if peripheral_map.contains_key(&peripheral_key) {
+    if let Some(existing) = peripheral_map.get(&peripheral_key)
+        && existing.entry().is_some()
+    {
         Err(Diagnostic::item_already_specified(path))?
     }
 

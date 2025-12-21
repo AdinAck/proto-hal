@@ -19,9 +19,9 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             peripheral_path,
             &register.ident,
             &field.ident,
-            &peripheral,
-            &register,
-            &field,
+            peripheral,
+            register,
+            field,
         ),
         ReturnRank::Register {
             peripheral_path,
@@ -30,10 +30,10 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             fields,
             ..
         } => Some(register_read_return_init(
-            &peripheral_path,
+            peripheral_path,
             peripheral,
             &register.type_name(),
-            &register,
+            register,
             fields,
         )),
         ReturnRank::Peripheral(map) => {

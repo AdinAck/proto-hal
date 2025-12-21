@@ -13,7 +13,7 @@ pub fn read_return_def<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             fields,
             ..
         } => Some(register_read_return_def(
-            &peripheral_path,
+            peripheral_path,
             &register.type_name(),
             register,
             fields,

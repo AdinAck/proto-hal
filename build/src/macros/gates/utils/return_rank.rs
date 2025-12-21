@@ -40,6 +40,7 @@ pub enum ReturnRank<'cx> {
 }
 
 impl<'cx> ReturnRank<'cx> {
+    #[expect(clippy::too_many_arguments)]
     pub fn next(
         self,
         peripheral_key: PeripheralKey,
