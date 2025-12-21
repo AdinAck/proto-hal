@@ -154,6 +154,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.entry(),
                     field_item.field(),
                     field_item.ident(),
+                    input_generic.as_ref(),
                     output_generic.as_ref(),
                 );
 

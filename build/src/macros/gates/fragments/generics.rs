@@ -40,6 +40,7 @@ where
                 None
             },
         ),
+        RequireBinding::Consumed(..) => (Some(input_generic), None),
         _ => (None, None),
     }
 }

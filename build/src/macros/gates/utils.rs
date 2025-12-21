@@ -203,7 +203,8 @@ pub fn static_initial<'cx>(
             let bits = match field_item.entry() {
                 RequireBinding::View(..)
                 | RequireBinding::Dynamic(..)
-                | RequireBinding::DynamicTransition(..) => None?,
+                | RequireBinding::DynamicTransition(..)
+                | RequireBinding::Consumed(..) => None?,
                 RequireBinding::Static(.., transition) => match transition {
                     semantic::Transition::Variant(.., variant) => variant.bits,
                     semantic::Transition::Expr(..) => None?,

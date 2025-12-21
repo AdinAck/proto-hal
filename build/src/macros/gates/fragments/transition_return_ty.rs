@@ -14,6 +14,7 @@ pub fn transition_return_ty(
     entry: &RequireBinding,
     field: &FieldNode,
     field_ident: &Ident,
+    input_generic: Option<&Ident>,
     output_generic: Option<&Ident>,
 ) -> Option<TokenStream> {
     let ty_name = field.type_name();
@@ -70,6 +71,9 @@ pub fn transition_return_ty(
                     quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#state> }
                 }
             }
+        }
+        RequireBinding::Consumed(..) => {
+            quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#input_generic> }
         }
     })
 }
