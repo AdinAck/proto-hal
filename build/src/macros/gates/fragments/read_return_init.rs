@@ -26,6 +26,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
         ReturnRank::Register {
             peripheral_path,
             peripheral,
+            register_ident,
             register,
             fields,
             ..
@@ -33,6 +34,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             peripheral_path,
             peripheral,
             &register.type_name(),
+            register_ident,
             register,
             fields,
         )),
@@ -43,7 +45,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                     let peripheral_ty = peripheral.type_name();
                     let (register_idents, register_values) = registers
                         .values()
-                        .map(|(register, fields)| {
+                        .map(|(register_ident, register, fields)| {
                             (
                                 register.module_name(),
                                 register_read_return_init(
@@ -54,6 +56,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                                         peripheral.type_name(),
                                         register.type_name()
                                     ),
+                                    register_ident,
                                     register,
                                     fields,
                                 ),

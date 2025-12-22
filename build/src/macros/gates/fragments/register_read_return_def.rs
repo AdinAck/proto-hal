@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use model::{field::FieldNode, model::View, register::RegisterNode};
+use model::{field::FieldNode, model::View};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Path};
@@ -9,17 +9,17 @@ use crate::macros::{gates::fragments::read_value_ty, parsing::semantic::FieldKey
 pub fn register_read_return_def<'cx>(
     peripheral_path: &Path,
     regester_ty: &Ident,
-    register_item: &View<'cx, RegisterNode>,
-    fields: &IndexMap<FieldKey, View<'cx, FieldNode>>,
+    register_ident: &Ident,
+    fields: &IndexMap<FieldKey, (Ident, View<'cx, FieldNode>)>,
 ) -> TokenStream {
-    let field_idents = fields.values().map(|field_item| field_item.module_name());
+    let field_idents = fields.values().map(|(.., field)| field.module_name());
 
-    let field_tys = fields.values().filter_map(|field_item| {
+    let field_tys = fields.values().filter_map(|(field_ident, field)| {
         Some(read_value_ty(
             peripheral_path,
-            &register_item.ident,
-            &field_item.ident,
-            field_item.access.get_read()?,
+            register_ident,
+            field_ident,
+            field.access.get_read()?,
         ))
     });
 
