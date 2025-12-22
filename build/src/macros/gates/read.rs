@@ -84,7 +84,7 @@ pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
         }
     }
 
-    let return_ty = return_ty.map(|return_ty| quote! { -> #return_ty });
+    let return_ty = return_ty.map(|return_ty| quote! { -> (#return_ty) });
 
     let unsafe_ = input
         .visit_fields()
