@@ -9,13 +9,14 @@ pub fn read_return_def<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
         ReturnRank::Empty | ReturnRank::Field { .. } => None,
         ReturnRank::Register {
             peripheral_path,
+            register_ident,
             register,
             fields,
             ..
         } => Some(register_read_return_def(
             peripheral_path,
             &register.type_name(),
-            register,
+            register_ident,
             fields,
         )),
         ReturnRank::Peripheral(map) => {
@@ -25,17 +26,22 @@ pub fn read_return_def<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                     let peripheral_ty = peripheral.type_name();
                     let register_idents = registers
                         .values()
-                        .map(|(register, ..)| register.module_name());
+                        .map(|(_, register, ..)| register.module_name());
 
                     let (register_tys, register_defs) = registers
                         .values()
-                        .map(|(register, fields)| {
-                            let ident =
+                        .map(|(register_ident, register, fields)| {
+                            let ty =
                                 format_ident!("{}{}", peripheral.type_name(), register.type_name());
 
                             (
-                                ident.clone(),
-                                register_read_return_def(peripheral_path, &ident, register, fields),
+                                ty.clone(),
+                                register_read_return_def(
+                                    peripheral_path,
+                                    &ty,
+                                    register_ident,
+                                    fields,
+                                ),
                             )
                         })
                         .collect::<(Vec<_>, Vec<_>)>();
