@@ -74,7 +74,7 @@ pub fn read_untracked(model: &Model, tokens: TokenStream) -> TokenStream {
         ));
     }
 
-    let return_ty = return_ty.map(|return_ty| quote! { -> #return_ty });
+    let return_ty = return_ty.map(|return_ty| quote! { -> (#return_ty) });
 
     quote! {
         #suggestions
