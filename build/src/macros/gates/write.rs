@@ -193,14 +193,18 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.field(),
                 ));
 
-                let value_ty = field_item.field().access.get_write().map(|write| {
-                    fragments::write_value_ty(
-                        peripheral_path,
-                        register_ident,
-                        field_item.ident(),
-                        write,
-                    )
-                });
+                let value_ty = if field_item.entry().transition().is_some() {
+                    field_item.field().access.get_write().map(|write| {
+                        fragments::write_value_ty(
+                            peripheral_path,
+                            register_ident,
+                            field_item.ident(),
+                            write,
+                        )
+                    })
+                } else {
+                    None
+                };
 
                 parameter_tys.push(fragments::write_parameter_ty(
                     binding,

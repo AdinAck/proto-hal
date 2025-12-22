@@ -12,6 +12,8 @@ pub fn write_parameter_ty(
         && binding.is_dynamic()
     {
         quote! { (&mut #input_ty, #ty) }
+    } else if binding.is_dynamic() {
+        quote! { &mut #input_ty }
     } else if binding.is_viewed() {
         quote! { &#input_ty }
     } else {
