@@ -234,7 +234,7 @@ pub struct Field {
     pub width: u8,
     pub docs: Vec<String>,
 
-    pub partial: bool,
+    pub leaky: bool,
 }
 
 impl Field {
@@ -244,7 +244,7 @@ impl Field {
             offset,
             width,
             docs: Vec::new(),
-            partial: false,
+            leaky: false,
         }
     }
 
@@ -259,17 +259,17 @@ impl Field {
         self
     }
 
-    /// Mark this field as *partially implemented*.
+    /// Mark this field as *leaky*.
     ///
-    /// This is useful when:
+    /// This is useful when this model component is unsound because:
     /// 1. The HAL author knows the description is incomplete.
     /// 1. proto-hal is incapable of properly encapsulating
     ///    the invariances of the field.
     ///
     /// This will cause all interactions with this field to be `unsafe`.
-    pub fn partial(self) -> Self {
+    pub fn leaky(self) -> Self {
         Self {
-            partial: true,
+            leaky: true,
             ..self
         }
     }

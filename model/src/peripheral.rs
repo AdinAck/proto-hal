@@ -48,7 +48,7 @@ pub struct Peripheral {
     pub base_addr: u32,
     pub docs: Vec<String>,
 
-    pub partial: bool,
+    pub leaky: bool,
 }
 
 impl Peripheral {
@@ -57,7 +57,7 @@ impl Peripheral {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             base_addr,
             docs: Vec::new(),
-            partial: false,
+            leaky: false,
         }
     }
 
@@ -72,17 +72,17 @@ impl Peripheral {
         self
     }
 
-    /// Mark the fields in this peripheral as *partially implemented*.
+    /// Mark the fields in this peripheral as *leaky*.
     ///
-    /// This is useful when:
+    /// This is useful when this model component is unsound because:
     /// 1. The HAL author knows the description is incomplete.
     /// 1. proto-hal is incapable of properly encapsulating
     ///    the invariances of the fields in this peripheral.
     ///
     /// This will cause all interactions with the fields in this peripheral to be `unsafe`.
-    pub fn partial(self) -> Self {
+    pub fn leaky(self) -> Self {
         Self {
-            partial: true,
+            leaky: true,
             ..self
         }
     }

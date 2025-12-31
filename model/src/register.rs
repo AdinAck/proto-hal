@@ -43,7 +43,7 @@ pub struct Register {
     pub reset: Option<u32>,
     pub docs: Vec<String>,
 
-    pub partial: bool,
+    pub leaky: bool,
 }
 
 impl Register {
@@ -53,7 +53,7 @@ impl Register {
             offset,
             reset: None,
             docs: Vec::new(),
-            partial: false,
+            leaky: false,
         }
     }
 
@@ -74,17 +74,17 @@ impl Register {
         self
     }
 
-    /// Mark the fields in this register as *partially implemented*.
+    /// Mark the fields in this register as *leaky*.
     ///
-    /// This is useful when:
+    /// This is useful when this model component is unsound because:
     /// 1. The HAL author knows the description is incomplete.
     /// 1. proto-hal is incapable of properly encapsulating
     ///    the invariances of the fields in this register.
     ///
     /// This will cause all interactions with the fields in this register to be `unsafe`.
-    pub fn partial(self) -> Self {
+    pub fn leaky(self) -> Self {
         Self {
-            partial: true,
+            leaky: true,
             ..self
         }
     }
