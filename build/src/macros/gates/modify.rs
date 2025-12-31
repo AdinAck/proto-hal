@@ -290,7 +290,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
         .any(|field| {
             let (peripheral, register) = field.field().parents();
 
-            field.field().partial || register.partial || peripheral.partial
+            field.field().leaky || register.leaky || peripheral.leaky
         })
         .then_some(quote! { unsafe });
 
