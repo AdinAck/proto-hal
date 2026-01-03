@@ -30,49 +30,27 @@ pub unsafe trait Physical<Parent>: State<Parent> {
 /// results in undefined behavior.
 pub unsafe trait State<Parent>: Conjure {}
 
-/// Implementors of this trait are type-stated resources with entitlement constraints.
-/// Many kinds of resources can be entitled in any of the following ways:
-///
-/// ## Statewise
-/// State inhabitancy can be dependent on other state(s) inhabitancy.
-///
-/// ### Example
-/// If a state of a field is entitled to a some set of other states in other fields, then
-/// transitioning *to* this state requires proof that the dependency states will be inhabited
-/// when the transition is complete.
-///
-/// ## Affordance
-/// The ability to and quality of interacting with a field can be dependent on state(s)
-/// inhabitancy.
-///
-/// ### Example
-/// If write access to a field is entitled to some set of other states in other fields, then
-/// *writing to* this field requires proof that the dependency states are inhabited.
-///
-/// ## Ontological
-/// The existance of a field or peripheral can be dependent on state(s) inhabitancy.
-///
-/// ### Example
-/// The interpretation of the bits in a register is not always fixed. In other words, the
-/// *fields* of a register can change. Some fields within the same register may be
-/// superpositioned if the fields themselves are entitled to complementary states.
-///
-/// # Safety
-/// Implementing this trait is a contract that the implementor is a resource in which said resource
-/// implementing this trait conforms to the device model.
-/// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
-/// undefined behavior.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` has {Axis} entitlements, but `{Locus}` is not one of them",
-    label = "not entitled to `{Locus}`",
-    // note = "learn more: <docs link>"
-)]
-pub unsafe trait Entitled<Axis, Locus> {}
+/// Implementors of this trait are entitlements of the specified pattern.
+pub unsafe trait Entitlement<P: Pattern> {}
 
-pub mod entitlement_axes {
+/// Implementors of this trait are entitlement patterns on a particular axis.
+pub unsafe trait Pattern {
+    type Axis: Axis;
+}
+
+/// Implementors of this trait are entitlement axes.
+pub unsafe trait Axis {}
+
+pub mod axes {
+    use super::Axis;
+
     pub struct Statewise;
     pub struct Affordance;
     pub struct Ontological;
+
+    unsafe impl Axis for Statewise {}
+    unsafe impl Axis for Affordance {}
+    unsafe impl Axis for Ontological {}
 }
 
 /// Implementors of this trait are type-stated resources. Since device resources have no size,

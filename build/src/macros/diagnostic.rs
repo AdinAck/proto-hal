@@ -196,23 +196,21 @@ impl Diagnostic {
         Self::new(Kind::ExpectedTransition, "expected transition", offending)
     }
 
-    /// "foo" is entitled to [E0, E1, ...] in field "bar" which must be provided
-    pub fn missing_entitlements(
+    /// provided fields [F0, F1, ...] are insufficient to satisfy entitlement patterns [P0, P1, ...], which are required
+    /// by "foo"
+    pub fn missing_entitlements<'a>(
         offending: &Ident,
-        entitlement_peripheral: &Ident,
-        entitlement_register: &Ident,
-        entitlement_field: &Ident,
-        entitlement_variants: impl Iterator<Item = Ident>,
+        provided_field_idents: impl Iterator<Item = String>,
+        unsatisfiable_patterns: impl Iterator<Item = String>,
     ) -> Self {
-        let entitlement_list = entitlement_variants
-            .map(|ident| ident.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let provided = provided_field_idents.collect::<Vec<_>>().join(", ");
+        let patterns = unsatisfiable_patterns.collect::<Vec<_>>().join(", ");
+
         Self::new(
             Kind::MissingEntitlements,
             format!(
-                "\"{offending}\" is entitled to [{entitlement_list}] in field \
-                \"{entitlement_peripheral}::{entitlement_register}::{entitlement_field}\" which must be provided"
+                "provided fields [{provided}] are insufficient to satisfy entitlement patterns [{patterns}],\
+                which are required by \"{offending}\""
             ),
             offending,
         )

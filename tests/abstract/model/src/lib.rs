@@ -1,8 +1,8 @@
 #![allow(clippy::disallowed_names)]
 
-use proto_hal_model::{Field, Model, Peripheral, Register, Variant};
+use proto_hal_model::{Field, Model, Peripheral, Register, Variant, error::Error};
 
-pub fn model() -> Model {
+pub fn model() -> Result<Model, Error> {
     let mut model = Model::new();
 
     let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
@@ -22,14 +22,14 @@ pub fn model() -> Model {
     let mut write_requires_v5 = foo1.add_write_field(Field::new("write_requires_v5", 0, 1));
 
     write_requires_v5.add_variant(Variant::new("Noop", 0));
-    write_requires_v5.write_entitlements([v5]);
+    write_requires_v5.write_entitlements([[v5]])?;
 
     let mut bar = model.add_peripheral(Peripheral::new("bar", 0x100));
 
     bar.add_register(Register::new("bar0", 0));
     bar.add_register(Register::new("bar1", 4));
 
-    model
+    Ok(model)
 }
 
 #[cfg(test)]

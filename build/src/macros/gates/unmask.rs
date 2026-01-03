@@ -1,7 +1,9 @@
-use indexmap::IndexMap;
+use std::collections::HashSet;
+
 use model::{
     Model,
-    entitlement::{Entitlement, Entitlements},
+    entitlement::{self, Entitlement},
+    field::FieldIndex,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote};
@@ -11,7 +13,10 @@ use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
-        utils::{module_suggestions, render_diagnostics, scan_entitlements, unique_field_ident},
+        utils::{
+            module_suggestions, render_diagnostics, unique_field_ident,
+            validate_entitlement_presence,
+        },
     },
     parsing::semantic::{self, policies},
 };
@@ -172,7 +177,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     // 2. all unentitled items must be entitled to by at least one other item
 
     let mut diagnostics = Diagnostics::new();
-    let mut entitlement_fields = IndexMap::new();
+    let mut incumbent_fields = HashSet::<&'cx FieldIndex>::new();
 
     for peripheral_item in input.visit_peripherals() {
         let Some(ontological_entitlements) =
@@ -187,14 +192,16 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
             continue;
         };
 
+        incumbent_fields.extend(ontological_entitlements.field_indicies());
+
         if peripheral_item.entry().is_some() {
-            entitlement_fields.extend(scan_entitlements(
+            validate_entitlement_presence(
                 input,
                 model,
-                &mut diagnostics,
                 peripheral_item.ident(),
+                &mut diagnostics,
                 ontological_entitlements,
-            ));
+            );
         }
     }
 
@@ -203,20 +210,22 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
             continue;
         };
 
-        entitlement_fields.extend(scan_entitlements(
+        incumbent_fields.extend(ontological_entitlements.field_indicies());
+
+        validate_entitlement_presence(
             input,
             model,
-            &mut diagnostics,
             field_item.ident(),
+            &mut diagnostics,
             ontological_entitlements,
-        ));
+        );
     }
 
     for field_item in input
         .visit_fields()
         .filter(|field_item| field_item.field().ontological_entitlements().is_none())
     {
-        if !entitlement_fields.contains_key(field_item.field().index()) {
+        if !incumbent_fields.contains(field_item.field().index()) {
             diagnostics.push(Diagnostic::unincumbent_field(field_item.ident()));
         }
     }
@@ -229,9 +238,9 @@ fn make_constraints<'cx>(
     model: &'cx Model,
     constraints: &mut Vec<TokenStream>,
     constrained_ty: &TokenStream,
-    ontological_entitlements: &Entitlements,
+    ontological_entitlements: &entitlement::Space,
 ) {
-    for ontological_entitlement in ontological_entitlements {
+    for ontological_entitlement in ontological_entitlements.entitlements() {
         let Some((entitlement_peripheral_item, entitlement_register_item, entitlement_field_item)) =
             get_entitlement_input_items(input, model, ontological_entitlement)
         else {
@@ -245,6 +254,7 @@ fn make_constraints<'cx>(
         );
         let generic = make_generic(entitlement_register_item, entitlement_field_item);
 
+        // TODO: this is going to change!
         constraints.push(quote! {
             #constrained_ty: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #field_ty_path<#generic>>
         });

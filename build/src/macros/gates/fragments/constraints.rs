@@ -147,7 +147,7 @@ fn statewise_entitlements<'cx>(
         variant
             .statewise_entitlements()
             .into_iter()
-            .flat_map(|x| x.iter())
+            .flat_map(|x| x.entitlements())
     });
 
     let mut entitlement_fields = IndexMap::new();

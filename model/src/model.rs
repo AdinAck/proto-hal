@@ -11,7 +11,7 @@ use ters::ters;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{Entitlement, EntitlementIndex, Entitlements},
+    entitlement::{self, Entitlement, EntitlementIndex},
     field::{
         Field, FieldIndex, FieldNode,
         access::{self, Access},
@@ -32,7 +32,8 @@ pub struct Model {
     fields: Vec<FieldNode>,
     variants: Vec<VariantNode>,
 
-    entitlements: HashMap<EntitlementIndex, Entitlements>,
+    entitlements: HashMap<EntitlementIndex, entitlement::Space>,
+    reverse_statewise_entitlements: HashMap<VariantIndex, IndexSet<VariantIndex>>,
 
     #[get]
     interrupts: Interrupts,
@@ -46,6 +47,7 @@ impl Model {
             fields: Default::default(),
             variants: Default::default(),
             entitlements: Default::default(),
+            reverse_statewise_entitlements: Default::default(),
             interrupts: Interrupts::empty(),
         }
     }
@@ -144,7 +146,10 @@ impl Model {
         }
     }
 
-    pub fn try_get_entitlements(&self, index: EntitlementIndex) -> Option<View<'_, Entitlements>> {
+    pub fn try_get_entitlements(
+        &self,
+        index: EntitlementIndex,
+    ) -> Option<View<'_, entitlement::Space>> {
         let Some(node) = self.entitlements.get(&index) else {
             None?
         };
@@ -219,9 +224,11 @@ impl Model {
             diagnostics.extend(peripheral.validate(&Context::new()));
         }
 
+        // TODO: check if volatile store hardware affordance refers to purely
+        // states in itself
         // ensure entitlements reside within resolvable fields
-        for (index, entitlements) in &self.entitlements {
-            for entitlement in entitlements {
+        for (index, space) in &self.entitlements {
+            for entitlement in space.entitlements() {
                 let field = entitlement.field(self);
 
                 if !field.is_resolvable() {
@@ -404,12 +411,14 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add [ontological entitlements](TODO) to the peripheral.
     pub fn ontological_entitlements(
         &mut self,
-        entitlements: impl IntoIterator<Item = Entitlement>,
-    ) {
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+    ) -> Result<(), entitlement::PatternError> {
         self.model.entitlements.insert(
             EntitlementIndex::Peripheral(self.index.clone()),
-            entitlements.into_iter().collect(),
+            entitlement::Space::from_iter(self.model, entitlements)?,
         );
+
+        Ok(())
     }
 }
 
@@ -537,12 +546,14 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     /// Add [ontological entitlements](TODO) to the field.
     pub fn ontological_entitlements(
         &mut self,
-        entitlements: impl IntoIterator<Item = Entitlement>,
-    ) {
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+    ) -> Result<(), entitlement::PatternError> {
         self.model.entitlements.insert(
             EntitlementIndex::Field(self.index),
-            entitlements.into_iter().collect(),
+            entitlement::Space::from_iter(self.model, entitlements)?,
         );
+
+        Ok(())
     }
 }
 
@@ -578,12 +589,14 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
     /// Add [hardware write access entitlements](TODO) to the field.
     pub fn hardware_write_entitlements(
         &mut self,
-        entitlements: impl IntoIterator<Item = Entitlement>,
-    ) {
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+    ) -> Result<(), entitlement::PatternError> {
         self.model.entitlements.insert(
             EntitlementIndex::HardwareWrite(self.index),
-            entitlements.into_iter().collect(),
+            entitlement::Space::from_iter(self.model, entitlements)?,
         );
+
+        Ok(())
     }
 }
 
@@ -592,11 +605,16 @@ where
     Meta: access::IsWrite,
 {
     /// Add [write access entitlements](TODO) to the field.
-    pub fn write_entitlements(&mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
+    pub fn write_entitlements(
+        &mut self,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+    ) -> Result<(), entitlement::PatternError> {
         self.model.entitlements.insert(
             EntitlementIndex::Write(self.index),
-            entitlements.into_iter().collect(),
+            entitlement::Space::from_iter(self.model, entitlements)?,
         );
+
+        Ok(())
     }
 }
 
@@ -607,23 +625,24 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
     }
 
     /// Add [statewise entitlements](TODO) to the variant.
-    pub fn statewise_entitlements(&mut self, entitlements: impl IntoIterator<Item = Entitlement>) {
-        let entitlements = entitlements.into_iter().collect::<IndexSet<Entitlement>>();
+    pub fn statewise_entitlements(
+        &mut self,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
+    ) -> Result<(), entitlement::PatternError> {
+        self.model.entitlements.insert(
+            EntitlementIndex::Variant(self.index),
+            entitlement::Space::from_iter(self.model, entitlements.clone())?,
+        );
 
-        // reverse map
-        for entitlement in &entitlements {
+        for entitlement in entitlements.into_iter().flatten() {
             self.model
-                .entitlements
-                .entry(EntitlementIndex::Variant(entitlement.index()))
+                .reverse_statewise_entitlements
+                .entry(entitlement.0)
                 .or_default()
-                .insert(Entitlement(self.index));
+                .insert(self.index);
         }
 
-        if !entitlements.is_empty() {
-            self.model
-                .entitlements
-                .insert(EntitlementIndex::Variant(self.index), entitlements);
-        }
+        Ok(())
     }
 }
 
@@ -656,7 +675,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         Some(self.model.get_register(*index))
     }
 
-    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Peripheral(self.index.clone()))
     }
@@ -688,17 +707,17 @@ impl<'cx> View<'cx, RegisterNode> {
 }
 
 impl<'cx> View<'cx, FieldNode> {
-    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Field(self.index))
     }
 
-    pub fn write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn write_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Write(self.index))
     }
 
-    pub fn hardware_write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn hardware_write_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index))
     }
@@ -713,7 +732,7 @@ impl<'cx> View<'cx, FieldNode> {
 }
 
 impl<'cx> View<'cx, VariantNode> {
-    pub fn statewise_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn statewise_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Variant(self.index))
     }
@@ -733,16 +752,12 @@ impl<'cx> View<'cx, VariantNode> {
     }
 }
 
-impl<'cx> View<'cx, Entitlements> {
-    pub fn entitlements(&self) -> impl Iterator<Item = &'cx Entitlement> {
-        self.node.iter()
-    }
-
+impl<'cx> View<'cx, entitlement::Space> {
     /// View the fields containing these entitlements.
     pub fn entitlement_fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> {
         let mut fields = IndexMap::new();
 
-        for entitlement in self.node {
+        for entitlement in self.node.entitlements() {
             let field = entitlement.field(self.model);
             fields.insert(field.index, field);
         }

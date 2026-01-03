@@ -2,7 +2,7 @@ pub mod arg;
 pub mod arg0;
 pub mod arg1;
 
-use proto_hal_model::{Entitlement, Register, model::PeripheralEntry};
+use proto_hal_model::{Entitlement, Register, error::Error, model::PeripheralEntry};
 
 use arg::arg;
 use arg0::arg0;
@@ -14,10 +14,15 @@ pub struct Entitlements {
     pub nargs_one: Entitlement,
 }
 
-pub fn wdata<'cx>(cordic: &mut PeripheralEntry<'cx>, entitlements: Entitlements) {
+pub fn wdata<'cx>(
+    cordic: &mut PeripheralEntry<'cx>,
+    entitlements: Entitlements,
+) -> Result<(), Error> {
     let mut wdata = cordic.add_register(Register::new("wdata", 4));
 
-    arg(&mut wdata, entitlements.argsize_q31);
-    arg0(&mut wdata, entitlements.argsize_q15, entitlements.nargs_one);
-    arg1(&mut wdata, entitlements.argsize_q15, entitlements.nargs_one);
+    arg(&mut wdata, entitlements.argsize_q31)?;
+    arg0(&mut wdata, entitlements.argsize_q15, entitlements.nargs_one)?;
+    arg1(&mut wdata, entitlements.argsize_q15, entitlements.nargs_one)?;
+
+    Ok(())
 }

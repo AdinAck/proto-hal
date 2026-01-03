@@ -2,10 +2,9 @@ pub mod return_rank;
 
 use std::{num::NonZeroU32, ops::Deref};
 
-use indexmap::{IndexMap, IndexSet};
 use model::{
-    entitlement::{Entitlement, EntitlementIndex},
-    field::{Field, FieldIndex, FieldNode, numericity::Numericity},
+    entitlement::{self, EntitlementIndex},
+    field::{Field, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
     register::Register,
@@ -126,50 +125,38 @@ where
     }))
 }
 
-pub fn scan_entitlements<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
+pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
     input: &semantic::Gate<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
     model: &'cx Model,
-    diagnostics: &mut Vec<Diagnostic>,
     cx_ident: &Ident,
-    entitlements: View<'cx, IndexSet<Entitlement>>,
-) -> IndexMap<FieldIndex, IndexSet<&'cx Entitlement>>
-where
+    diagnostics: &mut Diagnostics,
+    space: View<'cx, entitlement::Space>,
+) where
     PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
     FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
-    let mut entitlement_fields = IndexMap::new();
-
-    for entitlement in entitlements.iter() {
-        entitlement_fields
-            .entry(*entitlement.field(model).index())
-            .or_insert_with(IndexSet::new)
-            .insert(entitlement);
+    for pattern in space.patterns() {
+        if pattern.fields(model).all(|field| {
+            let (p, r) = field.parents();
+            input
+                .get_field(
+                    p.module_name().to_string(),
+                    r.module_name().to_string(),
+                    field.module_name().to_string(),
+                )
+                .is_some()
+        }) {
+            return;
+        }
     }
 
-    for (entitlement_field_index, field_entitlements) in &entitlement_fields {
-        let entitlement_field = model.get_field(*entitlement_field_index);
-        let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
-        if input
-            .get_field(
-                entitlement_peripheral.module_name().to_string(),
-                entitlement_register.module_name().to_string(),
-                entitlement_field.module_name().to_string(),
-            )
-            .is_none()
-        {
-            diagnostics.push(Diagnostic::missing_entitlements(
-                cx_ident,
-                &entitlement_peripheral.module_name(),
-                &entitlement_register.module_name(),
-                &entitlement_field.module_name(),
-                field_entitlements
-                    .iter()
-                    .map(|entitlement| entitlement.variant(model).type_name()),
-            ));
-        };
-    }
-
-    entitlement_fields
+    diagnostics.push(Diagnostic::missing_entitlements(
+        cx_ident,
+        input
+            .visit_fields()
+            .map(|field| field.field().module_name().to_string()),
+        space.patterns().map(|pattern| pattern.render(model)),
+    ));
 }
 
 /// Creates the correct initial value for writing to a register without reading from it first.
@@ -257,8 +244,8 @@ where
                     .flat_map(|variant| variant.statewise_entitlements().into_iter()),
             )
         {
-            for entitlement in *entitlement_set.as_ref() {
-                if entitlement.field(model).index() == field.index() {
+            for entitlement_field in entitlement_set.entitlement_fields() {
+                if entitlement_field.index() == field.index() {
                     return true;
                 }
             }
@@ -283,7 +270,13 @@ pub fn validate_entitlements<'cx>(
         if let Some(write_entitlements) =
             model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
         {
-            scan_entitlements(input, model, diagnostics, field.ident(), write_entitlements);
+            validate_entitlement_presence(
+                input,
+                model,
+                field.ident(),
+                diagnostics,
+                write_entitlements,
+            );
         }
 
         // check for statewise entitlements
@@ -295,11 +288,11 @@ pub fn validate_entitlements<'cx>(
             if let Some(statewise_entitlements) =
                 model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
             {
-                scan_entitlements(
+                validate_entitlement_presence(
                     input,
                     model,
-                    diagnostics,
                     field.ident(),
+                    diagnostics,
                     statewise_entitlements,
                 );
 
