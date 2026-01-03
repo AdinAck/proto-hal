@@ -10,7 +10,7 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
+    entitlement::EntitlementSpace,
     model::View,
     register::{RegisterIndex, RegisterNode},
 };
@@ -161,7 +161,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 
     fn generate_masked(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&EntitlementSpace>,
     ) -> Option<TokenStream> {
         ontological_entitlements?;
 
@@ -230,7 +230,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 
     fn generate_entitlement_impls(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&EntitlementSpace>,
     ) -> Option<TokenStream> {
         let ontological_entitlements = ontological_entitlements?;
 

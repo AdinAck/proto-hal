@@ -13,7 +13,7 @@ use syn::{Ident, LitInt};
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
+    entitlement::EntitlementSpace,
     field::{access::Access, numericity::Numericity},
     model::View,
     register::RegisterIndex,
@@ -314,7 +314,7 @@ impl<'cx> View<'cx, FieldNode> {
         out
     }
 
-    fn generate_marker(&self, ontological_entitlements: Option<&Entitlements>) -> TokenStream {
+    fn generate_marker(&self, ontological_entitlements: Option<&EntitlementSpace>) -> TokenStream {
         let entitlement_paths = ontological_entitlements.iter().flat_map(|entitlements| {
             entitlements.iter().map(|entitlement| {
                 let field_ty = entitlement.field(self.model).type_name();
@@ -333,7 +333,7 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
-    fn generate_container(&self, write_entitlements: Option<&Entitlements>) -> TokenStream {
+    fn generate_container(&self, write_entitlements: Option<&EntitlementSpace>) -> TokenStream {
         let ident = self.type_name();
 
         let into_dynamic = if self.is_resolvable() {
@@ -508,7 +508,7 @@ impl<'cx> View<'cx, FieldNode> {
 
     fn generate_masked(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&EntitlementSpace>,
     ) -> Option<TokenStream> {
         ontological_entitlements?;
 

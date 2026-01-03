@@ -6,7 +6,7 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
+    entitlement::EntitlementSpace,
     field::{Field, FieldIndex},
     model::View,
 };
@@ -114,7 +114,7 @@ impl<'cx> View<'cx, VariantNode> {
     pub fn generate_entitlement_impls(
         &self,
         field: &Field,
-        statewise_entitlements: Option<&Entitlements>,
+        statewise_entitlements: Option<&EntitlementSpace>,
     ) -> TokenStream {
         let ident = self.type_name();
         let field_ty = field.type_name();

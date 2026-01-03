@@ -11,7 +11,7 @@ use ters::ters;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{Entitlement, EntitlementIndex, Entitlements},
+    entitlement::{self, Entitlement, EntitlementIndex},
     field::{
         Field, FieldIndex, FieldNode,
         access::{self, Access},
@@ -32,7 +32,7 @@ pub struct Model {
     fields: Vec<FieldNode>,
     variants: Vec<VariantNode>,
 
-    entitlements: HashMap<EntitlementIndex, Entitlements>,
+    entitlements: HashMap<EntitlementIndex, entitlement::Space>,
 
     #[get]
     interrupts: Interrupts,
@@ -144,7 +144,10 @@ impl Model {
         }
     }
 
-    pub fn try_get_entitlements(&self, index: EntitlementIndex) -> Option<View<'_, Entitlements>> {
+    pub fn try_get_entitlements(
+        &self,
+        index: EntitlementIndex,
+    ) -> Option<View<'_, entitlement::Space>> {
         let Some(node) = self.entitlements.get(&index) else {
             None?
         };
@@ -656,7 +659,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         Some(self.model.get_register(*index))
     }
 
-    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Peripheral(self.index.clone()))
     }
@@ -688,17 +691,17 @@ impl<'cx> View<'cx, RegisterNode> {
 }
 
 impl<'cx> View<'cx, FieldNode> {
-    pub fn ontological_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn ontological_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Field(self.index))
     }
 
-    pub fn write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn write_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Write(self.index))
     }
 
-    pub fn hardware_write_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn hardware_write_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index))
     }
@@ -713,7 +716,7 @@ impl<'cx> View<'cx, FieldNode> {
 }
 
 impl<'cx> View<'cx, VariantNode> {
-    pub fn statewise_entitlements(&self) -> Option<View<'cx, Entitlements>> {
+    pub fn statewise_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
         self.model
             .try_get_entitlements(EntitlementIndex::Variant(self.index))
     }
@@ -733,7 +736,7 @@ impl<'cx> View<'cx, VariantNode> {
     }
 }
 
-impl<'cx> View<'cx, Entitlements> {
+impl<'cx> View<'cx, EntitlementSpace> {
     pub fn entitlements(&self) -> impl Iterator<Item = &'cx Entitlement> {
         self.node.iter()
     }
