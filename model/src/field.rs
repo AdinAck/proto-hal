@@ -1,10 +1,9 @@
 pub mod access;
 pub mod numericity;
 
-use std::{collections::HashSet, ops::Range};
+use std::ops::Range;
 
 use derive_more::{AsRef, Deref};
-use indexmap::IndexMap;
 use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -13,7 +12,7 @@ use syn::{Ident, LitInt};
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
+    entitlement,
     field::{access::Access, numericity::Numericity},
     model::View,
     register::RegisterIndex,
@@ -49,61 +48,7 @@ impl<'cx> View<'cx, FieldNode> {
         match &self.access {
             Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
             Access::Store(store) => Some(&store.numericity),
-            Access::VolatileStore(volatile_store) => {
-                let Some(hardware_write_entitlements) = self.hardware_write_entitlements() else {
-                    // no entitlements means all states are entitled to,
-                    // so they are exhaustive
-                    None?
-                };
-
-                let mut entitlement_fields = IndexMap::new();
-
-                for entitlement in *hardware_write_entitlements {
-                    let field = entitlement.field(self.model);
-                    entitlement_fields
-                        .entry(field.index)
-                        .or_insert_with(|| (field, HashSet::new()))
-                        .1
-                        .insert(entitlement.0);
-                }
-
-                // if the hardware write access entitlements are non-exhaustive
-                // (meaning some states exist in which hardware does *not*
-                // have write access) then the field is resolvable
-
-                for (field, entitlements) in entitlement_fields.values() {
-                    // avoid infinite recursion...
-                    let enumerated = if field.index() == self.index() {
-                        let Numericity::Enumerated(enumerated) = &volatile_store.numericity else {
-                            unreachable!(
-                                "this field must be enumerated if it produced an entitlement"
-                            )
-                        };
-
-                        enumerated
-                    } else {
-                        let Numericity::Enumerated(enumerated) = field.resolvable().unwrap() else {
-                            unreachable!("entitled field must be enumerated")
-                        };
-
-                        enumerated
-                    };
-
-                    let total = enumerated
-                        .variants
-                        .values()
-                        .copied()
-                        .collect::<HashSet<_>>();
-
-                    if total.difference(entitlements).next().is_some() {
-                        // entitlements are not exhaustive!
-                        return Some(&volatile_store.numericity);
-                    }
-                }
-
-                // entitlements are exhaustive, so the field state can never be static
-                None
-            }
+            Access::VolatileStore(volatile_store) => Some(&volatile_store.numericity),
         }
     }
 
@@ -314,26 +259,11 @@ impl<'cx> View<'cx, FieldNode> {
         out
     }
 
-    fn generate_marker(&self, ontological_entitlements: Option<&Entitlements>) -> TokenStream {
-        let entitlement_paths = ontological_entitlements.iter().flat_map(|entitlements| {
-            entitlements.iter().map(|entitlement| {
-                let field_ty = entitlement.field(self.model).type_name();
-                let prefix = entitlement.render_up_to_field(self.model);
-                let state = entitlement.render_entirely(self.model);
-                quote! { crate::#prefix::#field_ty<crate::#state> }
-            })
-        });
-
-        quote! {
-            pub struct Field;
-
-            #(
-                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #entitlement_paths> for Field {}
-            )*
-        }
+    fn generate_marker(&self) -> TokenStream {
+        quote! { pub struct Field; }
     }
 
-    fn generate_container(&self, write_entitlements: Option<&Entitlements>) -> TokenStream {
+    fn generate_container(&self) -> TokenStream {
         let ident = self.type_name();
 
         let into_dynamic = if self.is_resolvable() {
@@ -357,15 +287,6 @@ impl<'cx> View<'cx, FieldNode> {
         } else {
             None
         };
-
-        let entitlement_paths = write_entitlements.iter().flat_map(|entitlements| {
-            entitlements.iter().map(|entitlement| {
-                let field_ty = entitlement.field(self.model).type_name();
-                let prefix = entitlement.render_up_to_field(self.model);
-                let state = entitlement.render_entirely(self.model);
-                quote! { crate::#prefix::#field_ty<crate::#state> }
-            })
-        });
 
         quote! {
             pub struct #ident<S> {
@@ -392,10 +313,6 @@ impl<'cx> View<'cx, FieldNode> {
                     &self.state
                 }
             }
-
-            #(
-                unsafe impl<S> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Affordance, #entitlement_paths> for #ident<S> {}
-            )*
         }
     }
 
@@ -508,7 +425,7 @@ impl<'cx> View<'cx, FieldNode> {
 
     fn generate_masked(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&entitlement::Space>,
     ) -> Option<TokenStream> {
         ontological_entitlements?;
 
@@ -568,6 +485,52 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
+    fn generate_entitlements(
+        &self,
+        ontological_entitlements: Option<&entitlement::Space>,
+        write_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        if ontological_entitlements.is_none() && write_entitlements.is_none() {
+            None?
+        }
+
+        let bodies = ontological_entitlements
+            .iter()
+            .map(|space| (quote! { Ontological }, space))
+            .chain(
+                write_entitlements
+                    .iter()
+                    .map(|space| (quote! { Affordance }, space)),
+            )
+            .map(|(axis, space)| {
+                let pattern_tys = (0..space.count()).map(|i| format_ident!("{axis}Pattern{i}"));
+                let entitlement_paths = space.patterns().map(|pattern| {
+                    pattern
+                        .entitlements()
+                        .map(|entitlement| entitlement.render_entirely(self.model)).collect::<Vec<_>>()
+                });
+
+                quote! {
+                    #(
+                        pub struct #pattern_tys;
+                        unsafe impl ::proto_hal::stasis::Pattern for #pattern_tys {
+                            type Axis = ::proto_hal::stasis::entitlement_axes::#axis;
+                        }
+
+                        #(
+                            unsafe impl ::proto_hal::stasis::Entitlement<#pattern_tys> for #entitlement_paths {}
+                        )*
+                    )*
+                }
+            });
+
+        Some(quote! {
+            pub mod _patterns {
+                #(#bodies)*
+            }
+        })
+    }
+
     pub fn generate(&self) -> TokenStream {
         let ident = &self.ident;
 
@@ -577,11 +540,15 @@ impl<'cx> View<'cx, FieldNode> {
         let mut body = quote! {};
 
         body.extend(self.generate_states());
-        body.extend(self.generate_marker(ontological_entitlements.as_deref().copied()));
-        body.extend(self.generate_container(write_entitlements.as_deref().copied()));
+        body.extend(self.generate_marker());
+        body.extend(self.generate_container());
         body.extend(self.generate_repr());
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_state_impls());
+        body.extend(self.generate_entitlements(
+            ontological_entitlements.as_deref().copied(),
+            write_entitlements.as_deref().copied(),
+        ));
 
         let docs = &self.docs;
 

@@ -6,7 +6,6 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
     field::{Field, FieldIndex},
     model::View,
 };
@@ -111,38 +110,38 @@ impl<'cx> View<'cx, VariantNode> {
         }
     }
 
-    pub fn generate_entitlement_impls(
-        &self,
-        field: &Field,
-        statewise_entitlements: Option<&Entitlements>,
-    ) -> TokenStream {
-        let ident = self.type_name();
-        let field_ty = field.type_name();
+    // pub fn generate_entitlement_impls(
+    //     &self,
+    //     field: &Field,
+    //     statewise_entitlements: Option<&EntitlementSpace>,
+    // ) -> TokenStream {
+    //     let ident = self.type_name();
+    //     let field_ty = field.type_name();
 
-        let Some(entitlements) = statewise_entitlements else {
-            // any T satisfies this state's entitlement requirements
+    //     let Some(entitlements) = statewise_entitlements else {
+    //         // any T satisfies this state's entitlement requirements
 
-            return quote! {
-                unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, T> for #field_ty<#ident> {}
-            };
-        };
+    //         return quote! {
+    //             unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, T> for #field_ty<#ident> {}
+    //         };
+    //     };
 
-        // exactly this finite set of states satisfy this state's entitlement requirements
+    //     // exactly this finite set of states satisfy this state's entitlement requirements
 
-        let entitlement_paths = entitlements.iter().map(|entitlement| {
-            let field = entitlement.field(self.model);
-            let field_ty = field.type_name();
-            let prefix = entitlement.render_up_to_field(self.model);
-            let state = entitlement.render_entirely(self.model);
-            quote! { crate::#prefix::#field_ty<crate::#state> }
-        });
+    //     let entitlement_paths = entitlements.iter().map(|entitlement| {
+    //         let field = entitlement.field(self.model);
+    //         let field_ty = field.type_name();
+    //         let prefix = entitlement.render_up_to_field(self.model);
+    //         let state = entitlement.render_entirely(self.model);
+    //         quote! { crate::#prefix::#field_ty<crate::#state> }
+    //     });
 
-        quote! {
-            #(
-                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #entitlement_paths> for #field_ty<#ident> {}
-            )*
-        }
-    }
+    //     quote! {
+    //         #(
+    //             unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #entitlement_paths> for #field_ty<#ident> {}
+    //         )*
+    //     }
+    // }
 
     pub fn generate(&self, parent: &Field) -> TokenStream {
         let mut body = quote! {};
@@ -150,9 +149,9 @@ impl<'cx> View<'cx, VariantNode> {
         let statewise_entitlements = self.statewise_entitlements();
 
         body.extend(self.generate_state());
-        body.extend(
-            self.generate_entitlement_impls(parent, statewise_entitlements.as_deref().copied()),
-        );
+        // body.extend(
+        //     self.generate_entitlement_impls(parent, statewise_entitlements.as_deref().copied()),
+        // );
 
         body
     }
