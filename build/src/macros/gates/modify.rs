@@ -8,7 +8,7 @@ use syn::{Expr, Ident};
 use crate::macros::{
     diagnostic::Diagnostics,
     gates::{
-        fragments,
+        fragments::{self, FieldGenerics},
         utils::{
             binding_suggestions, field_is_entangled, mask, module_suggestions, render_diagnostics,
             return_rank::ReturnRank, static_initial, unique_field_ident, unique_register_ident,
@@ -150,16 +150,29 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                 reg_write_values.push(fragments::register_write_value(
                     register_item,
                     Some(initial),
-                    |r, f| match f.entry() {
-                        RequireBinding::DynamicTransition(..) => {
-                            let i = unique_field_ident(r.peripheral(), r.register(), f.field());
+                    |r, f| {
+                        let generics = fragments::generics(r, f);
 
-                            Some(quote! { (#i.1)(#return_idents) as u32 })
+                        match (f.entry(), generics) {
+                            (RequireBinding::DynamicTransition(..), ..) => {
+                                let i = unique_field_ident(r.peripheral(), r.register(), f.field());
+
+                                Some(quote! { (#i.1)(#return_idents) as u32 })
+                            }
+                            // WARN: take this with a grain of salt. at the time of writing, i don't entirely have a
+                            // hold on how proto-hal works
+                            (
+                                RequireBinding::Static(.., semantic::Transition::Expr(..)),
+                                FieldGenerics {
+                                    output: Some(output),
+                                    ..
+                                },
+                            ) => Some(quote! { #output::VALUE }),
+                            (RequireBinding::Static(.., semantic::Transition::Expr(expr)), ..) => {
+                                Some(quote! { #expr as u32 })
+                            }
+                            _ => None,
                         }
-                        RequireBinding::Static(.., semantic::Transition::Expr(expr)) => {
-                            Some(quote! { #expr as u32 })
-                        }
-                        _ => None,
                     },
                 ));
             }
@@ -170,8 +183,11 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                     rebinds.push(binding.as_ref());
                 }
 
-                let (input_generic, output_generic) =
-                    fragments::generics(model, &input, register_item, field_item);
+                let FieldGenerics {
+                    input: input_generic,
+                    output: output_generic,
+                    ..
+                } = fragments::generics(register_item, field_item);
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
@@ -201,7 +217,6 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                     field_item.field(),
                     input_generic.as_ref(),
                     output_generic.as_ref(),
-                    &input_ty,
                     return_ty.as_ref(),
                 ) {
                     constraints.push(local_constraints);

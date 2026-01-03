@@ -23,7 +23,7 @@ mod write_value_ty;
 
 pub use conjure::conjure;
 pub use constraints::constraints;
-pub use generics::generics;
+pub use generics::{FieldGenerics, generics};
 pub use input_ty::input_ty;
 pub use modify_argument::modify_argument;
 pub use modify_argument_value::modify_argument_value;

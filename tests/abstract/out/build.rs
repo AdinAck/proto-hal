@@ -1,5 +1,8 @@
 use model::model;
+use proto_hal_build::Error;
 
-fn main() {
-    proto_hal_build::render(&model());
+fn main() -> Result<(), Error> {
+    proto_hal_build::render(&model()?);
+
+    Ok(())
 }

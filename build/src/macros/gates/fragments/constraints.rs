@@ -30,7 +30,6 @@ pub fn constraints<'cx>(
     field: &View<'cx, FieldNode>,
     input_generic: Option<&Ident>,
     output_generic: Option<&Ident>,
-    input_ty: &TokenStream,
     return_ty: Option<&TokenStream>,
 ) -> Option<TokenStream> {
     // if the subject field's write access has entitlements, the entitlements
@@ -53,7 +52,7 @@ pub fn constraints<'cx>(
     }
 
     if binding.is_mutated()
-        && let Some(write_entitlements) = write_entitlements(input, model, field, input_ty, span)
+        && let Some(write_entitlements) = write_entitlements(input, field, span)
     {
         constraints.extend(write_entitlements);
     }
@@ -81,11 +80,19 @@ fn write_entitlements<'cx>(
         policies::peripheral::ForbidPath,
         policies::field::RequireBinding<'cx>,
     >,
-    model: &Model,
     field: &View<'cx, FieldNode>,
-    input_ty: &TokenStream,
     span: Span,
 ) -> Option<Vec<TokenStream>> {
+    let field_marker = {
+        let (peripheral, register) = field.parents();
+
+        let peripheral_ident = peripheral.module_name();
+        let register_ident = register.module_name();
+        let field_ident = field.module_name();
+
+        quote! { crate::#peripheral_ident::#register_ident::#field_ident::Field }
+    };
+
     // get entitlement *fields*
     let write_entitlements = field.write_entitlements()?;
     let entitlement_fields = write_entitlements.entitlement_fields();
@@ -104,9 +111,7 @@ fn write_entitlements<'cx>(
             entitlement_field.module_name().to_string(),
         )?;
 
-        let (entitlement_input_generic, ..) = fragments::generics(
-            model,
-            input,
+        let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
         );
@@ -116,11 +121,17 @@ fn write_entitlements<'cx>(
             entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
-            entitlement_input_generic.as_ref(),
+            generics.input.as_ref(),
         );
 
-        Some(quote_spanned! { span =>
-            #input_ty: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Affordance, #entitlement_input_ty>
+        Some(if let Some(write_pattern) = generics.write_pattern {
+            quote_spanned! { span =>
+                #field_marker: ::proto_hal::stasis::Entitled<#write_pattern, #entitlement_input_ty>
+            }
+        } else {
+            quote_spanned! { span =>
+                #field_marker: ::proto_hal::stasis::Entitled<::proto_hal::stasis::patterns::Fundamental<#field_marker, ::proto_hal::stasis::axes::Affordance>, #entitlement_input_ty>
+            }
         })
     });
 
@@ -147,7 +158,7 @@ fn statewise_entitlements<'cx>(
         variant
             .statewise_entitlements()
             .into_iter()
-            .flat_map(|x| x.iter())
+            .flat_map(|x| x.entitlements())
     });
 
     let mut entitlement_fields = IndexMap::new();
@@ -172,15 +183,14 @@ fn statewise_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
-            entitlement_peripheral.module_name().to_string(),
-            entitlement_register.module_name().to_string(),
-            entitlement_field.module_name().to_string(),
-        )?;
+        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) =
+            input.get_field(
+                entitlement_peripheral.module_name().to_string(),
+                entitlement_register.module_name().to_string(),
+                entitlement_field.module_name().to_string(),
+            )?;
 
-        let (entitlement_input_generic, entitlement_output_generic) = fragments::generics(
-            model,
-            input,
+        let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
         );
@@ -191,8 +201,8 @@ fn statewise_entitlements<'cx>(
             entitlement_field_item.entry(),
             entitlement_field_item.field(),
             entitlement_field_item.ident(),
-            entitlement_input_generic.as_ref(),
-            entitlement_output_generic.as_ref(),
+            generics.input.as_ref(),
+            generics.output.as_ref(),
         );
 
         let lhs = return_ty.clone();
@@ -201,11 +211,17 @@ fn statewise_entitlements<'cx>(
             entitlement_register_item.ident(),
             entitlement_field_item.ident(),
             entitlement_field_item.field(),
-            entitlement_input_generic.as_ref(),
+            generics.input.as_ref(),
         ));
 
-        Some(quote_spanned! { span =>
-            #lhs: ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #rhs>
+        Some(if let Some(statewise_pattern) = generics.statewise_pattern {
+            quote_spanned! { span =>
+                #lhs: ::proto_hal::stasis::Entitled<#statewise_pattern, #rhs>
+            }
+        } else {
+            quote_spanned! { span =>
+                #lhs: ::proto_hal::stasis::Entitled<::proto_hal::stasis::patterns::Fundamental<#lhs, ::proto_hal::stasis::axes::Statewise>, #rhs>
+            }
         })
     });
 

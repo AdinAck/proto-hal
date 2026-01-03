@@ -63,16 +63,52 @@ pub unsafe trait State<Parent>: Conjure {}
 /// If this is untrue, [stasis](TODO: link docs) is broken, which ultimately results in
 /// undefined behavior.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` has {Axis} entitlements, but `{Locus}` is not one of them",
-    label = "not entitled to `{Locus}`",
+    message = "the entitlements of `{Self}` are not satisfied by `{Locus}` in `{Pat}`",
+    label = "not entitled to `{Locus}` in {Pat}",
     // note = "learn more: <docs link>"
 )]
-pub unsafe trait Entitled<Axis, Locus> {}
+pub unsafe trait Entitled<Pat: Pattern<Source = Self>, Locus> {}
 
-pub mod entitlement_axes {
+/// Implementors of this trait are entitlement patterns imposed by some `Source` on a
+/// particular `Axis`.
+///
+/// # Safety
+/// Implementors of this type must be entitlement patterns, otherwise spurious entitlement constraints can exist.
+pub unsafe trait Pattern {
+    type Source;
+    type Axis: Axis;
+}
+
+pub mod patterns {
+    use super::*;
+
+    /// The fundamental pattern which encapsulates entitlement spaces which are empty or possess any one pattern.
+    pub struct Fundamental<Source, A: Axis> {
+        _p: PhantomData<(Source, A)>,
+    }
+
+    unsafe impl<Source, A: Axis> Pattern for Fundamental<Source, A> {
+        type Source = Source;
+        type Axis = A;
+    }
+}
+
+/// Implementors of this trait are entitlement axes.
+///
+/// # Safety
+/// Implementors of this type must be entitlement axes, otherwise spurious entitlement constraints can exist.
+pub unsafe trait Axis {}
+
+pub mod axes {
+    use super::Axis;
+
     pub struct Statewise;
     pub struct Affordance;
     pub struct Ontological;
+
+    unsafe impl Axis for Statewise {}
+    unsafe impl Axis for Affordance {}
+    unsafe impl Axis for Ontological {}
 }
 
 /// Implementors of this trait are type-stated resources. Since device resources have no size,

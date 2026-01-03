@@ -1,46 +1,76 @@
-use model::Model;
+use std::ops::Not as _;
+
 use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 
-use crate::macros::{
-    gates::utils::field_is_entangled,
-    parsing::semantic::{
-        self, FieldEntry, FieldItem, RegisterItem,
-        policies::{self, Refine, field::RequireBinding},
-    },
+use crate::macros::parsing::semantic::{
+    self, FieldItem, RegisterItem, policies::field::RequireBinding,
 };
 
-pub fn generics<'cx, EntryPolicy>(
-    model: &'cx Model,
-    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
+pub fn generics<'cx>(
     register_item: &RegisterItem<'cx, RequireBinding<'cx>>,
     field_item: &FieldItem<'cx, RequireBinding<'cx>>,
-) -> (Option<Ident>, Option<Ident>)
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
-{
-    let input_generic = format_ident!(
+) -> FieldGenerics {
+    let generic_ident = format_ident!(
         "{}{}{}",
         register_item.peripheral().type_name(),
         register_item.register().type_name(),
         field_item.field().type_name(),
     );
 
-    match field_item.entry() {
-        RequireBinding::View(..) if field_is_entangled(model, input, field_item.field()) => {
-            (Some(input_generic), None)
-        }
-        RequireBinding::Static(.., transition) => (
-            Some(input_generic.clone()),
-            if let semantic::Transition::Expr(expr) = transition
-                && expr.to_token_stream().to_string().trim() == "_"
-            {
-                Some(format_ident!("New{input_generic}"))
-            } else {
-                None
-            },
-        ),
-        RequireBinding::Consumed(..) => (Some(input_generic), None),
-        _ => (None, None),
+    // the only time the input doesn't have a generic is if the field is passed dynamically
+    let input_generic = field_item
+        .entry()
+        .binding()
+        .is_dynamic()
+        .not()
+        .then_some(generic_ident.clone());
+
+    // an output generic is only warrented if the transition destination is to be inferred
+    let output_generic = if let RequireBinding::Static(.., semantic::Transition::Expr(expr)) =
+        field_item.entry()
+        && expr.to_token_stream().to_string().trim() == "_"
+    {
+        Some(format_ident!("New{generic_ident}"))
+    } else {
+        None
+    };
+
+    // a write pattern generic is needed when the field is transitioning (being written to) *and* has write entitlements
+    let write_pattern = (field_item.entry().transition().is_some()
+        && field_item
+            .field()
+            .write_entitlements()
+            .is_some_and(|space| !space.is_empty()))
+    .then_some(format_ident!("{generic_ident}WritePattern"));
+
+    // a statewise pattern generic is needed when the field is being statically transitioned and the output generic will
+    // be the source of the statewise entitlement constraints
+    let statewise_pattern = if let RequireBinding::Static(..) = field_item.entry() {
+        Some(format_ident!("{generic_ident}StatewisePattern"))
+    } else {
+        None
+    };
+
+    FieldGenerics {
+        input: input_generic,
+        output: output_generic,
+        write_pattern,
+        statewise_pattern,
     }
+}
+
+/// The generics associated with a field passed through the gate.
+#[derive(Default)]
+pub struct FieldGenerics {
+    /// The generic for the state of the field upon *entering* the gate.
+    pub input: Option<Ident>,
+    /// The generic for the state of the field upon *exiting* the gate.
+    pub output: Option<Ident>,
+    /// The generic for the pattern used to satisfy the field's write entitlements.
+    pub write_pattern: Option<Ident>,
+    /// The generic for the pattern used to satisfy the field state's statewise entitlements.
+    ///
+    /// *Note: The statewise entitlements are required by and satisfy states at exit.*
+    pub statewise_pattern: Option<Ident>,
 }

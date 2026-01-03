@@ -9,7 +9,7 @@ use syn::{Expr, Ident};
 use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
-        fragments,
+        fragments::{self, FieldGenerics},
         utils::{
             binding_suggestions, module_suggestions, render_diagnostics, static_initial,
             unique_field_ident, validate_entitlements,
@@ -97,8 +97,11 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     register_item,
                     static_initial(model, register_item).map(|value| value.get().to_token_stream()),
                     |register_item, field_item| {
-                        let (input_generic, output_generic) =
-                            fragments::generics(model, &input, register_item, field_item);
+                        let FieldGenerics {
+                            input: input_generic,
+                            output: output_generic,
+                            ..
+                        } = fragments::generics(register_item, field_item);
 
                         Some(match (field_item.entry(), input_generic, output_generic) {
                             (RequireBinding::DynamicTransition(..), ..) => {
@@ -137,8 +140,11 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     rebinds.push(binding.as_ref());
                 }
 
-                let (input_generic, output_generic) =
-                    fragments::generics(model, &input, register_item, field_item);
+                let FieldGenerics {
+                    input: input_generic,
+                    output: output_generic,
+                    ..
+                } = fragments::generics(register_item, field_item);
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
@@ -168,7 +174,6 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.field(),
                     input_generic.as_ref(),
                     output_generic.as_ref(),
-                    &input_ty,
                     return_ty.as_ref(),
                 ) {
                     constraints.push(local_constraints);

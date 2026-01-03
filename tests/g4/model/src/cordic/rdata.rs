@@ -1,4 +1,4 @@
-use proto_hal_model::{Entitlement, Register, model::PeripheralEntry};
+use proto_hal_model::{Entitlement, Register, error::Error, model::PeripheralEntry};
 
 pub mod res;
 pub mod res0;
@@ -14,10 +14,15 @@ pub struct Entitlements {
     pub nres_one: Entitlement,
 }
 
-pub fn rdata<'cx>(cordic: &mut PeripheralEntry<'cx>, entitlements: Entitlements) {
+pub fn rdata<'cx>(
+    cordic: &mut PeripheralEntry<'cx>,
+    entitlements: Entitlements,
+) -> Result<(), Error> {
     let mut rdata = cordic.add_register(Register::new("rdata", 8));
 
-    res(&mut rdata, entitlements.ressize_q31);
-    res0(&mut rdata, entitlements.ressize_q15, entitlements.nres_one);
-    res1(&mut rdata, entitlements.ressize_q15, entitlements.nres_one);
+    res(&mut rdata, entitlements.ressize_q31)?;
+    res0(&mut rdata, entitlements.ressize_q15, entitlements.nres_one)?;
+    res1(&mut rdata, entitlements.ressize_q15, entitlements.nres_one)?;
+
+    Ok(())
 }

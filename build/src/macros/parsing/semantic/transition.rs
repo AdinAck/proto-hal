@@ -13,6 +13,7 @@ use crate::macros::{diagnostic::Diagnostic, parsing::syntax};
 /// If the field being transitioned has an enumerated numericity and the specific variant being transitioned to is
 /// statically known, the corresponding variant element of the model will be the representation of the transition
 /// destination. Otherwise, the parsed tokens (expression or literal) will be preserved and used instead.
+#[derive(Debug)]
 pub enum Transition<'cx> {
     /// The transition destination is statically known to be this variant.
     Variant(&'cx syntax::Transition, &'cx Variant),

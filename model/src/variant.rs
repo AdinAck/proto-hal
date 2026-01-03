@@ -6,8 +6,8 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
-    field::{Field, FieldIndex},
+    entitlement::{self, generate_entitlements},
+    field::{FieldIndex, FieldNode},
     model::View,
 };
 
@@ -106,54 +106,98 @@ impl<'cx> View<'cx, VariantNode> {
                 #[doc = #docs]
             )*
             pub struct #ident {
-                _sealed: (),
+                pub(super) _sealed: (),
             }
         }
     }
 
-    pub fn generate_entitlement_impls(
+    // pub fn generate_entitlement_impls(
+    //     &self,
+    //     field: &Field,
+    //     statewise_entitlements: Option<&EntitlementSpace>,
+    // ) -> TokenStream {
+    //     let ident = self.type_name();
+    //     let field_ty = field.type_name();
+
+    //     let Some(entitlements) = statewise_entitlements else {
+    //         // any T satisfies this state's entitlement requirements
+
+    //         return quote! {
+    //             unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::axes::Statewise, T> for #field_ty<#ident> {}
+    //         };
+    //     };
+
+    //     // exactly this finite set of states satisfy this state's entitlement requirements
+
+    //     let entitlement_paths = entitlements.iter().map(|entitlement| {
+    //         let field = entitlement.field(self.model);
+    //         let field_ty = field.type_name();
+    //         let prefix = entitlement.render_up_to_field(self.model);
+    //         let state = entitlement.render_entirely(self.model);
+    //         quote! { crate::#prefix::#field_ty<crate::#state> }
+    //     });
+
+    //     quote! {
+    //         #(
+    //             unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::axes::Statewise, #entitlement_paths> for #field_ty<#ident> {}
+    //         )*
+    //     }
+    // }
+
+    fn generate_entitlements(
         &self,
-        field: &Field,
-        statewise_entitlements: Option<&Entitlements>,
-    ) -> TokenStream {
+        field: &FieldNode,
+        statewise_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        // only proceed if *any* variant of the field has statewise entitlements
+        if field
+            .resolvable()
+            .expect("field must be resolvable if its variants are being generated")
+            .variants(self.model)
+            .expect("expected field to have variants")
+            .all(|variant| variant.statewise_entitlements().is_none())
+        {
+            None?
+        }
+
         let ident = self.type_name();
         let field_ty = field.type_name();
 
-        let Some(entitlements) = statewise_entitlements else {
-            // any T satisfies this state's entitlement requirements
+        Some(match statewise_entitlements {
+            Some(statewise_entitlements) if !statewise_entitlements.is_empty() => {
+                let spaces = [(statewise_entitlements, entitlement::Axis::Statewise)];
 
-            return quote! {
-                unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, T> for #field_ty<#ident> {}
-            };
-        };
+                generate_entitlements(self.model, &quote! { #field_ty<#ident> }, spaces)
+            }
+            _ => {
+                // any T satisfies this state's entitlement requirements
 
-        // exactly this finite set of states satisfy this state's entitlement requirements
-
-        let entitlement_paths = entitlements.iter().map(|entitlement| {
-            let field = entitlement.field(self.model);
-            let field_ty = field.type_name();
-            let prefix = entitlement.render_up_to_field(self.model);
-            let state = entitlement.render_entirely(self.model);
-            quote! { crate::#prefix::#field_ty<crate::#state> }
-        });
-
-        quote! {
-            #(
-                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Statewise, #entitlement_paths> for #field_ty<#ident> {}
-            )*
-        }
+                quote! {
+                    unsafe impl<T> ::proto_hal::stasis::Entitled<::proto_hal::stasis::patterns::Fundamental<#field_ty<#ident>, ::proto_hal::stasis::axes::Statewise>, T> for #field_ty<#ident> {}
+                }
+            }
+        })
     }
 
-    pub fn generate(&self, parent: &Field) -> TokenStream {
+    pub fn generate(&self, parent: &FieldNode) -> TokenStream {
+        let ident = self.module_name();
+        let ty = self.type_name();
         let mut body = quote! {};
 
         let statewise_entitlements = self.statewise_entitlements();
 
         body.extend(self.generate_state());
-        body.extend(
-            self.generate_entitlement_impls(parent, statewise_entitlements.as_deref().copied()),
-        );
+        body.extend(self.generate_entitlements(parent, statewise_entitlements.as_deref().copied()));
 
-        body
+        quote! {
+            pub mod #ident {
+                #[allow(unused)]
+                use super::*;
+
+                #body
+            }
+
+            pub use #ident::#ty;
+        }
     }
 }
