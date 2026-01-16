@@ -10,7 +10,7 @@ pub mod variant;
 use std::fs;
 
 use colored::Colorize as _;
-pub use entitlement::{Entitlement, Entitlements};
+pub use entitlement::Entitlement;
 pub use field::Field;
 pub use interrupts::{Interrupt, Interrupts};
 pub use model::Model;

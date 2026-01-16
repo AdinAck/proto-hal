@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use model::{
     Model,
-    entitlement::{Entitlement, Entitlements},
+    entitlement::{Entitlement, EntitlementSpace},
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens as _, format_ident, quote};
@@ -229,7 +229,7 @@ fn make_constraints<'cx>(
     model: &'cx Model,
     constraints: &mut Vec<TokenStream>,
     constrained_ty: &TokenStream,
-    ontological_entitlements: &Entitlements,
+    ontological_entitlements: &EntitlementSpace,
 ) {
     for ontological_entitlement in ontological_entitlements {
         let Some((entitlement_peripheral_item, entitlement_register_item, entitlement_field_item)) =
