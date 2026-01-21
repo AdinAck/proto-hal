@@ -7,6 +7,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
+pub use proc_macro2;
+pub use syn;
+
 pub use gates::{
     modify::{modify, modify_in_place},
     modify_untracked::modify_untracked,
@@ -42,7 +45,13 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         #(
             #[proc_macro]
             pub fn #idents(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-                ::proto_hal_build::macros::#idents(&::model::model(#args), tokens.into()).into()
+                match ::model::model(#args) {
+                    Ok(model) => ::proto_hal_build::macros::#idents(&model, tokens.into()),
+                    Err(e) => ::proto_hal_build::macros::syn::Error::new(
+                        ::proto_hal_build::macros::proc_macro2::Span::call_site(),
+                        format!("model generation failed with error: {e:?}"),
+                    ).to_compile_error()
+                }.into()
             }
         )*
 

@@ -1,5 +1,8 @@
 use abstract_model::model;
+use proto_hal_model::error::Error;
 
-fn main() {
-    proto_hal_model::validate(&model());
+fn main() -> Result<(), Error> {
+    proto_hal_model::validate(&model()?);
+
+    Ok(())
 }

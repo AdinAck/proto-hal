@@ -141,7 +141,7 @@ impl<'cx> View<'cx, RegisterNode> {
                 // unfortunate workaround for `is_disjoint` behavior when sets are empty
                 if let Some(lhs) = &ontological_entitlements
                     && let Some(rhs) = &other_ontological_entitlements
-                    && lhs.is_disjoint(rhs)
+                    && lhs.contradicts(&rhs)
                 {
                     continue;
                 }
@@ -161,8 +161,8 @@ impl<'cx> View<'cx, RegisterNode> {
                         if ontological_entitlements.is_some() || other_ontological_entitlements.is_some() {
                             vec![format!(
                                 "overlapping fields have non-trivial intersecting entitlement spaces [{}] and [{}]",
-                                ontological_entitlements.map(|x| x.iter().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
-                                other_ontological_entitlements.map(|x| x.iter().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
+                                ontological_entitlements.map(|x| x.entitlements().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
+                                other_ontological_entitlements.map(|x| x.entitlements().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
                             )]
                         } else {
                             vec![]

@@ -7,6 +7,8 @@ use std::{collections::HashMap, env, fs, path::Path};
 
 use model::{Model, diagnostic};
 
+pub use model::error::Error;
+
 #[cfg(feature = "integrated")]
 /// Generate and emit HAL code for use.
 pub fn render(model: &Model) {

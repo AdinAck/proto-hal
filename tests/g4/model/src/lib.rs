@@ -1,4 +1,4 @@
-use proto_hal_model::{Model, interrupts::Interrupt};
+use proto_hal_model::{Model, error::Error, interrupts::Interrupt};
 
 use crate::{cordic::cordic, crc::crc, rcc::rcc};
 
@@ -14,7 +14,7 @@ pub enum DeviceVariant {
     G484,
 }
 
-pub fn model(variant: DeviceVariant) -> Model {
+pub fn model(variant: DeviceVariant) -> Result<Model, Error> {
     let extra_interrupts = |interrupt| {
         if matches!(variant, DeviceVariant::G474 | DeviceVariant::G484) {
             interrupt
@@ -129,8 +129,8 @@ pub fn model(variant: DeviceVariant) -> Model {
     ]);
 
     let rcc::Output { cordicen, crcen } = rcc(&mut model);
-    cordic(&mut model, cordicen);
-    crc(&mut model, crcen);
+    cordic(&mut model, cordicen)?;
+    crc(&mut model, crcen)?;
 
-    model
+    Ok(model)
 }

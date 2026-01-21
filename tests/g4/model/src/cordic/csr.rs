@@ -10,7 +10,7 @@ pub mod ressize;
 pub mod rrdy;
 pub mod scale;
 
-use proto_hal_model::{Register, model::PeripheralEntry};
+use proto_hal_model::{Register, error::Error, model::PeripheralEntry};
 
 use argsize::argsize;
 use dmaren::dmaren;
@@ -31,11 +31,11 @@ pub struct Output {
     pub nres: nres::Output,
 }
 
-pub fn csr<'cx>(cordic: &mut PeripheralEntry<'cx>) -> Output {
+pub fn csr<'cx>(cordic: &mut PeripheralEntry<'cx>) -> Result<Output, Error> {
     let mut csr = cordic.add_register(Register::new("csr", 0).reset(0x50));
 
     let [n0, n1, n2, n3, n4, ..] = scale(&mut csr);
-    func(&mut csr, func::Entitlements { n0, n1, n2, n3, n4 });
+    func(&mut csr, func::Entitlements { n0, n1, n2, n3, n4 })?;
     precision(&mut csr);
     ien(&mut csr);
     dmaren(&mut csr);
@@ -46,10 +46,10 @@ pub fn csr<'cx>(cordic: &mut PeripheralEntry<'cx>) -> Output {
     let argsize = argsize(&mut csr);
     rrdy(&mut csr);
 
-    Output {
+    Ok(Output {
         argsize,
         ressize,
         nargs,
         nres,
-    }
+    })
 }

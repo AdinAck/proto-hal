@@ -1,4 +1,4 @@
-use proto_hal_model::{Entitlement, Field, Variant, model::RegisterEntry};
+use proto_hal_model::{Entitlement, Field, Variant, error::Error, model::RegisterEntry};
 
 pub struct Entitlements {
     pub n0: Entitlement,
@@ -8,7 +8,7 @@ pub struct Entitlements {
     pub n4: Entitlement,
 }
 
-pub fn func<'cx>(csr: &mut RegisterEntry<'cx>, entitlements: Entitlements) {
+pub fn func<'cx>(csr: &mut RegisterEntry<'cx>, entitlements: Entitlements) -> Result<(), Error> {
     let mut func = csr.add_store_field(Field::new("func", 0, 4));
 
     let variants = [
@@ -39,6 +39,8 @@ pub fn func<'cx>(csr: &mut RegisterEntry<'cx>, entitlements: Entitlements) {
 
     for (bits, (ident, entitlements)) in variants {
         let mut variant = func.add_variant(Variant::new(ident, bits as _));
-        variant.statewise_entitlements(entitlements);
+        variant.statewise_entitlements([entitlements])?;
     }
+
+    Ok(())
 }

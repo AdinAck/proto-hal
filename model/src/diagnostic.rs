@@ -13,6 +13,7 @@ use crate::{
     variant::VariantNode,
 };
 
+/// Elaborates diagnostics that may be emitted during model validation.
 #[ters]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Diagnostic {
