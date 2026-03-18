@@ -34,7 +34,7 @@ mod tests {
 
                 let cordicen = hal::modify! {
                     @critical_section(cs),
-                    rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => Enabled,
+                    rcc::ahb1enr::cordicen(p.rcc.ahb1enr.cordicen) => _, // awesome!
                     @base_addr(rcc, addr_of_rcc())
                 };
 

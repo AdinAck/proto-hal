@@ -1,6 +1,8 @@
-use proto_hal_model::{Entitlement, Field, model::RegisterEntry};
+use proto_hal_model::{Entitlement, Field, error::Error, model::RegisterEntry};
 
-pub fn arg<'cx>(wdata: &mut RegisterEntry<'cx>, q31: Entitlement) {
+pub fn arg<'cx>(wdata: &mut RegisterEntry<'cx>, q31: Entitlement) -> Result<(), Error> {
     let mut arg = wdata.add_write_field(Field::new("arg", 0, 32));
-    arg.ontological_entitlements([q31]);
+    arg.ontological_entitlements([[q31]])?;
+
+    Ok(())
 }

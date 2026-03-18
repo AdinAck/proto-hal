@@ -80,6 +80,7 @@ impl<'cx> Refine<'cx> for TransitionOnly<'cx> {
 }
 
 /// The binding component of the entry must be specified.
+#[derive(Debug)]
 pub enum RequireBinding<'cx> {
     /// The entry is a view (see [`Entry`]).
     View(&'cx syntax::Binding),

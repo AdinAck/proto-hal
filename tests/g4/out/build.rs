@@ -13,7 +13,7 @@ fn main() -> Result<(), String> {
         Err("device variant must be specified")?
     };
 
-    proto_hal_build::render(&model(variant));
+    proto_hal_build::render(&model(variant).map_err(|e| format!("{e:?}"))?);
 
     Ok(())
 }

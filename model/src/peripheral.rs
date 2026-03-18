@@ -10,7 +10,7 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::Entitlements,
+    entitlement::{self, generate_entitlements},
     model::View,
     register::{RegisterIndex, RegisterNode},
 };
@@ -161,7 +161,7 @@ impl<'cx> View<'cx, PeripheralNode> {
 
     fn generate_masked(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&entitlement::Space>,
     ) -> Option<TokenStream> {
         ontological_entitlements?;
 
@@ -228,25 +228,38 @@ impl<'cx> View<'cx, PeripheralNode> {
         }
     }
 
-    fn generate_entitlement_impls(
+    // fn generate_entitlement_impls(
+    //     &self,
+    //     ontological_entitlements: Option<&EntitlementSpace>,
+    // ) -> Option<TokenStream> {
+    //     let ontological_entitlements = ontological_entitlements?;
+
+    //     let entitlement_paths = ontological_entitlements.iter().map(|entitlement| {
+    //         let field = entitlement.field(self.model);
+    //         let field_ty = field.type_name();
+    //         let prefix = entitlement.render_up_to_field(self.model);
+    //         let state = entitlement.render_entirely(self.model);
+    //         quote! { crate::#prefix::#field_ty<crate::#state> }
+    //     });
+
+    //     Some(quote! {
+    //         #(
+    //             unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::axes::Ontological, #entitlement_paths> for Reset {}
+    //         )*
+    //     })
+    // }
+
+    fn generate_entitlements(
         &self,
-        ontological_entitlements: Option<&Entitlements>,
+        ontological_entitlements: Option<&entitlement::Space>,
     ) -> Option<TokenStream> {
         let ontological_entitlements = ontological_entitlements?;
 
-        let entitlement_paths = ontological_entitlements.iter().map(|entitlement| {
-            let field = entitlement.field(self.model);
-            let field_ty = field.type_name();
-            let prefix = entitlement.render_up_to_field(self.model);
-            let state = entitlement.render_entirely(self.model);
-            quote! { crate::#prefix::#field_ty<crate::#state> }
-        });
-
-        Some(quote! {
-            #(
-                unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::entitlement_axes::Ontological, #entitlement_paths> for Reset {}
-            )*
-        })
+        Some(generate_entitlements(
+            self.model,
+            &quote! { Reset },
+            [(ontological_entitlements, entitlement::Axis::Ontological)],
+        ))
     }
 }
 
@@ -263,7 +276,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
         body.extend(self.generate_reset(&registers));
         body.extend(self.generate_dynamic(&registers));
-        body.extend(self.generate_entitlement_impls(ontological_entitlements.as_deref().copied()));
+        body.extend(self.generate_entitlements(ontological_entitlements.as_deref().copied()));
 
         let docs = &self.docs;
 
