@@ -93,6 +93,18 @@ impl Pattern {
         model: &Model,
         entitlements: impl IntoIterator<Item = Entitlement>,
     ) -> Result<Self, PatternError> {
+        let pattern = Pattern::new_unchecked(model, entitlements);
+
+        pattern.validate(model)?;
+
+        Ok(pattern)
+    }
+
+    /// Create an *unvalidated* pattern with the provided entitlements.
+    pub fn new_unchecked(
+        model: &Model,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) -> Self {
         let mut entitlement_map = IndexMap::<FieldIndex, IndexSet<Entitlement>>::new();
 
         for entitlement in entitlements {
@@ -102,13 +114,9 @@ impl Pattern {
                 .insert(entitlement);
         }
 
-        let this = Self {
+        Self {
             entitlements: entitlement_map,
-        };
-
-        this.validate(model)?;
-
-        Ok(this)
+        }
     }
 
     /// Validate the pattern.
@@ -326,8 +334,6 @@ impl<'cx> Search<'cx> {
 
             let children = inner(entitlements, field_indices.clone());
 
-            
-
             entitlements
                 .get(field_index)
                 .expect("field index must exist")
@@ -391,6 +397,18 @@ impl Space {
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter(),
         ))
+    }
+
+    /// Create an *unvalidated* space from the nested iterator where each nest is an *unvalidated* pattern.
+    pub fn from_iter_unchecked(
+        model: &Model,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+    ) -> Self {
+        Self::new(
+            entitlements
+                .into_iter()
+                .map(|entitlements| Pattern::new_unchecked(model, entitlements)),
+        )
     }
 
     /// The [`Pattern`]s in the space.
@@ -617,6 +635,8 @@ mod tests {
         use super::*;
 
         mod validation {
+            use crate::ModelBuilder;
+
             use super::*;
 
             struct Setup {
@@ -628,7 +648,7 @@ mod tests {
             }
 
             fn setup() -> Setup {
-                let mut model = Model::new();
+                let mut model = ModelBuilder::new();
 
                 let mut p = model.add_peripheral(Peripheral::new("p", 0));
                 let mut r = p.add_register(Register::new("r", 0));
@@ -641,11 +661,11 @@ mod tests {
                 let mut f1 = r.add_store_field(Field::new("f2", 0, 1));
 
                 let mut f1_e0 = f1.add_variant(Variant::new("State0", 0));
-                f1_e0
-                    .statewise_entitlements([[f0_e0]])
-                    .expect("expected statewise entitlement space to be valid");
+                f1_e0.statewise_entitlements([[f0_e0]]);
                 let f1_e0 = f1_e0.make_entitlement();
                 let f1_e1 = f1.add_variant(Variant::new("State1", 1)).make_entitlement();
+
+                let model = model.release(); // this model doesn't need to be entirely valid
 
                 Setup {
                     model,
@@ -685,6 +705,8 @@ mod tests {
         }
 
         mod contradiction {
+            use crate::ModelBuilder;
+
             use super::*;
 
             struct Setup {
@@ -699,7 +721,7 @@ mod tests {
             }
 
             fn setup() -> Setup {
-                let mut model = Model::new();
+                let mut model = ModelBuilder::new();
 
                 let mut p = model.add_peripheral(Peripheral::new("p", 0));
                 let mut r = p.add_register(Register::new("r", 0));
@@ -723,6 +745,8 @@ mod tests {
 
                 let pat0 = Pattern::new(&model, [f0_e0, f1_e1, f1_e2])
                     .expect("expected pattern to be valid");
+
+                let model = model.release(); // this model doesn't need to be entirely valid
 
                 Setup {
                     model,

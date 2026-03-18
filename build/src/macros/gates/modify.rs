@@ -26,21 +26,21 @@ use crate::macros::{
 
 type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
 
-pub fn modify(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn modify(model: Model, tokens: TokenStream) -> TokenStream {
     modify_inner(model, tokens, false)
 }
-pub fn modify_in_place(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn modify_in_place(model: Model, tokens: TokenStream) -> TokenStream {
     modify_inner(model, tokens, true)
 }
 
-fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStream {
+fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
     };
 
-    let (input, mut diagnostics) = Input::parse(&args, model);
-    diagnostics.extend(validate(&input, model));
+    let (input, mut diagnostics) = Input::parse(&args, &model);
+    diagnostics.extend(validate(&input, &model));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
     let mut cs = None;
@@ -72,7 +72,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
             return false;
         };
 
-        !field_is_entangled(model, &input, field_item.field())
+        !field_is_entangled(&model, &input, field_item.field())
     });
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
@@ -131,7 +131,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
                     RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
                 )
             }) {
-                let static_initial = static_initial(model, register_item)
+                let static_initial = static_initial(&model, register_item)
                     .map(|value| value.get())
                     .map(|static_initial| quote! { | #static_initial });
                 let mask = mask(
@@ -209,7 +209,7 @@ fn modify_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
-                    model,
+                    &model,
                     peripheral_path,
                     register_ident,
                     binding,

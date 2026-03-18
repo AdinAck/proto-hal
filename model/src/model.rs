@@ -24,6 +24,30 @@ use crate::{
 
 use super::peripheral::Peripheral;
 
+#[derive(Debug, Clone, Default, Deref, DerefMut)]
+pub struct ModelBuilder {
+    #[deref]
+    #[deref_mut]
+    model: Model,
+    //// Diagnostics emitted during the model building process.
+    diagnostics: Diagnostics,
+}
+
+impl ModelBuilder {
+    /// Complete the model build and perform validation.
+    pub fn finish(self) -> (Model, Diagnostics) {
+        let mut diagnostics = self.diagnostics;
+        diagnostics.extend(self.model.validate());
+
+        (self.model, diagnostics)
+    }
+
+    /// Complete the model build and produce the *unvalidated* model.
+    pub fn release(self) -> Model {
+        self.model
+    }
+}
+
 #[ters]
 #[derive(Debug, Clone, Default)]
 pub struct Model {
@@ -39,22 +63,20 @@ pub struct Model {
     interrupts: Interrupts,
 }
 
-impl Model {
+impl ModelBuilder {
     pub fn new() -> Self {
-        Self {
-            peripherals: Default::default(),
-            registers: Default::default(),
-            fields: Default::default(),
-            variants: Default::default(),
-            entitlements: Default::default(),
-            reverse_statewise_entitlements: Default::default(),
-            interrupts: Interrupts::empty(),
-        }
+        Self::default()
     }
 
     /// Add a peripheral to the model.
     pub fn add_peripheral<'cx>(&'cx mut self, peripheral: Peripheral) -> PeripheralEntry<'cx> {
         let index = PeripheralIndex(peripheral.module_name());
+        let name = peripheral.module_name().to_string();
+
+        if self.peripherals.contains_key(&index) {
+            self.diagnostics
+                .insert(Diagnostic::exists(&name, Context::new()));
+        }
 
         self.peripherals.insert(
             index.clone(),
@@ -67,6 +89,7 @@ impl Model {
         Entry {
             model: self,
             index,
+            context: Context::with_path([name]),
             _p: PhantomData,
         }
         .into()
@@ -76,7 +99,9 @@ impl Model {
         self.interrupts.extend(interrupts);
         self
     }
+}
 
+impl Model {
     pub fn render_raw(&self) -> String {
         self.to_token_stream().to_string()
     }
@@ -376,8 +401,9 @@ pub struct VariantEntry<'cx>(Entry<'cx, VariantIndex, ()>);
 
 #[derive(Debug)]
 pub struct Entry<'cx, Index, Meta> {
-    model: &'cx mut Model,
+    model: &'cx mut ModelBuilder,
     index: Index,
+    context: Context,
     _p: PhantomData<Meta>,
 }
 
@@ -385,13 +411,20 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add a register to the peripheral.
     pub fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
         let index = RegisterIndex(self.model.registers.len());
+        let name = register.module_name().to_string();
 
         // update parent
-        self.model
-            .peripherals
-            .get_mut(&self.index)
-            .unwrap()
-            .add_child_index(index, register.module_name());
+        let peripheral = self.model.peripherals.get_mut(&self.index).unwrap();
+
+        let exists = peripheral.registers.contains_key(&register.module_name());
+
+        peripheral.add_child_index(index, register.module_name());
+
+        if exists {
+            self.model
+                .diagnostics
+                .insert(Diagnostic::exists(&name, Context::new()));
+        }
 
         // insert child
         self.model.registers.push(RegisterNode {
@@ -403,6 +436,7 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         Entry {
             model: self.model,
             index,
+            context: self.context.clone().and(name),
             _p: PhantomData,
         }
         .into()
@@ -412,13 +446,12 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     pub fn ontological_entitlements(
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
-    ) -> Result<(), entitlement::PatternError> {
-        self.model.entitlements.insert(
-            EntitlementIndex::Peripheral(self.index.clone()),
-            entitlement::Space::from_iter(self.model, entitlements)?,
-        );
+    ) {
+        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
 
-        Ok(())
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::Peripheral(self.index.clone()), space);
     }
 }
 
@@ -427,11 +460,18 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         let index = FieldIndex(self.model.fields.len());
 
         // update parent
-        self.model
-            .registers
-            .get_mut(*self.index)
-            .unwrap()
-            .add_child_index(index, field.module_name());
+        let register = self.model.registers.get_mut(*self.index).unwrap();
+
+        let exists = register.fields.contains_key(&field.module_name());
+
+        register.add_child_index(index, field.module_name());
+
+        if exists {
+            self.model.diagnostics.insert(Diagnostic::exists(
+                &field.module_name(),
+                self.context.clone(),
+            ));
+        }
 
         index
     }
@@ -444,10 +484,16 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         });
     }
 
-    fn make_child_entry<'ncx, Meta>(&'ncx mut self, index: FieldIndex) -> FieldEntry<'ncx, Meta> {
+    fn make_child_entry<'ncx, Meta>(
+        &'ncx mut self,
+        index: FieldIndex,
+        name: String,
+    ) -> FieldEntry<'ncx, Meta> {
         Entry {
             model: self.model,
             index,
+
+            context: self.context.clone().and(name),
             _p: PhantomData,
         }
         .into()
@@ -456,15 +502,17 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
     /// Add a field to the register with [`Read`](access::Read) access.
     pub fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
         let index = self.new_index_and_add_to_parent(&field);
+        let name = field.module_name().to_string();
         self.insert_child_with_access(field, Access::Read(Default::default()));
-        self.make_child_entry(index)
+        self.make_child_entry(index, name)
     }
 
     /// Add a field to the register with [`Write`](access::Write) access.
     pub fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
         let index = self.new_index_and_add_to_parent(&field);
+        let name = field.module_name().to_string();
         self.insert_child_with_access(field, Access::Write(Default::default()));
-        self.make_child_entry(index)
+        self.make_child_entry(index, name)
     }
 
     /// Add a field to the register with [`ReadWrite`](access::ReadWrite) access.
@@ -473,15 +521,17 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         field: Field,
     ) -> FieldEntry<'ncx, access::ReadWrite> {
         let index = self.new_index_and_add_to_parent(&field);
+        let name = field.module_name().to_string();
         self.insert_child_with_access(field, Access::ReadWrite(Default::default()));
-        self.make_child_entry(index)
+        self.make_child_entry(index, name)
     }
 
     /// Add a field to the register with [`Store`](access::Store) access.
     pub fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
         let index = self.new_index_and_add_to_parent(&field);
+        let name = field.module_name().to_string();
         self.insert_child_with_access(field, Access::Store(Default::default()));
-        self.make_child_entry(index)
+        self.make_child_entry(index, name)
     }
 
     /// Add a field to the register with [`VolatileStore`](access::VolatileStore) access.
@@ -490,8 +540,9 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         field: Field,
     ) -> FieldEntry<'ncx, access::VolatileStore> {
         let index = self.new_index_and_add_to_parent(&field);
+        let name = field.module_name().to_string();
         self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
-        self.make_child_entry(index)
+        self.make_child_entry(index, name)
     }
 }
 
@@ -510,6 +561,8 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         index: VariantIndex,
         variant: Variant,
     ) -> VariantEntry<'_> {
+        let name = variant.type_name().to_string();
+
         // insert child
         self.model.variants.push(VariantNode {
             parent: self.index,
@@ -519,6 +572,8 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         Entry {
             model: self.model,
             index,
+
+            context: self.context.clone().and(name),
             _p: PhantomData,
         }
         .into()
@@ -529,17 +584,17 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     /// If the field's access modality exposes both *read* and *write* access,
     /// this will add the variant to *both*.
     pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
+        let mut diagnostics = Diagnostics::new();
+        let context = self.context.clone();
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
-        if let Some(numericity) = access.get_read_mut() {
-            numericity.add_child(&variant, index);
-        }
 
-        if let Some(numericity) = access.get_write_mut() {
-            numericity.add_child(&variant, index);
-        }
+        access.visit_numericities(|numericity| {
+            diagnostics.extend(numericity.add_child(&variant, index, context.clone()));
+        });
 
+        self.model.diagnostics.extend(diagnostics);
         self.insert_child_and_make_entry(index, variant)
     }
 
@@ -547,40 +602,49 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     pub fn ontological_entitlements(
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
-    ) -> Result<(), entitlement::PatternError> {
-        self.model.entitlements.insert(
-            EntitlementIndex::Field(self.index),
-            entitlement::Space::from_iter(self.model, entitlements)?,
-        );
+    ) {
+        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
 
-        Ok(())
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::Field(self.index), space);
     }
 }
 
 impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
     /// Add a variant to the field for read access **only**.
     pub fn add_read_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
+        let mut diagnostics = Diagnostics::new();
+        let context = self.context.clone();
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
-        access
-            .get_read_mut()
-            .expect("expected read access")
-            .add_child(&variant, index);
+        diagnostics.extend(
+            access
+                .get_read_mut()
+                .expect("expected read access")
+                .add_child(&variant, index, context),
+        );
 
+        self.model.diagnostics.extend(diagnostics);
         self.insert_child_and_make_entry(index, variant)
     }
 
     /// Add a variant to the field for write access **only**.
     pub fn add_write_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
+        let mut diagnostics = Diagnostics::new();
+        let context = self.context.clone();
         let (index, access) = self.new_index_and_get_access();
 
         // update parent
-        access
-            .get_write_mut()
-            .expect("expected write access")
-            .add_child(&variant, index);
+        diagnostics.extend(
+            access
+                .get_write_mut()
+                .expect("expected write access")
+                .add_child(&variant, index, context),
+        );
 
+        self.model.diagnostics.extend(diagnostics);
         self.insert_child_and_make_entry(index, variant)
     }
 }
@@ -590,13 +654,12 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
     pub fn hardware_write_entitlements(
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
-    ) -> Result<(), entitlement::PatternError> {
-        self.model.entitlements.insert(
-            EntitlementIndex::HardwareWrite(self.index),
-            entitlement::Space::from_iter(self.model, entitlements)?,
-        );
+    ) {
+        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
 
-        Ok(())
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::HardwareWrite(self.index), space);
     }
 }
 
@@ -608,13 +671,12 @@ where
     pub fn write_entitlements(
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
-    ) -> Result<(), entitlement::PatternError> {
-        self.model.entitlements.insert(
-            EntitlementIndex::Write(self.index),
-            entitlement::Space::from_iter(self.model, entitlements)?,
-        );
+    ) {
+        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
 
-        Ok(())
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::Write(self.index), space);
     }
 }
 
@@ -628,11 +690,11 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
     pub fn statewise_entitlements(
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
-    ) -> Result<(), entitlement::PatternError> {
-        self.model.entitlements.insert(
-            EntitlementIndex::Variant(self.index),
-            entitlement::Space::from_iter(self.model, entitlements.clone())?,
-        );
+    ) {
+        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements.clone());
+        self.model
+            .entitlements
+            .insert(EntitlementIndex::Variant(self.index), space);
 
         for entitlement in entitlements.into_iter().flatten() {
             self.model
@@ -641,8 +703,6 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
                 .or_default()
                 .insert(self.index);
         }
-
-        Ok(())
     }
 }
 

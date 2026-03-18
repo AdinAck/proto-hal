@@ -64,20 +64,15 @@ impl Interrupts {
 
     pub fn validate(&self) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let context = Context::with_path(vec!["interrupts".to_string()]);
+        let context = Context::with_path(["interrupts".to_string()]);
 
         let mut seen = HashMap::new();
 
         for (i, interrupt) in self.interrupts.iter().enumerate() {
             if let InterruptKind::Handler(ident) = &interrupt.kind
-                && let Some(existing) = seen.insert(ident, i)
+                && seen.insert(ident, i).is_some()
             {
-                diagnostics.insert(Diagnostic::interrupt_exists(
-                    ident,
-                    &i,
-                    &existing,
-                    context.clone(),
-                ));
+                diagnostics.insert(Diagnostic::exists(ident, context.clone()));
             }
         }
 

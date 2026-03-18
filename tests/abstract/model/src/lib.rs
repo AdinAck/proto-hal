@@ -1,9 +1,9 @@
 #![allow(clippy::disallowed_names)]
 
-use proto_hal_model::{Field, Model, Peripheral, Register, Variant, error::Error};
+use phm::{Field, ModelBuilder, Peripheral, Register, Variant};
 
-pub fn model() -> Result<Model, Error> {
-    let mut model = Model::new();
+pub fn model() -> ModelBuilder {
+    let mut model = ModelBuilder::new();
 
     let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 
@@ -11,9 +11,9 @@ pub fn model() -> Result<Model, Error> {
 
     let mut a = foo0.add_store_field(Field::new("a", 0, 4));
 
-    (0..5).for_each(|i| {
+    for i in 0..5 {
         a.add_variant(Variant::new(format!("V{i}"), i));
-    });
+    }
 
     let v5 = a.add_variant(Variant::new("V5", 5)).make_entitlement();
 
@@ -22,28 +22,25 @@ pub fn model() -> Result<Model, Error> {
     let mut write_requires_v5 = foo1.add_write_field(Field::new("write_requires_v5", 0, 1));
 
     write_requires_v5.add_variant(Variant::new("Noop", 0));
-    write_requires_v5.write_entitlements([[v5]])?;
+    write_requires_v5.write_entitlements([[v5]]);
 
     let mut bar = model.add_peripheral(Peripheral::new("bar", 0x100));
 
     bar.add_register(Register::new("bar0", 0));
     bar.add_register(Register::new("bar1", 4));
 
-    Ok(model)
+    model
 }
 
 #[cfg(test)]
 mod tests {
     mod hal {
-        use proto_hal_model::{
-            diagnostic,
-            {Model, peripheral::Peripheral, register::Register},
-        };
+        use phm::{ModelBuilder, diagnostic, peripheral::Peripheral, register::Register};
 
         /// Create an empty model.
         #[test]
         fn empty() {
-            let model = Model::new();
+            let model = ModelBuilder::new();
 
             assert_eq!(model.peripheral_count(), 0);
 
@@ -55,21 +52,20 @@ mod tests {
         /// Create a model with one peripheral.
         #[test]
         fn one_peripheral() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
 
             assert_eq!(model.peripheral_count(), 1);
 
-            let diagnostics = model.validate();
-
+            let (.., diagnostics) = model.finish();
             assert!(diagnostics.is_empty());
         }
 
         /// Create a model with many disjoint peripherals.
         #[test]
         fn many_peripherals() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             for (ident, base_addr) in [
                 ("foo", 0),
@@ -83,23 +79,41 @@ mod tests {
 
             assert_eq!(model.peripheral_count(), 5);
 
-            let diagnostics = model.validate();
-
+            let (.., diagnostics) = model.finish();
             assert!(diagnostics.is_empty());
         }
 
         /// Create a model with multiple peripherals with the same identifier.
         ///
-        /// Expected behavior: The model will contain one peripheral (the last specified).
+        /// Expected behavior: The model will contain one peripheral (the last specified) and validation will fail.
         #[test]
         fn peripherals_same_ident() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
             model.add_peripheral(Peripheral::new("foo", 1));
 
             assert_eq!(model.peripheral_count(), 1);
             assert_eq!(model.peripherals().last().unwrap().base_addr, 1);
+
+            let (.., diagnostics) = model.finish();
+
+            let mut diagnostics = diagnostics.into_iter();
+
+            let diagnostic = diagnostics.next().unwrap();
+
+            assert!(matches!(diagnostic.rank(), diagnostic::Rank::Warning));
+            assert!(matches!(diagnostic.kind(), diagnostic::Kind::Exists));
+
+            // bonus diagnostic
+            let diagnostic = diagnostics.next().unwrap();
+
+            assert!(matches!(diagnostic.rank(), diagnostic::Rank::Error));
+            assert!(matches!(
+                diagnostic.kind(),
+                diagnostic::Kind::AddressUnaligned
+            ));
+            assert!(diagnostics.next().is_none());
         }
 
         /// Create a model with multiple peripherals of zero size at the same base address.
@@ -108,15 +122,14 @@ mod tests {
         /// not exist and as such there is no error.
         #[test]
         fn zero_size_peripheral_overlap() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
             model.add_peripheral(Peripheral::new("bar", 0));
 
             assert_eq!(model.peripheral_count(), 2);
 
-            let diagnostics = model.validate();
-
+            let (.., diagnostics) = model.finish();
             assert!(diagnostics.is_empty());
         }
 
@@ -125,14 +138,16 @@ mod tests {
         /// Expected behavior: Exactly one diagnostic error is emitted during validation.
         #[test]
         fn peripheral_overlap() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
             foo.add_register(Register::new("foo0", 0));
             let mut bar = model.add_peripheral(Peripheral::new("bar", 0));
             bar.add_register(Register::new("bar0", 0));
 
-            let mut diagnostics = model.validate().into_iter();
+            let (.., diagnostics) = model.finish();
+
+            let mut diagnostics = diagnostics.into_iter();
 
             let diagnostic = diagnostics.next().unwrap();
 
@@ -143,14 +158,11 @@ mod tests {
     }
 
     mod peripherals {
-        use proto_hal_model::{
-            diagnostic,
-            {Model, peripheral::Peripheral, register::Register},
-        };
+        use phm::{ModelBuilder, diagnostic, peripheral::Peripheral, register::Register};
 
         #[test]
         fn many_registers() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 
@@ -166,14 +178,13 @@ mod tests {
 
             assert_eq!(model.register_count(), 5);
 
-            let diagnostics = model.validate();
-
+            let (.., diagnostics) = model.finish();
             assert!(diagnostics.is_empty());
         }
 
         #[test]
         fn register_overlap() {
-            let mut model = Model::new();
+            let mut model = ModelBuilder::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 

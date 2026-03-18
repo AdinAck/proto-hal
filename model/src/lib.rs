@@ -1,6 +1,5 @@
 pub mod diagnostic;
 pub mod entitlement;
-pub mod error;
 pub mod field;
 pub mod interrupts;
 pub mod model;
@@ -12,10 +11,9 @@ use std::fs;
 
 use colored::Colorize as _;
 pub use entitlement::Entitlement;
-pub use error::{Error, Result};
 pub use field::Field;
 pub use interrupts::{Interrupt, Interrupts};
-pub use model::Model;
+pub use model::{Model, ModelBuilder};
 pub use peripheral::Peripheral;
 pub use register::Register;
 pub use variant::Variant;
@@ -27,11 +25,12 @@ pub trait Node {
     type Index;
 }
 
+// TODO: exit code upon failure
 /// Validate a HAL model is properly defined and codegen succeeds.
-pub fn validate(model: &Model) {
+pub fn validate(model: ModelBuilder) {
     // model validation
     println!("Validating model...");
-    let diagnostics = model.validate();
+    let (model, diagnostics) = model.finish();
 
     if !diagnostics.is_empty() {
         println!("{}", Diagnostic::report(&diagnostics));

@@ -31,22 +31,22 @@ type PeripheralItem<'cx> = semantic::PeripheralItem<
 type RegisterItem<'cx> = semantic::RegisterItem<'cx, policies::field::ConsumeOnly<'cx>>;
 type FieldItem<'cx> = semantic::FieldItem<'cx, policies::field::ConsumeOnly<'cx>>;
 
-pub fn unmask(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn unmask(model: Model, tokens: TokenStream) -> TokenStream {
     unmask_inner(model, tokens, false)
 }
 
-pub fn unmask_in_place(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn unmask_in_place(model: Model, tokens: TokenStream) -> TokenStream {
     unmask_inner(model, tokens, true)
 }
 
-fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStream {
+fn unmask_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
     };
 
-    let (input, mut diagnostics) = Input::parse(&args, model);
-    diagnostics.extend(validate(&input, model));
+    let (input, mut diagnostics) = Input::parse(&args, &model);
+    diagnostics.extend(validate(&input, &model));
 
     if !args.overrides.is_empty() {
         // TODO: override spans should be fixed
@@ -81,7 +81,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
         make_constraints(
             &input,
-            model,
+            &model,
             &mut constraints,
             &quote! { #peripheral_path::Reset },
             *ontological_entitlements,
@@ -131,7 +131,7 @@ fn unmask_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStre
 
                 make_constraints(
                     &input,
-                    model,
+                    &model,
                     &mut constraints,
                     &quote! { #field_module_path::Field },
                     *ontological_entitlements,
