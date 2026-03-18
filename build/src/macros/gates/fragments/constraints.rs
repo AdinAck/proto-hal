@@ -86,11 +86,13 @@ fn write_entitlements<'cx>(
     let field_marker = {
         let (peripheral, register) = field.parents();
 
-        let peripheral_ident = peripheral.module_name();
+        let peripheral_path = input
+            .get_peripheral(peripheral.module_name().to_string())?
+            .path();
         let register_ident = register.module_name();
         let field_ident = field.module_name();
 
-        quote! { crate::#peripheral_ident::#register_ident::#field_ident::Field }
+        quote! { #peripheral_path::#register_ident::#field_ident::Field }
     };
 
     // get entitlement *fields*
