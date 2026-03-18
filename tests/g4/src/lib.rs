@@ -1,9 +1,5 @@
 #![no_std]
 
-use macros::scaffolding;
-
-scaffolding!();
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -17,7 +13,7 @@ mod tests {
     mod cordic {
         use super::addr_of_rcc;
 
-        use crate as hal;
+        use stm32g4_spa as hal;
 
         use hal::{cordic, rcc};
 
@@ -176,7 +172,7 @@ mod tests {
 
         use super::addr_of_rcc;
 
-        use crate as hal;
+        use stm32g4_spa as hal;
 
         use hal::{crc, rcc};
 
@@ -247,7 +243,7 @@ mod tests {
     mod rcc {
         use core::any::{Any, TypeId};
 
-        use crate as hal;
+        use stm32g4_spa as hal;
 
         use hal::rcc;
 

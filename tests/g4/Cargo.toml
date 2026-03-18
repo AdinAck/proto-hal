@@ -1,0 +1,11 @@
+[package]
+name = "g4"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proto-hal = { path = "../../proto-hal" }
+stm32g4-spa = { git = "https://github.com/adinack/stm32-spa", default-features = false }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
