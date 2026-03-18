@@ -1,4 +1,4 @@
-use proto_hal_model::{
+use phm::{
     Entitlement, Field, Register, Variant,
     model::{PeripheralEntry, RegisterEntry},
 };

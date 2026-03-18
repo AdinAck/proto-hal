@@ -10,7 +10,7 @@ pub mod ressize;
 pub mod rrdy;
 pub mod scale;
 
-use proto_hal_model::{Register, error::Error, model::PeripheralEntry};
+use phm::{Register, error::Error, model::PeripheralEntry};
 
 use argsize::argsize;
 use dmaren::dmaren;

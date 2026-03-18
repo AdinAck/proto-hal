@@ -1,7 +1,6 @@
 use g4_model::{DeviceVariant, model};
-use proto_hal_model::error::Error;
 
-fn main() -> Result<(), Error> {
+fn main() -> phm::Result<()> {
     env_logger::init();
     for variant in [
         DeviceVariant::G431,
@@ -10,7 +9,7 @@ fn main() -> Result<(), Error> {
         DeviceVariant::G484,
     ] {
         println!("=== Variant: {variant:?} ===");
-        proto_hal_model::validate(&model(variant)?);
+        phm::validate(&model(variant)?);
     }
 
     Ok(())

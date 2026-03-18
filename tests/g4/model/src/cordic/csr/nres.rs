@@ -1,4 +1,4 @@
-use proto_hal_model::{Entitlement, Field, Variant, model::RegisterEntry};
+use phm::{Entitlement, Field, Variant, model::RegisterEntry};
 
 pub struct Output {
     pub one: Entitlement,
