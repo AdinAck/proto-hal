@@ -228,27 +228,6 @@ impl<'cx> View<'cx, PeripheralNode> {
         }
     }
 
-    // fn generate_entitlement_impls(
-    //     &self,
-    //     ontological_entitlements: Option<&EntitlementSpace>,
-    // ) -> Option<TokenStream> {
-    //     let ontological_entitlements = ontological_entitlements?;
-
-    //     let entitlement_paths = ontological_entitlements.iter().map(|entitlement| {
-    //         let field = entitlement.field(self.model);
-    //         let field_ty = field.type_name();
-    //         let prefix = entitlement.render_up_to_field(self.model);
-    //         let state = entitlement.render_entirely(self.model);
-    //         quote! { crate::#prefix::#field_ty<crate::#state> }
-    //     });
-
-    //     Some(quote! {
-    //         #(
-    //             unsafe impl ::proto_hal::stasis::Entitled<::proto_hal::stasis::axes::Ontological, #entitlement_paths> for Reset {}
-    //         )*
-    //     })
-    // }
-
     fn generate_entitlements(
         &self,
         ontological_entitlements: Option<&entitlement::Space>,

@@ -2,7 +2,7 @@ pub mod arg;
 pub mod arg0;
 pub mod arg1;
 
-use proto_hal_model::{Entitlement, Register, error::Error, model::PeripheralEntry};
+use phm::{Entitlement, Register, model::PeripheralEntry};
 
 use arg::arg;
 use arg0::arg0;
@@ -17,7 +17,7 @@ pub struct Entitlements {
 pub fn wdata<'cx>(
     cordic: &mut PeripheralEntry<'cx>,
     entitlements: Entitlements,
-) -> Result<(), Error> {
+) -> phm::Result<()> {
     let mut wdata = cordic.add_register(Register::new("wdata", 4));
 
     arg(&mut wdata, entitlements.argsize_q31)?;
