@@ -168,14 +168,14 @@ impl ToTokens for Interrupts {
         };
 
         tokens.extend(quote! {
-            #[cfg(feature = "interrupts")]
+            #[cfg(feature = "rt")]
             pub use ::cortex_m_rt::interrupt;
 
-            #[cfg(feature = "interrupts")]
+            #[cfg(feature = "rt")]
             #symbols
-            #[cfg(feature = "interrupts")]
+            #[cfg(feature = "rt")]
             #table
-            #[cfg(feature = "interrupts")]
+            #[cfg(feature = "rt")]
             #enum_
         });
     }
