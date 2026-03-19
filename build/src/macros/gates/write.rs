@@ -26,21 +26,21 @@ use crate::macros::{
 
 type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
 
-pub fn write(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn write(model: Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, false)
 }
-pub fn write_in_place(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn write_in_place(model: Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, true)
 }
 
-fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStream {
+fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
     };
 
-    let (input, mut diagnostics) = Input::parse(&args, model);
-    diagnostics.extend(validate(&input, model));
+    let (input, mut diagnostics) = Input::parse(&args, &model);
+    diagnostics.extend(validate(&input, &model));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
 
@@ -95,7 +95,8 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             }) {
                 reg_write_values.push(fragments::register_write_value(
                     register_item,
-                    static_initial(model, register_item).map(|value| value.get().to_token_stream()),
+                    static_initial(&model, register_item)
+                        .map(|value| value.get().to_token_stream()),
                     |register_item, field_item| {
                         let FieldGenerics {
                             input: input_generic,
@@ -166,7 +167,7 @@ fn write_inner(model: &Model, tokens: TokenStream, in_place: bool) -> TokenStrea
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
-                    model,
+                    &model,
                     peripheral_path,
                     register_ident,
                     binding,

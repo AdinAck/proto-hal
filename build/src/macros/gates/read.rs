@@ -23,13 +23,13 @@ use crate::macros::{
 type EntryPolicy<'cx> = policies::field::BindingOnly<'cx>;
 type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy<'cx>>;
 
-pub fn read(model: &Model, tokens: TokenStream) -> TokenStream {
+pub fn read(model: Model, tokens: TokenStream) -> TokenStream {
     let args = match syn::parse2(tokens) {
         Ok(args) => args,
         Err(e) => return e.to_compile_error(),
     };
 
-    let (input, mut diagnostics) = Input::parse(&args, model);
+    let (input, mut diagnostics) = Input::parse(&args, &model);
     diagnostics.extend(validate(&input));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();

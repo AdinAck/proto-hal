@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use syn::{Ident, parse_quote};
 
 use crate::{
+    diagnostic::{Context, Diagnostic, Diagnostics},
     model::{Model, View},
     variant::{Variant, VariantIndex, VariantNode},
 };
@@ -38,7 +39,14 @@ impl Numericity {
             .find(|variant| variant.inert)
     }
 
-    pub(crate) fn add_child(&mut self, variant: &Variant, index: VariantIndex) {
+    pub(crate) fn add_child(
+        &mut self,
+        variant: &Variant,
+        index: VariantIndex,
+        context: Context,
+    ) -> Diagnostics {
+        let mut diagnostics = Diagnostics::new();
+
         match self {
             Numericity::Numeric(..) => {
                 *self = Numericity::Enumerated(Enumerated {
@@ -46,9 +54,18 @@ impl Numericity {
                 })
             }
             Numericity::Enumerated(enumerated) => {
+                if enumerated.variants.contains_key(&variant.module_name()) {
+                    diagnostics.insert(Diagnostic::exists(
+                        &variant.type_name(),
+                        context.and(variant.type_name().to_string()),
+                    ));
+                }
+
                 enumerated.variants.insert(variant.module_name(), index);
             }
         }
+
+        diagnostics
     }
 }
 

@@ -160,6 +160,20 @@ impl Access {
     pub fn is_write(&self) -> bool {
         self.get_write().is_some()
     }
+
+    /// Visit the numericities of this access.
+    pub fn visit_numericities(&mut self, mut f: impl FnMut(&mut Numericity)) {
+        match self {
+            Access::Read(read) => f(&mut read.numericity),
+            Access::Write(write) => f(&mut write.numericity),
+            Access::ReadWrite(read_write) => {
+                f(&mut read_write.read.numericity);
+                f(&mut read_write.write.numericity);
+            }
+            Access::Store(store) => f(&mut store.numericity),
+            Access::VolatileStore(volatile_store) => f(&mut volatile_store.numericity),
+        }
+    }
 }
 
 impl From<Read> for Access {

@@ -45,13 +45,7 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         #(
             #[proc_macro]
             pub fn #idents(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-                match ::model::model(#args) {
-                    Ok(model) => ::proto_hal_build::macros::#idents(&model, tokens.into()),
-                    Err(e) => ::proto_hal_build::macros::syn::Error::new(
-                        ::proto_hal_build::macros::proc_macro2::Span::call_site(),
-                        format!("model generation failed with error: {e:?}"),
-                    ).to_compile_error()
-                }.into()
+                ::proto_hal_build::macros::#idents(::model::model(#args).release(), tokens.into()).into()
             }
         )*
 

@@ -30,20 +30,22 @@ pub struct Diagnostic {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Kind {
+    // structural
+    Exists,
+
     // physical
-    AddressUnaligned,
+    AddressUnaligned = 1000,
     Overlap,
     ExceedsDomain,
     ExpectedReset,
     InvalidReset,
-    InterruptExists,
 
     // stasis
-    Unresolvable = 1000,
+    Unresolvable = 2000,
     ReadCannotBeInert,
 
     // lexical
-    Reserved = 2000,
+    Reserved = 3000,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -61,6 +63,19 @@ impl Diagnostic {
             notes: Default::default(),
             context,
         }
+    }
+
+    /// {level} [foo] already exists and was overridden
+    pub fn exists(offending: &impl Display, context: Context) -> Self {
+        let level = context.level();
+        let offending = format!("{offending}").bold();
+
+        Self::new(
+            Rank::Warning,
+            Kind::Exists,
+            format!("{level} [{offending}] already exists and was overridden"),
+            context,
+        )
     }
 
     /// address must be word aligned
@@ -183,27 +198,6 @@ impl Diagnostic {
         ])
     }
 
-    /// interrupt [foo] at position {offending_position} is already defined at position {existing_position}
-    pub fn interrupt_exists(
-        offending: &impl Display,
-        offending_position: &impl Display,
-        existing_position: &impl Display,
-        context: Context,
-    ) -> Self {
-        let offending = format!("{offending}").bold();
-        let offending_position = format!("{offending_position}").bold();
-        let existing_position = format!("{existing_position}").bold();
-
-        Self::new(
-            Rank::Error,
-            Kind::InterruptExists,
-            format!(
-                "interrupt [{offending}] at position {offending_position} is already defined at position {existing_position}"
-            ),
-            context,
-        )
-    }
-
     /// entitlement [foo] resides within unresolvable field [bar] and as such cannot be entitled to
     pub fn unresolvable(
         model: &Model,
@@ -233,7 +227,7 @@ impl Diagnostic {
         )
     }
 
-    /// "foo" is a reserved keyword
+    /// "foo" is a reserved keyword for {level}s
     ///
     /// note: reserved keywords: [...]
     pub fn reserved<R: AsRef<str>>(
@@ -314,11 +308,11 @@ impl Display for Diagnostic {
             String::new()
         };
 
-        let code = format!("[E{:04}]", self.kind as u32);
+        let code = format!("{:04}", self.kind as u32);
 
         let header = match &self.rank {
-            Rank::Warning => format!("warning{code}").yellow().bold(),
-            Rank::Error => format!("error{code}").red().bold(),
+            Rank::Warning => format!("warning[W{code}]").yellow().bold(),
+            Rank::Error => format!("error[E{code}]").red().bold(),
         };
 
         write!(f, "{header}: {}{notes}", self.message)
@@ -346,8 +340,10 @@ impl Context {
         Context { path: Vec::new() }
     }
 
-    pub fn with_path(path: Vec<String>) -> Self {
-        Self { path }
+    pub fn with_path(path: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            path: path.into_iter().collect(),
+        }
     }
 
     pub fn and(mut self, ident: String) -> Self {
