@@ -1,6 +1,6 @@
 [workspace]
-members = ["proto-hal", "build", "model", "tests/g4/out", "tests/abstract/out", "macros"]
-exclude = ["debug-bin", "tests/abstract/macros"]
+members = ["proto-hal", "build", "model", "tests/g4", "tests/abstract/*", "macros"]
+exclude = ["debug-bin"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -9,7 +9,14 @@ derive_more = { version = "2.0.1", features = ["as_ref", "deref", "deref_mut", "
 indexmap = "2.11.4"
 Inflector = "0.11.4"
 proc-macro2 = { version = "1.0.101", features = ["span-locations"] }
-quote = "1.0.41"
+quote = "1.0.42"
 syn = { version = "2.0.106", features = ["full", "extra-traits"] }
 ters = "0.2.0"
 tiva = "0.3.0"
+
+# inject local crates for tests
+[patch."https://github.com/adinack/proto-hal"]
+proto-hal = { path = "proto-hal" }
+proto-hal-build = { path = "build" }
+proto-hal-model = { path = "model" }
+proto-hal-macros = { path = "macros" }
