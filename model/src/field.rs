@@ -471,9 +471,7 @@ impl<'cx> View<'cx, FieldNode> {
                     #(
                         impl ::proto_hal::stasis::Conjure for #variants {
                             unsafe fn conjure() -> Self {
-                                Self {
-                                    _sealed: (),
-                                }
+                                #variants
                             }
                         }
 
@@ -505,11 +503,7 @@ impl<'cx> View<'cx, FieldNode> {
                     .map(|space| (space, entitlement::Axis::Affordance)),
             );
 
-        Some(generate_entitlements(
-            self.model,
-            &quote! { Field },
-            spaces,
-        ))
+        Some(generate_entitlements(self.model, &quote! { Field }, spaces))
     }
 
     pub fn generate(&self) -> TokenStream {
