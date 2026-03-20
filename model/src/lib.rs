@@ -13,7 +13,7 @@ use colored::Colorize as _;
 pub use entitlement::Entitlement;
 pub use field::Field;
 pub use interrupts::{Interrupt, Interrupts};
-pub use model::{Model, ModelBuilder};
+pub use model::{Composition, Model};
 pub use peripheral::Peripheral;
 pub use register::Register;
 pub use variant::Variant;
@@ -27,10 +27,10 @@ pub trait Node {
 
 // TODO: exit code upon failure
 /// Validate a HAL model is properly defined and codegen succeeds.
-pub fn validate(model: ModelBuilder) {
+pub fn validate(composition: Composition) {
     // model validation
     println!("Validating model...");
-    let (model, diagnostics) = model.finish();
+    let (model, diagnostics) = composition.finish();
 
     if !diagnostics.is_empty() {
         println!("{}", Diagnostic::report(&diagnostics));

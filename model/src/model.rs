@@ -24,17 +24,25 @@ use crate::{
 
 use super::peripheral::Peripheral;
 
+/// A model composition is the structure used to *compose* a model. A composition exposes surfaces which allow for the
+/// piece-by-piece construction of a model (see [`Entry`]).
+///
+/// When a composition is complete, it can be consumed to produce a model, along with emitted [`Diagnostic`]s.
 #[derive(Debug, Clone, Default, Deref, DerefMut)]
-pub struct ModelBuilder {
+pub struct Composition {
     #[deref]
     #[deref_mut]
     model: Model,
-    //// Diagnostics emitted during the model building process.
+    //// Diagnostics emitted during model composition.
     diagnostics: Diagnostics,
 }
 
-impl ModelBuilder {
-    /// Complete the model build and perform validation.
+impl Composition {
+    /// Capture the composition and produce the resulting model.
+    ///
+    /// This method also produces diagnostics emitted from both:
+    /// 1. the composition itself
+    /// 1. post-composition validation
     pub fn finish(self) -> (Model, Diagnostics) {
         let mut diagnostics = self.diagnostics;
         diagnostics.extend(self.model.validate());
@@ -42,12 +50,13 @@ impl ModelBuilder {
         (self.model, diagnostics)
     }
 
-    /// Complete the model build and produce the *unvalidated* model.
+    /// Capture the composition and produce the resulting *unvalidated* model.
     pub fn release(self) -> Model {
         self.model
     }
 }
 
+/// The proto-hal device model. A HAL is generated purely from this structure.
 #[ters]
 #[derive(Debug, Clone, Default)]
 pub struct Model {
@@ -63,7 +72,7 @@ pub struct Model {
     interrupts: Interrupts,
 }
 
-impl ModelBuilder {
+impl Composition {
     pub fn new() -> Self {
         Self::default()
     }
@@ -401,7 +410,7 @@ pub struct VariantEntry<'cx>(Entry<'cx, VariantIndex, ()>);
 
 #[derive(Debug)]
 pub struct Entry<'cx, Index, Meta> {
-    model: &'cx mut ModelBuilder,
+    model: &'cx mut Composition,
     index: Index,
     context: Context,
     _p: PhantomData<Meta>,

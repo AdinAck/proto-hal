@@ -1,11 +1,11 @@
 #![allow(clippy::disallowed_names)]
 
-use phm::{Field, ModelBuilder, Peripheral, Register, Variant};
+use phm::{Composition, Field, Peripheral, Register, Variant};
 
-pub fn model() -> ModelBuilder {
-    let mut model = ModelBuilder::new();
+pub fn compose() -> Composition {
+    let mut composition = Composition::new();
 
-    let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
+    let mut foo = composition.add_peripheral(Peripheral::new("foo", 0));
 
     let mut foo0 = foo.add_register(Register::new("foo0", 0).reset(3));
 
@@ -24,23 +24,23 @@ pub fn model() -> ModelBuilder {
     write_requires_v5.add_variant(Variant::new("Noop", 0));
     write_requires_v5.write_entitlements([[v5]]);
 
-    let mut bar = model.add_peripheral(Peripheral::new("bar", 0x100));
+    let mut bar = composition.add_peripheral(Peripheral::new("bar", 0x100));
 
     bar.add_register(Register::new("bar0", 0));
     bar.add_register(Register::new("bar1", 4));
 
-    model
+    composition
 }
 
 #[cfg(test)]
 mod tests {
     mod hal {
-        use phm::{ModelBuilder, diagnostic, peripheral::Peripheral, register::Register};
+        use phm::{Composition, diagnostic, peripheral::Peripheral, register::Register};
 
         /// Create an empty model.
         #[test]
         fn empty() {
-            let model = ModelBuilder::new();
+            let model = Composition::new();
 
             assert_eq!(model.peripheral_count(), 0);
 
@@ -52,7 +52,7 @@ mod tests {
         /// Create a model with one peripheral.
         #[test]
         fn one_peripheral() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
 
@@ -65,7 +65,7 @@ mod tests {
         /// Create a model with many disjoint peripherals.
         #[test]
         fn many_peripherals() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             for (ident, base_addr) in [
                 ("foo", 0),
@@ -88,7 +88,7 @@ mod tests {
         /// Expected behavior: The model will contain one peripheral (the last specified) and validation will fail.
         #[test]
         fn peripherals_same_ident() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
             model.add_peripheral(Peripheral::new("foo", 1));
@@ -122,7 +122,7 @@ mod tests {
         /// not exist and as such there is no error.
         #[test]
         fn zero_size_peripheral_overlap() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             model.add_peripheral(Peripheral::new("foo", 0));
             model.add_peripheral(Peripheral::new("bar", 0));
@@ -138,7 +138,7 @@ mod tests {
         /// Expected behavior: Exactly one diagnostic error is emitted during validation.
         #[test]
         fn peripheral_overlap() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
             foo.add_register(Register::new("foo0", 0));
@@ -158,11 +158,11 @@ mod tests {
     }
 
     mod peripherals {
-        use phm::{ModelBuilder, diagnostic, peripheral::Peripheral, register::Register};
+        use phm::{Composition, diagnostic, peripheral::Peripheral, register::Register};
 
         #[test]
         fn many_registers() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 
@@ -184,7 +184,7 @@ mod tests {
 
         #[test]
         fn register_overlap() {
-            let mut model = ModelBuilder::new();
+            let mut model = Composition::new();
 
             let mut foo = model.add_peripheral(Peripheral::new("foo", 0));
 

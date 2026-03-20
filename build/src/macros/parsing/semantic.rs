@@ -190,7 +190,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use model::{ModelBuilder, field::Field, peripheral::Peripheral, register::Register};
+    use model::{field::Field, peripheral::Peripheral, register::Register};
     use quote::quote;
     use syn::{Ident, Path, parse_quote};
 
@@ -208,7 +208,7 @@ mod tests {
         let peripheral_path = parse_quote! { ::external::foo };
         let peripheral_binding = quote! { some_foo };
 
-        let mut model = ModelBuilder::new();
+        let mut model = model::Composition::new();
         model.add_peripheral(Peripheral::new(peripheral_name, 0));
 
         let tokens = quote! {
@@ -244,7 +244,7 @@ mod tests {
         let peripheral1_path = parse_quote! { external::stuff::bar };
         let peripheral1_binding = quote! { some_bar };
 
-        let mut model = ModelBuilder::new();
+        let mut model = model::Composition::new();
         model.add_peripheral(Peripheral::new(peripheral0_name, 0));
         model.add_peripheral(Peripheral::new(peripheral1_name, 0));
 
@@ -289,7 +289,7 @@ mod tests {
         let register_name = "bar";
         let register_ident: Ident = parse_quote! { bar };
 
-        let mut model = ModelBuilder::new();
+        let mut model = model::Composition::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0));
@@ -323,7 +323,7 @@ mod tests {
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
 
-        let mut model = ModelBuilder::new();
+        let mut model = model::Composition::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0))
@@ -353,7 +353,7 @@ mod tests {
         let field_name = "baz";
         let field_ident: Ident = parse_quote! { baz };
 
-        let mut model = ModelBuilder::new();
+        let mut model = model::Composition::new();
         model
             .add_peripheral(Peripheral::new(peripheral_name, 0))
             .add_register(Register::new(register_name, 0))

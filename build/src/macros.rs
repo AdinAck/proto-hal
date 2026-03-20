@@ -45,7 +45,7 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         #(
             #[proc_macro]
             pub fn #idents(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-                ::proto_hal_build::macros::#idents(::model::model(#args).release(), tokens.into()).into()
+                ::proto_hal_build::macros::#idents(::model::compose(#args).release(), tokens.into()).into()
             }
         )*
 
