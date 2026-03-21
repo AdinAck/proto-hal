@@ -635,7 +635,7 @@ mod tests {
         use super::*;
 
         mod validation {
-            use crate::ModelBuilder;
+            use crate::Composition;
 
             use super::*;
 
@@ -648,7 +648,7 @@ mod tests {
             }
 
             fn setup() -> Setup {
-                let mut model = ModelBuilder::new();
+                let mut model = Composition::new();
 
                 let mut p = model.add_peripheral(Peripheral::new("p", 0));
                 let mut r = p.add_register(Register::new("r", 0));
@@ -705,7 +705,7 @@ mod tests {
         }
 
         mod contradiction {
-            use crate::ModelBuilder;
+            use crate::Composition;
 
             use super::*;
 
@@ -721,7 +721,7 @@ mod tests {
             }
 
             fn setup() -> Setup {
-                let mut model = ModelBuilder::new();
+                let mut model = Composition::new();
 
                 let mut p = model.add_peripheral(Peripheral::new("p", 0));
                 let mut r = p.add_register(Register::new("r", 0));

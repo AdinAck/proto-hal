@@ -1,5 +1,5 @@
-use abstract_model::model;
+use abstract_model::compose;
 
 fn main() {
-    phm::validate(model());
+    phm::validate(compose());
 }

@@ -1,5 +1,5 @@
-use model::model;
+use model::compose;
 
 fn main() {
-    proto_hal_build::render(&model());
+    proto_hal_build::render(&compose());
 }
