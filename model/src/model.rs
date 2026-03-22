@@ -1,7 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use colored::Colorize;
-use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
+use derive_more::{AsRef, Deref, DerefMut};
 use indexmap::{IndexMap, IndexSet};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -101,7 +101,6 @@ impl Composition {
             context: Context::with_path([name]),
             _p: PhantomData,
         }
-        .into()
     }
 
     pub fn with_interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
@@ -396,17 +395,10 @@ impl ToTokens for Model {
     }
 }
 
-#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
-pub struct PeripheralEntry<'cx>(Entry<'cx, PeripheralIndex, ()>);
-
-#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
-pub struct RegisterEntry<'cx>(Entry<'cx, RegisterIndex, ()>);
-
-#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
-pub struct FieldEntry<'cx, AccessModality>(Entry<'cx, FieldIndex, AccessModality>);
-
-#[derive(Debug, Deref, DerefMut, AsRef, AsMut, From)]
-pub struct VariantEntry<'cx>(Entry<'cx, VariantIndex, ()>);
+pub type PeripheralEntry<'cx> = Entry<'cx, PeripheralIndex, ()>;
+pub type RegisterEntry<'cx> = Entry<'cx, RegisterIndex, ()>;
+pub type FieldEntry<'cx, AccessModality> = Entry<'cx, FieldIndex, AccessModality>;
+pub type VariantEntry<'cx> = Entry<'cx, VariantIndex, ()>;
 
 #[derive(Debug)]
 pub struct Entry<'cx, Index, Meta> {
@@ -448,7 +440,6 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
             context: self.context.clone().and(name),
             _p: PhantomData,
         }
-        .into()
     }
 
     /// Add [ontological entitlements](TODO) to the peripheral.
@@ -461,6 +452,15 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         self.model
             .entitlements
             .insert(EntitlementIndex::Peripheral(self.index.clone()), space);
+    }
+
+    /// Modify the peripheral this entry pertains to.
+    pub fn modify(self, f: impl FnOnce(Peripheral) -> Peripheral) -> Self {
+        let node = self.model.peripherals.get_mut(&self.index).unwrap();
+
+        node.peripheral = f(node.peripheral.clone());
+
+        self
     }
 }
 
@@ -505,7 +505,6 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
             context: self.context.clone().and(name),
             _p: PhantomData,
         }
-        .into()
     }
 
     /// Add a field to the register with [`Read`](access::Read) access.
@@ -553,6 +552,23 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
         self.make_child_entry(index, name)
     }
+
+    pub fn docs<I>(self, docs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.modify(|r| r.docs(docs))
+    }
+
+    /// Modify the register this entry pertains to.
+    pub fn modify(self, f: impl FnOnce(Register) -> Register) -> Self {
+        let node = self.model.registers.get_mut(*self.index).unwrap();
+
+        node.register = f(node.register.clone());
+
+        self
+    }
 }
 
 impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
@@ -585,7 +601,6 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
             context: self.context.clone().and(name),
             _p: PhantomData,
         }
-        .into()
     }
 
     /// Add a variant to the field.
@@ -617,6 +632,15 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         self.model
             .entitlements
             .insert(EntitlementIndex::Field(self.index), space);
+    }
+
+    /// Modify the field this entry pertains to.
+    pub fn modify(self, f: impl FnOnce(Field) -> Field) -> Self {
+        let node = self.model.fields.get_mut(*self.index).unwrap();
+
+        node.field = f(node.field.clone());
+
+        self
     }
 }
 
