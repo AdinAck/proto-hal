@@ -105,9 +105,7 @@ impl<'cx> View<'cx, VariantNode> {
             #(
                 #[doc = #docs]
             )*
-            pub struct #ident {
-                pub(super) _sealed: (),
-            }
+            pub struct #ident;
         }
     }
 

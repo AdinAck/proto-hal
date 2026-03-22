@@ -169,15 +169,13 @@ where
 }
 
 /// A marker type for a dynamic state.
-pub struct Dynamic {
-    _sealed: (),
-}
+pub struct Dynamic;
 
 unsafe impl<Parent> State<Parent> for Dynamic {}
 
 impl Conjure for Dynamic {
     unsafe fn conjure() -> Self {
-        Dynamic { _sealed: () }
+        Dynamic
     }
 }
 
@@ -186,13 +184,11 @@ macro_rules! numerics {
         $($name:ident ($ty:ty) $(,)?)*
     } => {
         $(
-            pub struct $name<const V: $ty> {
-                _sealed: (),
-            }
+            pub struct $name<const V: $ty>;
 
             impl<const V: $ty> Conjure for $name<V> {
                 unsafe fn conjure() -> Self {
-                    Self { _sealed: () }
+                    $name
                 }
             }
 
