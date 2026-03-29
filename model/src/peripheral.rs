@@ -10,7 +10,7 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{self, generate_entitlements},
+    entitlement::{self, codegen::generate_entitlements},
     model::View,
     register::{RegisterIndex, RegisterNode},
 };

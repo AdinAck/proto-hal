@@ -41,7 +41,7 @@ impl Binding {
 
     /// The binding provides dynamic access or moves the resource.
     ///
-    /// *See [`is_dynamic`] and [`is_moved`].*
+    /// *See [`Binding::is_dynamic`] and [`Binding::is_moved`].*
     pub fn is_mutated(&self) -> bool {
         self.is_moved() || self.is_dynamic()
     }

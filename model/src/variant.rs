@@ -6,7 +6,7 @@ use syn::Ident;
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{self, generate_entitlements},
+    entitlement::{self, codegen::generate_entitlements},
     field::{FieldIndex, FieldNode},
     model::View,
 };

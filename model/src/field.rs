@@ -12,7 +12,7 @@ use syn::{Ident, LitInt};
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{self, generate_entitlements},
+    entitlement::{self, codegen::generate_entitlements},
     field::{access::Access, numericity::Numericity},
     model::View,
     register::RegisterIndex,
