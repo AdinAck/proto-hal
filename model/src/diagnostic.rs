@@ -6,14 +6,15 @@ use indexmap::{IndexMap, IndexSet};
 use ters::ters;
 
 use crate::{
-    entitlement::Entitlement,
+    entitlement::{self, Entitlement},
     field::{Field, FieldNode},
     model::{Model, View},
     register::RegisterNode,
     variant::VariantNode,
 };
 
-/// Elaborates diagnostics that may be emitted during model validation.
+/// Elaborates diagnostics which may be emitted during model composition or
+/// validation.
 #[ters]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Diagnostic {
@@ -43,6 +44,7 @@ pub enum Kind {
     // stasis
     Unresolvable = 2000,
     ReadCannotBeInert,
+    InvalidEntitlements,
 
     // lexical
     Reserved = 3000,
@@ -223,6 +225,32 @@ impl Diagnostic {
             Rank::Error,
             Kind::ReadCannotBeInert,
             "read-only variants cannot be inert",
+            context,
+        )
+    }
+
+    /// entitlement pattern {pattern} contradicts {axis} entitlement space {space}
+    pub fn invalid_entitlements(
+        model: &Model,
+        pattern: &entitlement::Pattern,
+        axis: &entitlement::Axis,
+        space: &entitlement::Space,
+        context: Context,
+    ) -> Self {
+        let axis = match axis {
+            entitlement::Axis::Statewise => "statewise",
+            entitlement::Axis::Affordance => "affordant",
+            entitlement::Axis::Ontological => "ontological",
+        };
+
+        Self::new(
+            Rank::Error,
+            Kind::InvalidEntitlements,
+            format!(
+                "entitlement pattern {} contradicts {axis} entitlement space {}",
+                pattern.to_string(model),
+                space.to_string(model)
+            ),
             context,
         )
     }

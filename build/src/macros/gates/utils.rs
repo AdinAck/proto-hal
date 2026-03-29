@@ -169,7 +169,7 @@ pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolic
         input
             .visit_fields()
             .map(|field| field.field().module_name().to_string()),
-        patterns.iter().map(|pattern| pattern.render(model)),
+        patterns.iter().map(|pattern| pattern.to_string(model)),
     ));
 }
 

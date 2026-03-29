@@ -408,6 +408,38 @@ pub struct Entry<'cx, Index, Meta> {
     _p: PhantomData<Meta>,
 }
 
+impl<'cx, Index, Meta> Entry<'cx, Index, Meta> {
+    fn add_entitlement_space(
+        &mut self,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+        index: EntitlementIndex,
+    ) {
+        match entitlement::Space::from_iter(self.model, entitlements) {
+            Ok(space) => {
+                self.model.entitlements.insert(index, space);
+            }
+            Err(entitlement::pattern::Error::Contradicts {
+                pattern,
+                space,
+                axis,
+            }) => {
+                self.model
+                    .diagnostics
+                    .insert(Diagnostic::invalid_entitlements(
+                        self.model,
+                        &pattern,
+                        &axis,
+                        &space,
+                        self.context.clone(),
+                    ));
+            }
+            Err(entitlement::pattern::Error::StructuralContradiction) => {
+                unreachable!("user-defined patterns should not be structural contradictions")
+            }
+        }
+    }
+}
+
 impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     /// Add a register to the peripheral.
     pub fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
@@ -447,11 +479,10 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
     ) {
-        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
-
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::Peripheral(self.index.clone()), space);
+        self.add_entitlement_space(
+            entitlements,
+            EntitlementIndex::Peripheral(self.index.clone()),
+        );
     }
 
     /// Modify the peripheral this entry pertains to.
@@ -627,11 +658,7 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
     ) {
-        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
-
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::Field(self.index), space);
+        self.add_entitlement_space(entitlements, EntitlementIndex::Field(self.index));
     }
 
     /// Modify the field this entry pertains to.
@@ -688,11 +715,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
     ) {
-        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
-
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::HardwareWrite(self.index), space);
+        self.add_entitlement_space(entitlements, EntitlementIndex::HardwareWrite(self.index));
     }
 }
 
@@ -705,11 +728,7 @@ where
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
     ) {
-        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements);
-
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::Write(self.index), space);
+        self.add_entitlement_space(entitlements, EntitlementIndex::Write(self.index));
     }
 }
 
@@ -724,10 +743,7 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
     ) {
-        let space = entitlement::Space::from_iter_unchecked(self.model, entitlements.clone());
-        self.model
-            .entitlements
-            .insert(EntitlementIndex::Variant(self.index), space);
+        self.add_entitlement_space(entitlements.clone(), EntitlementIndex::Variant(self.index));
 
         for entitlement in entitlements.into_iter().flatten() {
             self.model

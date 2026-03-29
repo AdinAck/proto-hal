@@ -80,15 +80,16 @@ impl<'cx> Refine<'cx> for TransitionOnly<'cx> {
 }
 
 /// The binding component of the entry must be specified.
+/// (see [`Entry`](syntax::Entry))
 #[derive(Debug)]
 pub enum RequireBinding<'cx> {
-    /// The entry is a view (see [`Entry`]).
+    /// The entry is a view.
     View(&'cx syntax::Binding),
-    /// The entry is dynnamic (see [`Entry`]).
+    /// The entry is dynnamic.
     Dynamic(&'cx syntax::Binding),
-    /// The entry is a dynnamic transition (see [`Entry`]).
+    /// The entry is a dynnamic transition.
     DynamicTransition(&'cx syntax::Binding, semantic::Transition<'cx>),
-    /// The entry is static (see [`Entry`]).
+    /// The entry is static.
     Static(&'cx syntax::Binding, semantic::Transition<'cx>),
     /// The entry is just a static binding.
     Consumed(&'cx syntax::Binding),
