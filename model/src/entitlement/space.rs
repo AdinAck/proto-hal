@@ -77,7 +77,7 @@ impl Space {
     /// will contradict every pattern in B (and vice versa).*
     ///
     /// ## Definition
-    /// The complement of a space is the cartesian of the complement spaces of each
+    /// The complement of a space is the cartesian product of the complement spaces of each
     /// pattern in the space.
     ///
     /// The cartesian product of two spaces is the intersection of every pattern in
