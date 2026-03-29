@@ -456,7 +456,7 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
         if exists {
             self.model
                 .diagnostics
-                .insert(Diagnostic::exists(&name, Context::new()));
+                .insert(Diagnostic::exists(&name, self.context.clone()));
         }
 
         // insert child
