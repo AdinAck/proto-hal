@@ -53,6 +53,11 @@ impl Space {
         }
     }
 
+    /// Create a space that is always satisfied. The simplest being a space containing an empty pattern.
+    pub fn tautology() -> Self {
+        Self::new([Pattern::tautology()])
+    }
+
     /// Determine whether the space contradicts the other or not.
     ///
     /// ## Meaning
@@ -94,7 +99,7 @@ impl Space {
                     })
                 }))
             })
-            .unwrap_or(Space::new([Pattern::tautology()]))
+            .unwrap_or(Space::tautology())
     }
 
     /// The [`Pattern`]s in the space.
@@ -128,6 +133,16 @@ impl Space {
         self.patterns()
             .next()
             .is_none_or(|p| p.entitlements.is_empty())
+    }
+
+    /// Determine whether the space is a contradiction or not.
+    pub fn is_contradiction(&self, model: &Model) -> bool {
+        self.contradicts(model, &Space::tautology())
+    }
+
+    /// Determine whether the space is a tautology or not.
+    pub fn is_tautology(&self, model: &Model) -> bool {
+        self.complement(model).is_contradiction(model)
     }
 
     pub fn to_string(&self, model: &Model) -> String {
