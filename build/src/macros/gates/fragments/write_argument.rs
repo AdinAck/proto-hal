@@ -4,7 +4,7 @@ use quote::{ToTokens as _, quote_spanned};
 use syn::{Ident, Path};
 
 use crate::macros::{
-    gates::fragments::write_argument_value, parsing::semantic::policies::field::RequireBinding,
+    gates::fragments::write_argument_value, parsing::semantic::policies::field::GateEntry,
 };
 
 pub fn write_argument<'cx>(
@@ -12,14 +12,13 @@ pub fn write_argument<'cx>(
     register_ident: &Ident,
     field_ident: &Ident,
     field: &FieldNode,
-    entry: &RequireBinding<'cx>,
+    entry: &GateEntry<'cx>,
 ) -> TokenStream {
     match entry {
-        RequireBinding::View(binding)
-        | RequireBinding::Dynamic(binding)
-        | RequireBinding::Static(binding, ..)
-        | RequireBinding::Consumed(binding) => binding.to_token_stream(),
-        RequireBinding::DynamicTransition(binding, transition) => {
+        GateEntry::View(binding) | GateEntry::Dynamic(binding) | GateEntry::Static(binding, ..) => {
+            binding.to_token_stream()
+        }
+        GateEntry::DynamicTransition(binding, transition) => {
             let binding = binding.as_ref();
             let value = write_argument_value(
                 peripheral_path,

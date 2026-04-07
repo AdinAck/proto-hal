@@ -17,11 +17,7 @@ use crate::macros::{
 
 #[allow(clippy::too_many_arguments)]
 pub fn constraints<'cx>(
-    input: &semantic::Gate<
-        'cx,
-        policies::peripheral::ForbidPath,
-        policies::field::RequireBinding<'cx>,
-    >,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     model: &Model,
     peripheral_path: &Path,
     register_ident: &Ident,
@@ -75,11 +71,7 @@ pub fn constraints<'cx>(
 }
 
 fn write_entitlements<'cx>(
-    input: &semantic::Gate<
-        'cx,
-        policies::peripheral::ForbidPath,
-        policies::field::RequireBinding<'cx>,
-    >,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     field: &View<'cx, FieldNode>,
     span: Span,
 ) -> Option<Vec<TokenStream>> {
@@ -141,11 +133,7 @@ fn write_entitlements<'cx>(
 }
 
 fn statewise_entitlements<'cx>(
-    input: &semantic::Gate<
-        'cx,
-        policies::peripheral::ForbidPath,
-        policies::field::RequireBinding<'cx>,
-    >,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     model: &Model,
     field: &View<'cx, FieldNode>,
     return_ty: &TokenStream,
@@ -203,7 +191,6 @@ fn statewise_entitlements<'cx>(
             entitlement_field_item.entry(),
             entitlement_field_item.field(),
             entitlement_field_item.ident(),
-            generics.input.as_ref(),
             generics.output.as_ref(),
         );
 

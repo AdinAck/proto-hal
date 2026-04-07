@@ -300,7 +300,7 @@ mod tests {
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
         let (gate, e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
                 &args, &model,
             );
 
@@ -335,7 +335,7 @@ mod tests {
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
         let (.., e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
                 &args, &model,
             );
 
@@ -365,7 +365,7 @@ mod tests {
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
         let (gate, e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::RequireBinding>::parse(
+            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
                 &args, &model,
             );
 
@@ -381,7 +381,7 @@ mod tests {
 
         assert!(matches!(
             field.entry(),
-            policies::field::RequireBinding::DynamicTransition(..)
+            policies::field::GateEntry::DynamicTransition(..)
         ));
         assert_eq!(field.field().ident, field_name);
     }

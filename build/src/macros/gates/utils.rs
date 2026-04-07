@@ -18,7 +18,7 @@ use crate::macros::{
     parsing::{
         semantic::{
             self, FieldEntry, FieldItem, Gate, PeripheralEntry, RegisterItem,
-            policies::{self, Refine, field::RequireBinding},
+            policies::{self, Refine, field::GateEntry},
         },
         syntax,
     },
@@ -176,7 +176,7 @@ pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolic
 /// Creates the correct initial value for writing to a register without reading from it first.
 pub fn static_initial<'cx>(
     model: &'cx Model,
-    register_item: &RegisterItem<'cx, RequireBinding<'cx>>,
+    register_item: &RegisterItem<'cx, GateEntry<'cx>>,
 ) -> Option<NonZeroU32> {
     let inert = register_item
         .register()
@@ -202,11 +202,10 @@ pub fn static_initial<'cx>(
         .values()
         .flat_map(|field_item| {
             let bits = match field_item.entry() {
-                RequireBinding::View(..)
-                | RequireBinding::Dynamic(..)
-                | RequireBinding::DynamicTransition(..)
-                | RequireBinding::Consumed(..) => None?,
-                RequireBinding::Static(.., transition) => match transition {
+                GateEntry::View(..) | GateEntry::Dynamic(..) | GateEntry::DynamicTransition(..) => {
+                    None?
+                }
+                GateEntry::Static(.., transition) => match transition {
                     semantic::Transition::Variant(.., variant) => variant.bits,
                     semantic::Transition::Expr(..) => None?,
                     semantic::Transition::Lit(lit_int) => lit_int
@@ -270,13 +269,12 @@ where
 }
 
 pub fn validate_entitlements<'cx>(
-    input: &Gate<'cx, policies::peripheral::ForbidPath, policies::field::RequireBinding<'cx>>,
+    input: &Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     model: &'cx Model,
     diagnostics: &mut Diagnostics,
 ) {
     for field in input.visit_fields() {
-        let (RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)) = field.entry()
-        else {
+        let (GateEntry::DynamicTransition(..) | GateEntry::Static(..)) = field.entry() else {
             continue;
         };
 
@@ -308,7 +306,7 @@ pub fn validate_entitlements<'cx>(
             }),
         );
 
-        if let RequireBinding::DynamicTransition(..) = field.entry() {
+        if let GateEntry::DynamicTransition(..) = field.entry() {
             diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
         }
     }

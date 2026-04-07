@@ -4,7 +4,7 @@ use quote::{ToTokens as _, quote_spanned};
 use syn::{Ident, Path};
 
 use crate::macros::{
-    gates::fragments::modify_argument_value, parsing::semantic::policies::field::RequireBinding,
+    gates::fragments::modify_argument_value, parsing::semantic::policies::field::GateEntry,
 };
 
 pub fn modify_argument<'cx>(
@@ -12,15 +12,14 @@ pub fn modify_argument<'cx>(
     register_ident: &Ident,
     field_ident: &Ident,
     field: &FieldNode,
-    entry: &RequireBinding<'cx>,
+    entry: &GateEntry<'cx>,
     closure_arguments: Option<&TokenStream>,
 ) -> TokenStream {
     match entry {
-        RequireBinding::View(binding)
-        | RequireBinding::Dynamic(binding)
-        | RequireBinding::Static(binding, ..)
-        | RequireBinding::Consumed(binding) => binding.to_token_stream(),
-        RequireBinding::DynamicTransition(binding, transition) => {
+        GateEntry::View(binding) | GateEntry::Dynamic(binding) | GateEntry::Static(binding, ..) => {
+            binding.to_token_stream()
+        }
+        GateEntry::DynamicTransition(binding, transition) => {
             let binding = binding.as_ref();
             let value = modify_argument_value(
                 peripheral_path,

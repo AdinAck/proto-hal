@@ -79,23 +79,25 @@ impl<'cx> Refine<'cx> for TransitionOnly<'cx> {
     }
 }
 
-/// The binding component of the entry must be specified.
-/// (see [`Entry`](syntax::Entry))
+/// A gate entry is a refinement of an [`FieldEntry`] where the only permitted
+/// [`FieldEntry`] variants are:
+/// - [`View`](FieldEntry::View)
+/// - [`BoundDynamic`](FieldEntry::BoundDynamic)
+/// - [`BoundDynamicTransition`](FieldEntry::BoundDynamicTransition)
+/// - [`StaticTransition`](FieldEntry::StaticTransition)
 #[derive(Debug)]
-pub enum RequireBinding<'cx> {
-    /// The entry is a view.
+pub enum GateEntry<'cx> {
+    /// The entry is a view (see [`View`](FieldEntry::View)).
     View(&'cx syntax::Binding),
-    /// The entry is dynnamic.
+    /// The entry is dynnamic (see [`BoundDynamic`](FieldEntry::BoundDynamic)).
     Dynamic(&'cx syntax::Binding),
-    /// The entry is a dynnamic transition.
+    /// The entry is a dynnamic transition (see [`BoundDynamicTransition`](FieldEntry::BoundDynamicTransition)).
     DynamicTransition(&'cx syntax::Binding, semantic::Transition<'cx>),
-    /// The entry is static.
+    /// The entry is static (see [`StaticTransition`](FieldEntry::StaticTransition)).
     Static(&'cx syntax::Binding, semantic::Transition<'cx>),
-    /// The entry is just a static binding.
-    Consumed(&'cx syntax::Binding),
 }
 
-impl<'cx> Refine<'cx> for RequireBinding<'cx> {
+impl<'cx> Refine<'cx> for GateEntry<'cx> {
     type Input = FieldEntry<'cx>;
 
     fn refine(cx: &impl Spanned, entry: Self::Input) -> Result<Self, Diagnostics> {
@@ -107,32 +109,30 @@ impl<'cx> Refine<'cx> for RequireBinding<'cx> {
                 Self::DynamicTransition(binding, transition)
             }
             FieldEntry::StaticTransition(binding, transition) => Self::Static(binding, transition),
-            FieldEntry::Consumed(binding) => Self::Consumed(binding),
+            FieldEntry::Consumed(binding) => Err(Diagnostic::binding_cannot_be_consumed(binding))?,
             FieldEntry::UnboundDynamicTransition(..) => Err(Diagnostic::expected_binding(cx))?,
         })
     }
 }
 
-impl<'cx> RequireBinding<'cx> {
+impl<'cx> GateEntry<'cx> {
     /// View the binding component of the entry.
     pub fn binding(&self) -> &syntax::Binding {
         match self {
-            RequireBinding::View(binding)
-            | RequireBinding::Dynamic(binding)
-            | RequireBinding::DynamicTransition(binding, ..)
-            | RequireBinding::Static(binding, ..)
-            | RequireBinding::Consumed(binding) => binding,
+            GateEntry::View(binding)
+            | GateEntry::Dynamic(binding)
+            | GateEntry::DynamicTransition(binding, ..)
+            | GateEntry::Static(binding, ..) => binding,
         }
     }
 
     /// View the transition component of the entry if present.
     pub fn transition<'a>(&'a self) -> Option<&'a semantic::Transition<'cx>> {
         match self {
-            RequireBinding::View(..)
-            | RequireBinding::Dynamic(..)
-            | RequireBinding::Consumed(..) => None,
-            RequireBinding::DynamicTransition(.., transition)
-            | RequireBinding::Static(.., transition) => Some(transition),
+            GateEntry::View(..) | GateEntry::Dynamic(..) => None,
+            GateEntry::DynamicTransition(.., transition) | GateEntry::Static(.., transition) => {
+                Some(transition)
+            }
         }
     }
 }
