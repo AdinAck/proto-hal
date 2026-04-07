@@ -3,7 +3,7 @@ pub mod return_rank;
 use std::{num::NonZeroU32, ops::Deref};
 
 use model::{
-    entitlement::{self, EntitlementIndex},
+    entitlement,
     field::{Field, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
@@ -279,9 +279,7 @@ pub fn validate_entitlements<'cx>(
         };
 
         // check for write entitlements
-        if let Some(write_entitlements) =
-            model.try_get_entitlements(EntitlementIndex::Write(*field.field().index()))
-        {
+        if let Some(write_entitlements) = field.field().write_entitlements() {
             validate_entitlement_presence(
                 input,
                 model,
@@ -292,18 +290,18 @@ pub fn validate_entitlements<'cx>(
         }
 
         // check for statewise entitlements
-        let Some(Numericity::Enumerated(enumerated)) = field.field().resolvable() else {
+        let mut statewise_entitlement_spaces = field.field().statewise_entitlements();
+
+        if statewise_entitlement_spaces.next().is_none() {
             continue;
-        };
+        }
 
         validate_entitlement_presence(
             input,
             model,
             field.ident(),
             diagnostics,
-            enumerated.variants(model).filter_map(|variant| {
-                model.try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
-            }),
+            statewise_entitlement_spaces,
         );
 
         if let GateEntry::DynamicTransition(..) = field.entry() {

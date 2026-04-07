@@ -831,6 +831,19 @@ impl<'cx> View<'cx, FieldNode> {
             .try_get_entitlements(EntitlementIndex::HardwareWrite(self.index))
     }
 
+    pub fn statewise_entitlements(&self) -> impl Iterator<Item = View<'cx, entitlement::Space>> {
+        self.resolvable().into_iter().flat_map(|numericity| {
+            numericity
+                .variants(self.model)
+                .into_iter()
+                .flatten()
+                .filter_map(|variant| {
+                    self.model
+                        .try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
+                })
+        })
+    }
+
     /// View the parent register and peripheral.
     pub fn parents(&self) -> (View<'cx, PeripheralNode>, View<'cx, RegisterNode>) {
         let register = self.model.get_register(self.parent);
