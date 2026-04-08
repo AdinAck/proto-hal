@@ -18,13 +18,13 @@ use crate::macros::{
     parsing::{
         semantic::{
             self,
-            policies::{self, field::RequireBinding},
+            policies::{self, field::GateEntry},
         },
         syntax::Override,
     },
 };
 
-type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
+type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, GateEntry<'cx>>;
 
 pub fn write(model: Model, tokens: TokenStream) -> TokenStream {
     write_inner(model, tokens, false)
@@ -90,7 +90,7 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
             if register_item.fields().values().any(|field_item| {
                 matches!(
                     field_item.entry(),
-                    RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
+                    GateEntry::DynamicTransition(..) | GateEntry::Static(..)
                 )
             }) {
                 reg_write_values.push(fragments::register_write_value(
@@ -105,7 +105,7 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                         } = fragments::generics(register_item, field_item);
 
                         Some(match (field_item.entry(), input_generic, output_generic) {
-                            (RequireBinding::DynamicTransition(..), ..) => {
+                            (GateEntry::DynamicTransition(..), ..) => {
                                 let ident = unique_field_ident(
                                     register_item.peripheral(),
                                     register_item.register(),
@@ -114,15 +114,13 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
 
                                 quote! { #ident.1 as u32 }
                             }
-                            (RequireBinding::View(..), Some(generic), ..)
-                            | (RequireBinding::Static(..), .., Some(generic)) => {
+                            (GateEntry::View(..), Some(generic), ..)
+                            | (GateEntry::Static(..), .., Some(generic)) => {
                                 quote! { #generic::VALUE }
                             }
-                            (
-                                RequireBinding::Static(.., semantic::Transition::Expr(expr)),
-                                ..,
-                                None,
-                            ) => quote! { #expr as u32 },
+                            (GateEntry::Static(.., semantic::Transition::Expr(expr)), .., None) => {
+                                quote! { #expr as u32 }
+                            }
                             (..) => None?,
                         })
                     },
@@ -161,7 +159,6 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     field_item.entry(),
                     field_item.field(),
                     field_item.ident(),
-                    input_generic.as_ref(),
                     output_generic.as_ref(),
                 );
 

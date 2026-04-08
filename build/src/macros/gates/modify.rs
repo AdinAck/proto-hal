@@ -18,13 +18,13 @@ use crate::macros::{
     parsing::{
         semantic::{
             self,
-            policies::{self, field::RequireBinding},
+            policies::{self, field::GateEntry},
         },
         syntax::Override,
     },
 };
 
-type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, RequireBinding<'cx>>;
+type Input<'cx> = semantic::Gate<'cx, policies::peripheral::ForbidPath, GateEntry<'cx>>;
 
 pub fn modify(model: Model, tokens: TokenStream) -> TokenStream {
     modify_inner(model, tokens, false)
@@ -68,7 +68,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     let errors = render_diagnostics(diagnostics);
 
     let return_rank = ReturnRank::from_input_strict(&input, |field_item| {
-        let (RequireBinding::View(..) | RequireBinding::Dynamic(..)) = field_item.entry() else {
+        let (GateEntry::View(..) | GateEntry::Dynamic(..)) = field_item.entry() else {
             return false;
         };
 
@@ -128,7 +128,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             if register_item.fields().values().any(|field_item| {
                 matches!(
                     field_item.entry(),
-                    RequireBinding::DynamicTransition(..) | RequireBinding::Static(..)
+                    GateEntry::DynamicTransition(..) | GateEntry::Static(..)
                 )
             }) {
                 let static_initial = static_initial(&model, register_item)
@@ -154,7 +154,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                         let generics = fragments::generics(r, f);
 
                         match (f.entry(), generics) {
-                            (RequireBinding::DynamicTransition(..), ..) => {
+                            (GateEntry::DynamicTransition(..), ..) => {
                                 let i = unique_field_ident(r.peripheral(), r.register(), f.field());
 
                                 Some(quote! { (#i.1)(#return_idents) as u32 })
@@ -162,13 +162,13 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                             // WARN: take this with a grain of salt. at the time of writing, i don't entirely have a
                             // hold on how proto-hal works
                             (
-                                RequireBinding::Static(.., semantic::Transition::Expr(..)),
+                                GateEntry::Static(.., semantic::Transition::Expr(..)),
                                 FieldGenerics {
                                     output: Some(output),
                                     ..
                                 },
                             ) => Some(quote! { #output::VALUE }),
-                            (RequireBinding::Static(.., semantic::Transition::Expr(expr)), ..) => {
+                            (GateEntry::Static(.., semantic::Transition::Expr(expr)), ..) => {
                                 Some(quote! { #expr as u32 })
                             }
                             _ => None,
@@ -203,7 +203,6 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.entry(),
                     field_item.field(),
                     field_item.ident(),
-                    input_generic.as_ref(),
                     output_generic.as_ref(),
                 );
 

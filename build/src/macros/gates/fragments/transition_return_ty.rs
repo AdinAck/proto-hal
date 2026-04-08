@@ -4,17 +4,16 @@ use quote::{ToTokens, quote};
 use syn::{Ident, Path};
 
 use crate::macros::parsing::{
-    semantic::{self, policies::field::RequireBinding},
+    semantic::{self, policies::field::GateEntry},
     syntax,
 };
 
 pub fn transition_return_ty(
     peripheral_path: &Path,
     register_ident: &Ident,
-    entry: &RequireBinding,
+    entry: &GateEntry,
     field: &FieldNode,
     field_ident: &Ident,
-    input_generic: Option<&Ident>,
     output_generic: Option<&Ident>,
 ) -> Option<TokenStream> {
     let ty_name = field.type_name();
@@ -31,10 +30,8 @@ pub fn transition_return_ty(
     };
 
     Some(match entry {
-        RequireBinding::View(..)
-        | RequireBinding::Dynamic(..)
-        | RequireBinding::DynamicTransition(..) => None?,
-        RequireBinding::Static(.., transition) => {
+        GateEntry::View(..) | GateEntry::Dynamic(..) | GateEntry::DynamicTransition(..) => None?,
+        GateEntry::Static(.., transition) => {
             match transition {
                 semantic::Transition::Variant(transition, variant) => {
                     // note: this is done to preserve span when possible
@@ -71,9 +68,6 @@ pub fn transition_return_ty(
                     quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#state> }
                 }
             }
-        }
-        RequireBinding::Consumed(..) => {
-            quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#input_generic> }
         }
     })
 }

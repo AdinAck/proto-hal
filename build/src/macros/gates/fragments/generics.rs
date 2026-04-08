@@ -3,13 +3,11 @@ use std::ops::Not as _;
 use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 
-use crate::macros::parsing::semantic::{
-    self, FieldItem, RegisterItem, policies::field::RequireBinding,
-};
+use crate::macros::parsing::semantic::{self, FieldItem, RegisterItem, policies::field::GateEntry};
 
 pub fn generics<'cx>(
-    register_item: &RegisterItem<'cx, RequireBinding<'cx>>,
-    field_item: &FieldItem<'cx, RequireBinding<'cx>>,
+    register_item: &RegisterItem<'cx, GateEntry<'cx>>,
+    field_item: &FieldItem<'cx, GateEntry<'cx>>,
 ) -> FieldGenerics {
     let generic_ident = format_ident!(
         "{}{}{}",
@@ -27,7 +25,7 @@ pub fn generics<'cx>(
         .then_some(generic_ident.clone());
 
     // an output generic is only warrented if the transition destination is to be inferred
-    let output_generic = if let RequireBinding::Static(.., semantic::Transition::Expr(expr)) =
+    let output_generic = if let GateEntry::Static(.., semantic::Transition::Expr(expr)) =
         field_item.entry()
         && expr.to_token_stream().to_string().trim() == "_"
     {
@@ -46,7 +44,7 @@ pub fn generics<'cx>(
 
     // a statewise pattern generic is needed when the field is being statically transitioned and the output generic will
     // be the source of the statewise entitlement constraints
-    let statewise_pattern = if let RequireBinding::Static(..) = field_item.entry() {
+    let statewise_pattern = if let GateEntry::Static(..) = field_item.entry() {
         Some(format_ident!("{generic_ident}StatewisePattern"))
     } else {
         None
