@@ -135,6 +135,7 @@ pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolic
     PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
     FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
+    // list of unique patterns which are imposed by the gate participants
     let mut patterns = Vec::new();
 
     for pattern in spaces.into_iter().flat_map(|space| space.patterns()) {
@@ -160,6 +161,8 @@ pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolic
                 )
                 .is_some()
         }) {
+            // if at least one pattern is satisfiable, success
+            // note: a gate with multiple satisfiable patterns will not compile due to type-system level ambiguity
             return;
         }
     }
