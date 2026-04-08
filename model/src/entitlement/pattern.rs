@@ -145,6 +145,7 @@ impl Pattern {
                     // note: if a field is mentioned in a pattern it must be enumerated
                     // note: the choice of the read numericity vs write numericity is
                     //       arbitrary since resolvable fields are symmetrical
+                    // note: ".resolvable()" is not used as that method relies on this one
                     let Numericity::Enumerated(Enumerated { variants }) =
                         field.access.get_read()?
                     else {

@@ -37,21 +37,6 @@ impl Node for FieldNode {
 }
 
 impl FieldNode {
-    pub fn resolvable(&self) -> Option<&Numericity> {
-        // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
-        // TODO: so both possibilities are ignored for now
-
-        match &self.access {
-            Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
-            Access::Store(store) => Some(&store.numericity),
-            Access::VolatileStore(volatile_store) => Some(&volatile_store.numericity),
-        }
-    }
-
-    pub fn is_resolvable(&self) -> bool {
-        self.resolvable().is_some()
-    }
-
     pub(crate) fn get_reset(&self, register_reset: u32) -> u32 {
         let mask = u32::MAX >> (32 - self.width);
         (register_reset >> self.offset) & mask
@@ -59,6 +44,31 @@ impl FieldNode {
 }
 
 impl<'cx> View<'cx, FieldNode> {
+    pub fn resolvable(&self) -> Option<&Numericity> {
+        // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
+        // TODO: so both possibilities are ignored for now
+
+        match &self.access {
+            Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
+            Access::Store(store) => Some(&store.numericity),
+            Access::VolatileStore(volatile_store)
+                if self
+                    .hardware_write_entitlements()
+                    .is_some_and(|space| !space.is_tautology(self.model)) =>
+            {
+                Some(&volatile_store.numericity)
+            }
+            Access::VolatileStore(..) => {
+                // if hardware invariably has access, then the field is unresolvable
+                None
+            }
+        }
+    }
+
+    pub fn is_resolvable(&self) -> bool {
+        self.resolvable().is_some()
+    }
+
     pub(crate) fn reset_ty(
         &self,
         path: &TokenStream,
@@ -255,7 +265,7 @@ impl<'cx> View<'cx, FieldNode> {
             && let Numericity::Enumerated(enumerated) = &access
         {
             let variants = enumerated.variants(self.model);
-            variants.for_each(|variant| out.extend(variant.generate(self)));
+            variants.for_each(|variant| out.extend(variant.generate(self.clone())));
         }
 
         out

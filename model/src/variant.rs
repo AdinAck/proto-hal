@@ -111,7 +111,7 @@ impl<'cx> View<'cx, VariantNode> {
 
     fn generate_entitlements(
         &self,
-        field: &FieldNode,
+        field: View<'cx, FieldNode>,
         statewise_entitlements: Option<&entitlement::Space>,
     ) -> Option<TokenStream> {
         // only proceed if *any* variant of the field has statewise entitlements
@@ -144,7 +144,7 @@ impl<'cx> View<'cx, VariantNode> {
         })
     }
 
-    pub fn generate(&self, parent: &FieldNode) -> TokenStream {
+    pub fn generate(&self, parent: View<'cx, FieldNode>) -> TokenStream {
         let ident = self.module_name();
         let ty = self.type_name();
         let mut body = quote! {};
