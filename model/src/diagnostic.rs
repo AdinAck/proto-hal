@@ -276,9 +276,9 @@ impl Diagnostic {
             context,
         )
         .notes(["a tautological pattern is a pattern which is always satisfied, this defeats the purpose of applying
-            entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
-            patterns override all other patterns in the same space which effectively removes all other patterns.
-            this is likely not the intended behavior and should be removed"])
+        entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
+        patterns override all other patterns in the same space which effectively removes all other patterns.
+        this pattern was likely created accidentally and should be removed"])
     }
 
     /// "foo" is a reserved keyword for {level}s

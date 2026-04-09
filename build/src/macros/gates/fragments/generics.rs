@@ -44,7 +44,9 @@ pub fn generics<'cx>(
 
     // a statewise pattern generic is needed when the field is being statically transitioned and the output generic will
     // be the source of the statewise entitlement constraints
-    let statewise_pattern = if let GateEntry::Static(..) = field_item.entry() {
+    let statewise_pattern = if let GateEntry::Static(..) = field_item.entry()
+        && output_generic.is_some()
+    {
         Some(format_ident!("{generic_ident}StatewisePattern"))
     } else {
         None
