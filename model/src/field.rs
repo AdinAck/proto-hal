@@ -114,7 +114,7 @@ impl<'cx> View<'cx, FieldNode> {
                 Numericity::Numeric(..) => {}
                 Numericity::Enumerated(enumerated) => {
                     let mut sorted_variants = enumerated.variants(self.model).collect::<Vec<_>>();
-                    sorted_variants.sort_by(|lhs, rhs| lhs.bits.cmp(&rhs.bits));
+                    sorted_variants.sort_by_key(|variant| variant.bits);
 
                     let variant_limit = (1u64 << self.width) - 1;
 

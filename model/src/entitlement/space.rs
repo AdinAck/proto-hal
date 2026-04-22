@@ -41,7 +41,7 @@ impl Space {
         Ok(Self::new(
             entitlements
                 .into_iter()
-                .map(|entitlements| Pattern::new(model, entitlements.into_iter()))
+                .map(|entitlements| Pattern::new(model, entitlements))
                 .collect::<Result<Vec<_>, _>>()?,
         ))
     }

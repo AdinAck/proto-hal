@@ -233,7 +233,7 @@ impl Model {
         let new_context = Context::new();
 
         let mut sorted_peripherals = self.peripherals().collect::<Vec<_>>();
-        sorted_peripherals.sort_by(|lhs, rhs| lhs.base_addr.cmp(&rhs.base_addr));
+        sorted_peripherals.sort_by_key(|peripheral| peripheral.base_addr);
 
         for window in sorted_peripherals.windows(2) {
             let lhs = &window[0];

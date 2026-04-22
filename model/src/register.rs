@@ -125,7 +125,7 @@ impl<'cx> View<'cx, RegisterNode> {
         }
 
         let mut sorted_fields = self.fields().collect::<Vec<_>>();
-        sorted_fields.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+        sorted_fields.sort_by_key(|field| field.offset);
 
         for (i, field) in sorted_fields.iter().enumerate() {
             let remaining = &sorted_fields[i + 1..];
