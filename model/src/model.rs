@@ -416,6 +416,20 @@ impl<'cx, Index, Meta> Entry<'cx, Index, Meta> {
     ) {
         match entitlement::Space::from_iter(self.model, entitlements) {
             Ok(space) => {
+                let mut tautology_diagnostics = Diagnostics::new();
+                for pattern in space
+                    .patterns()
+                    .filter(|pattern| pattern.is_tautology(self.model))
+                {
+                    let diagnostic = Diagnostic::tautological_entitlements(
+                        self.model,
+                        pattern,
+                        self.context.clone(),
+                    );
+                    tautology_diagnostics.insert(diagnostic);
+                }
+
+                self.model.diagnostics.extend(tautology_diagnostics);
                 self.model.entitlements.insert(index, space);
             }
             Err(entitlement::pattern::Error::Contradicts {

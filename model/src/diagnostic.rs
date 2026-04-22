@@ -45,6 +45,7 @@ pub enum Kind {
     Unresolvable = 2000,
     ReadCannotBeInert,
     InvalidEntitlements,
+    TautologicalEntitlements,
 
     // lexical
     Reserved = 3000,
@@ -253,6 +254,31 @@ impl Diagnostic {
             ),
             context,
         )
+    }
+
+    /// entitlement pattern {pattern} is a tautology
+    /// note: a tautological pattern is a pattern which is always satisfied, this defeats the purpose of applying
+    ///       entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
+    ///       patterns override all other patterns in the same space which effectively removes all other patterns.
+    ///       this is likely not the intended behavior and should be removed
+    pub fn tautological_entitlements(
+        model: &Model,
+        pattern: &entitlement::Pattern,
+        context: Context,
+    ) -> Self {
+        Self::new(
+            Rank::Warning,
+            Kind::TautologicalEntitlements,
+            format!(
+                "entitlement pattern {} is a tautology",
+                pattern.to_string(model),
+            ),
+            context,
+        )
+        .notes(["a tautological pattern is a pattern which is always satisfied, this defeats the purpose of applying
+            entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
+            patterns override all other patterns in the same space which effectively removes all other patterns.
+            this is likely not the intended behavior and should be removed"])
     }
 
     /// "foo" is a reserved keyword for {level}s

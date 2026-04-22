@@ -169,6 +169,16 @@ impl Pattern {
         )
     }
 
+    /// Determine whether the space is a contradiction or not.
+    pub fn is_contradiction(&self, model: &Model) -> bool {
+        self.contradicts_pattern(model, &Pattern::tautology())
+    }
+
+    /// Determine whether the space is a tautology or not.
+    pub fn is_tautology(&self, model: &Model) -> bool {
+        self.complement(model).is_contradiction(model)
+    }
+
     /// The entitlements in this pattern.
     pub fn entitlements(&self) -> impl Iterator<Item = &Entitlement> {
         self.entitlements.values().flat_map(|field| field.iter())
@@ -181,22 +191,25 @@ impl Pattern {
     }
 
     pub fn to_string(&self, model: &Model) -> String {
-        self.entitlements
-            .iter()
-            .map(|(&field_index, entitlements)| {
-                let entitlement_idents = entitlements
-                    .iter()
-                    .map(|entitlement| entitlement.variant(model).type_name().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!(
-                    "<{} | {}>",
-                    model.get_field(field_index).module_name(),
-                    entitlement_idents
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+        format!(
+            "{{{}}}",
+            self.entitlements
+                .iter()
+                .map(|(&field_index, entitlements)| {
+                    let entitlement_idents = entitlements
+                        .iter()
+                        .map(|entitlement| entitlement.variant(model).type_name().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "<{} | {}>",
+                        model.get_field(field_index).module_name(),
+                        entitlement_idents
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 
     pub(super) fn intersection_with(&self, other: &Self) -> Self {
