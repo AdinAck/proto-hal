@@ -125,7 +125,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         }
 
         let mut sorted_registers = self.registers().collect::<Vec<_>>();
-        sorted_registers.sort_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset));
+        sorted_registers.sort_by_key(|register| register.offset);
 
         for window in sorted_registers.windows(2) {
             let lhs = &window[0];

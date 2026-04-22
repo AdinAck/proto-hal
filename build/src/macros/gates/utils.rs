@@ -243,14 +243,12 @@ where
             .chain(
                 other_field_item
                     .field()
-                    .ontological_entitlements()
-                    .into_iter(),
+                    .ontological_entitlements(),
             )
             .chain(
                 other_field_item
                     .field()
-                    .hardware_write_entitlements()
-                    .into_iter(),
+                    .hardware_write_entitlements(),
             )
             .chain(
                 other_field_numericity
