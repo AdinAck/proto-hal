@@ -15,7 +15,7 @@ use crate::macros::{
         fragments,
         utils::{
             module_suggestions, render_diagnostics, unique_field_ident,
-            validate_entitlement_presence,
+            validate_entitlement_dependency_presence,
         },
     },
     parsing::semantic::{self, policies},
@@ -195,7 +195,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
         incumbent_fields.extend(ontological_entitlements.field_indicies());
 
         if peripheral_item.entry().is_some() {
-            validate_entitlement_presence(
+            validate_entitlement_dependency_presence(
                 input,
                 model,
                 peripheral_item.ident(),
@@ -212,7 +212,7 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
 
         incumbent_fields.extend(ontological_entitlements.field_indicies());
 
-        validate_entitlement_presence(
+        validate_entitlement_dependency_presence(
             input,
             model,
             field_item.ident(),

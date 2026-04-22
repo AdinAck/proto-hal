@@ -1,4 +1,4 @@
-use model::{peripheral::Peripheral, register::Register};
+use model::{Model, entitlement, peripheral::Peripheral, register::Register};
 use proc_macro2::Span;
 use syn::{Ident, LitInt, Path, spanned::Spanned};
 use ters::ters;
@@ -27,7 +27,8 @@ pub enum Kind {
     ExpectedTransition,
 
     // validation
-    MissingEntitlements = 1000,
+    MissingEntitlementDependencies = 1000,
+    MissingEntitlementDependents,
     MissingFields,
     CannotUnmaskFundamental,
     UnincumbentField,
@@ -196,21 +197,41 @@ impl Diagnostic {
         Self::new(Kind::ExpectedTransition, "expected transition", offending)
     }
 
-    /// provided fields [F0, F1, ...] are insufficient to satisfy entitlement patterns [P0, P1, ...], which are required
-    /// by "foo"
-    pub fn missing_entitlements(
+    /// provided fields [F0, F1, ...] are insufficient to satisfy entitlement spaces [S0, S1, ...], which are imposed
+    /// by field "{offending}"
+    pub fn missing_entitlement_dependencies<'cx>(
+        model: &Model,
         offending: &Ident,
         provided_field_idents: impl Iterator<Item = String>,
-        unsatisfiable_patterns: impl Iterator<Item = String>,
+        unsatisfiable_spaces: impl Iterator<Item = &'cx entitlement::Space>,
     ) -> Self {
         let provided = provided_field_idents.collect::<Vec<_>>().join(", ");
-        let patterns = unsatisfiable_patterns.collect::<Vec<_>>().join(", ");
+        let spaces = unsatisfiable_spaces
+            .map(|space| space.to_string(model))
+            .collect::<Vec<_>>()
+            .join(", ");
 
         Self::new(
-            Kind::MissingEntitlements,
+            Kind::MissingEntitlementDependencies,
             format!(
-                "provided fields [{provided}] are insufficient to satisfy entitlement patterns [{patterns}], \
-                which are required by \"{offending}\""
+                "provided fields [{provided}] are insufficient to satisfy entitlement spaces [{spaces}], \
+                which are imposed by field \"{offending}\""
+            ),
+            offending,
+        )
+    }
+
+    /// field "{offending}" is an entitlement dependency of fields [{imposing}], which must be provided
+    pub fn missing_entitlement_dependents(
+        offending: &Ident,
+        imposing_field_idents: impl Iterator<Item = String>,
+    ) -> Self {
+        let imposing = imposing_field_idents.collect::<Vec<_>>().join(", ");
+
+        Self::new(
+            Kind::MissingEntitlementDependents,
+            format!(
+                "field \"{offending}\" is an entitlement dependency of fields [{imposing}], which must be provided"
             ),
             offending,
         )

@@ -2,9 +2,10 @@ pub mod return_rank;
 
 use std::{num::NonZeroU32, ops::Deref};
 
+use indexmap::IndexSet;
 use model::{
     entitlement,
-    field::{Field, FieldNode, numericity::Numericity},
+    field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
     register::Register,
@@ -125,7 +126,8 @@ where
     }))
 }
 
-pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
+/// Ensure the provided entitlement spaces are satisfiable by the gate input.
+pub fn validate_entitlement_dependency_presence<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
     input: &semantic::Gate<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
     model: &'cx Model,
     cx_ident: &Ident,
@@ -135,45 +137,80 @@ pub fn validate_entitlement_presence<'cx, PeripheralEntryPolicy, FieldEntryPolic
     PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
     FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
-    // list of unique patterns which are imposed by the gate participants
-    let mut patterns = Vec::new();
+    let mut unsatisfiable_spaces = Vec::new();
 
-    for pattern in spaces.into_iter().flat_map(|space| space.patterns()) {
-        if patterns.contains(&pattern) {
-            continue;
-        } else {
-            patterns.push(pattern);
+    'spaces: for space in spaces {
+        // look for satisfiable patterns in each space
+        for pattern in space.patterns() {
+            if pattern.fields(model).all(|field| {
+                let (p, r) = field.parents();
+                input
+                    .get_field(
+                        p.module_name().to_string(),
+                        r.module_name().to_string(),
+                        field.module_name().to_string(),
+                    )
+                    .is_some()
+            }) {
+                // the space is satisfiable if at least one pattern is satisfiable, continue
+                continue 'spaces;
+            }
+        }
+
+        if !unsatisfiable_spaces.contains(&*space) {
+            unsatisfiable_spaces.push(*space);
         }
     }
 
-    if patterns.is_empty() {
+    if unsatisfiable_spaces.is_empty() {
         return;
     }
 
-    for pattern in &patterns {
-        if pattern.fields(model).all(|field| {
-            let (p, r) = field.parents();
-            input
-                .get_field(
-                    p.module_name().to_string(),
-                    r.module_name().to_string(),
-                    field.module_name().to_string(),
-                )
-                .is_some()
-        }) {
-            // if at least one pattern is satisfiable, success
-            // note: a gate with multiple satisfiable patterns will not compile due to type-system level ambiguity
-            return;
-        }
-    }
-
-    diagnostics.push(Diagnostic::missing_entitlements(
+    diagnostics.push(Diagnostic::missing_entitlement_dependencies(
+        model,
         cx_ident,
         input
             .visit_fields()
             .map(|field| field.field().module_name().to_string()),
-        patterns.iter().map(|pattern| pattern.to_string(model)),
+        unsatisfiable_spaces.iter().map(Deref::deref),
     ));
+}
+
+/// Ensure the provided entitlement dependents are present in the gate.
+pub fn validate_entitlement_dependent_presence<'cx, PeripheralEntryPolicy, FieldEntryPolicy>(
+    input: &semantic::Gate<'cx, PeripheralEntryPolicy, FieldEntryPolicy>,
+    model: &'cx Model,
+    cx_ident: &Ident,
+    diagnostics: &mut Diagnostics,
+    dependents: &IndexSet<FieldIndex>,
+) where
+    PeripheralEntryPolicy: Refine<'cx, Input = PeripheralEntry<'cx>>,
+    FieldEntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
+{
+    let mut missing_dependents = IndexSet::new();
+
+    for &dependent in dependents {
+        let field = model.get_field(dependent);
+        let (p, r) = field.parents();
+
+        if input
+            .get_field(
+                p.module_name().to_string(),
+                r.module_name().to_string(),
+                field.module_name().to_string(),
+            )
+            .is_none()
+        {
+            missing_dependents.insert(field.module_name().to_string());
+        }
+    }
+
+    if !missing_dependents.is_empty() {
+        diagnostics.push(Diagnostic::missing_entitlement_dependents(
+            cx_ident,
+            missing_dependents.into_iter(),
+        ));
+    }
 }
 
 /// Creates the correct initial value for writing to a register without reading from it first.
@@ -281,7 +318,7 @@ pub fn validate_entitlements<'cx>(
 
         // check for write entitlements
         if let Some(write_entitlements) = field.field().write_entitlements() {
-            validate_entitlement_presence(
+            validate_entitlement_dependency_presence(
                 input,
                 model,
                 field.ident(),
@@ -293,20 +330,38 @@ pub fn validate_entitlements<'cx>(
         // check for statewise entitlements
         let mut statewise_entitlement_spaces = field.field().statewise_entitlements();
 
-        if statewise_entitlement_spaces.next().is_none() {
-            continue;
+        if statewise_entitlement_spaces.next().is_some() {
+            validate_entitlement_dependency_presence(
+                input,
+                model,
+                field.ident(),
+                diagnostics,
+                statewise_entitlement_spaces,
+            );
+
+            if let GateEntry::DynamicTransition(..) = field.entry() {
+                diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
+            }
         }
 
-        validate_entitlement_presence(
-            input,
-            model,
-            field.ident(),
-            diagnostics,
-            statewise_entitlement_spaces,
-        );
+        // reverse entitlements
 
-        if let GateEntry::DynamicTransition(..) = field.entry() {
-            diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
+        for dependents in model
+            .try_get_reverse_statewise_entitlements(field.field().index())
+            .iter()
+            .chain(
+                model
+                    .try_get_reverse_hardware_write_entitlements(field.field().index())
+                    .iter(),
+            )
+        {
+            validate_entitlement_dependent_presence(
+                input,
+                model,
+                field.ident(),
+                diagnostics,
+                dependents,
+            );
         }
     }
 }

@@ -66,7 +66,8 @@ pub struct Model {
     variants: Vec<VariantNode>,
 
     entitlements: HashMap<EntitlementIndex, entitlement::Space>,
-    reverse_statewise_entitlements: HashMap<VariantIndex, IndexSet<VariantIndex>>,
+    reverse_statewise_entitlements: HashMap<FieldIndex, IndexSet<FieldIndex>>,
+    reverse_hardware_write_entitlements: HashMap<FieldIndex, IndexSet<FieldIndex>>,
 
     #[get]
     interrupts: Interrupts,
@@ -192,6 +193,20 @@ impl Model {
             index,
             node,
         })
+    }
+
+    pub fn try_get_reverse_statewise_entitlements(
+        &self,
+        index: &FieldIndex,
+    ) -> Option<&IndexSet<FieldIndex>> {
+        self.reverse_statewise_entitlements.get(index)
+    }
+
+    pub fn try_get_reverse_hardware_write_entitlements(
+        &self,
+        index: &FieldIndex,
+    ) -> Option<&IndexSet<FieldIndex>> {
+        self.reverse_hardware_write_entitlements.get(index)
     }
 
     pub fn peripherals<'cx>(&'cx self) -> impl Iterator<Item = View<'cx, PeripheralNode>> {
@@ -727,9 +742,22 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
     /// Add [hardware write access entitlements](TODO) to the field.
     pub fn hardware_write_entitlements(
         &mut self,
-        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>>,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
     ) {
-        self.add_entitlement_space(entitlements, EntitlementIndex::HardwareWrite(self.index));
+        self.add_entitlement_space(
+            entitlements.clone(),
+            EntitlementIndex::HardwareWrite(self.index),
+        );
+
+        for entitlement in entitlements.into_iter().flatten() {
+            let entitlement_field_index = entitlement.field(self.model).index;
+
+            self.model
+                .reverse_hardware_write_entitlements
+                .entry(entitlement_field_index)
+                .or_default()
+                .insert(self.index);
+        }
     }
 }
 
@@ -760,11 +788,14 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
         self.add_entitlement_space(entitlements.clone(), EntitlementIndex::Variant(self.index));
 
         for entitlement in entitlements.into_iter().flatten() {
+            let parent_index = self.model.get_variant(self.index).parent;
+            let entitlement_field_index = entitlement.field(self.model).index;
+
             self.model
                 .reverse_statewise_entitlements
-                .entry(entitlement.0)
+                .entry(entitlement_field_index)
                 .or_default()
-                .insert(self.index);
+                .insert(parent_index);
         }
     }
 }
