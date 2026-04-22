@@ -49,7 +49,7 @@ pub fn transition_return_ty(
                     // once the variant is complete, this will be handled
                     // in the `Variant` arm
                     let state = if let Some(numeric_ty) = numeric_ty {
-                        quote! { ::proto_hal::stasis::#numeric_ty<#expr> }
+                        quote! { ::proto_hal::stasis::#numeric_ty<{#expr}> }
                     } else {
                         quote! { #peripheral_path::#register_ident::#field_ident::#expr }
                     };
