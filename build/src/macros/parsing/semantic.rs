@@ -299,10 +299,9 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (gate, e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
-                &args, &model,
-            );
+        let (gate, e) = Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
+            &args, &model,
+        );
 
         let (peripheral, register) = gate
             .get_register(peripheral_name, register_name)
@@ -334,10 +333,9 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (.., e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
-                &args, &model,
-            );
+        let (.., e) = Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
+            &args, &model,
+        );
 
         assert!(e.iter().any(|diagnostic| {
             matches!(diagnostic.kind(), diagnostic::Kind::FieldMustBeWritable)
@@ -364,10 +362,9 @@ mod tests {
         };
 
         let args = syn::parse2::<syntax::Gate>(tokens).expect("syntactic parsing should succeed");
-        let (gate, e) =
-            Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
-                &args, &model,
-            );
+        let (gate, e) = Gate::<policies::peripheral::ForbidPath, policies::field::GateEntry>::parse(
+            &args, &model,
+        );
 
         assert!(e.is_empty(), "semantic parsing should succeed");
 
