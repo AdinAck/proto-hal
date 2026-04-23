@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use model::Model;
+use model::{Model, field::FieldIndex};
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
 use syn::{Expr, Ident};
@@ -10,7 +10,7 @@ use crate::macros::{
     gates::{
         fragments::{self, FieldGenerics},
         utils::{
-            binding_suggestions, field_is_entangled, mask, module_suggestions, render_diagnostics,
+            binding_suggestions, field_is_dependency, mask, module_suggestions, render_diagnostics,
             return_rank::ReturnRank, static_initial, unique_field_ident, unique_register_ident,
             validate_entitlements,
         },
@@ -40,6 +40,15 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     };
 
     let (input, mut diagnostics) = Input::parse(&args, &model);
+
+    let field_dependencies =
+        HashMap::<&FieldIndex, bool>::from_iter(input.visit_fields().map(|field| {
+            (
+                field.field().index(),
+                field_is_dependency(&model, &input, field.field()),
+            )
+        }));
+
     diagnostics.extend(validate(&input, &model));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
@@ -72,7 +81,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             return false;
         };
 
-        !field_is_entangled(&model, &input, field_item.field())
+        !field_dependencies.get(field_item.field().index()).unwrap()
     });
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
@@ -142,16 +151,24 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 )
                 .map(|value| !value.get())
                 .map(|mask| quote! { & #mask });
-                let initial = quote! {
-                    (#register_unique_ident #mask) #static_initial
-                };
+                let initial = register_item
+                    .register()
+                    .fields()
+                    .any(|field| field.access.is_read())
+                    .then_some(quote! {
+                        (#register_unique_ident #mask) #static_initial
+                    });
 
                 write_addrs.push(addr);
                 reg_write_values.push(fragments::register_write_value(
                     register_item,
-                    Some(initial),
+                    initial,
                     |r, f| {
-                        let generics = fragments::generics(r, f);
+                        let generics = fragments::generics(
+                            r,
+                            f,
+                            *field_dependencies.get(f.field().index()).unwrap(),
+                        );
 
                         match (f.entry(), generics) {
                             (GateEntry::DynamicTransition(..), ..) => {
@@ -187,7 +204,11 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     input: input_generic,
                     output: output_generic,
                     ..
-                } = fragments::generics(register_item, field_item);
+                } = fragments::generics(
+                    register_item,
+                    field_item,
+                    *field_dependencies.get(field_item.field().index()).unwrap(),
+                );
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
@@ -197,7 +218,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     input_generic.as_ref(),
                 );
 
-                let return_ty = fragments::transition_return_ty(
+                let transition_return_ty = fragments::transition_return_ty(
                     peripheral_path,
                     register_item.ident(),
                     field_item.entry(),
@@ -216,13 +237,13 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.field(),
                     input_generic.as_ref(),
                     output_generic.as_ref(),
-                    return_ty.as_ref(),
+                    transition_return_ty.as_ref(),
                 ) {
                     constraints.push(local_constraints);
                 }
 
-                if let Some(return_ty) = &return_ty {
-                    transition_return_tys.push(return_ty.clone());
+                if let Some(transition_return_ty) = &transition_return_ty {
+                    transition_return_tys.push(transition_return_ty.clone());
                     conjures.push(fragments::conjure());
                 }
 

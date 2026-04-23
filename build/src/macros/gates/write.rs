@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use indexmap::{IndexMap, IndexSet};
-use model::Model;
+use model::{Model, field::FieldIndex};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Expr, Ident};
@@ -11,8 +11,8 @@ use crate::macros::{
     gates::{
         fragments::{self, FieldGenerics},
         utils::{
-            binding_suggestions, module_suggestions, render_diagnostics, static_initial,
-            unique_field_ident, validate_entitlements,
+            binding_suggestions, field_is_dependency, module_suggestions, render_diagnostics,
+            static_initial, unique_field_ident, validate_entitlements,
         },
     },
     parsing::{
@@ -40,7 +40,16 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
     };
 
     let (input, mut diagnostics) = Input::parse(&args, &model);
-    diagnostics.extend(validate(&input, &model));
+
+    let field_dependencies =
+        HashMap::<&FieldIndex, bool>::from_iter(input.visit_fields().map(|field| {
+            (
+                field.field().index(),
+                field_is_dependency(&model, &input, field.field()),
+            )
+        }));
+
+    diagnostics.extend(validate(&input, &model, &field_dependencies));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
 
@@ -93,6 +102,11 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     GateEntry::DynamicTransition(..) | GateEntry::Static(..)
                 )
             }) {
+                addrs.push(fragments::register_address(
+                    register_item.peripheral(),
+                    register_item.register(),
+                    &overridden_base_addrs,
+                ));
                 reg_write_values.push(fragments::register_write_value(
                     register_item,
                     static_initial(&model, register_item)
@@ -102,7 +116,11 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                             input: input_generic,
                             output: output_generic,
                             ..
-                        } = fragments::generics(register_item, field_item);
+                        } = fragments::generics(
+                            register_item,
+                            field_item,
+                            *field_dependencies.get(field_item.field().index()).unwrap(),
+                        );
 
                         Some(match (field_item.entry(), input_generic, output_generic) {
                             (GateEntry::DynamicTransition(..), ..) => {
@@ -127,12 +145,6 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                 ));
             }
 
-            addrs.push(fragments::register_address(
-                register_item.peripheral(),
-                register_item.register(),
-                &overridden_base_addrs,
-            ));
-
             for field_item in register_item.fields().values() {
                 let binding = field_item.entry().binding();
                 if binding.is_ident() {
@@ -143,7 +155,11 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     input: input_generic,
                     output: output_generic,
                     ..
-                } = fragments::generics(register_item, field_item);
+                } = fragments::generics(
+                    register_item,
+                    field_item,
+                    *field_dependencies.get(field_item.field().index()).unwrap(),
+                );
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
@@ -281,20 +297,11 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
     }
 }
 
-fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
-    // Q: since transitions probe the model for write numericity, is this validation step necessary?
-
-    // input
-    //     .visit_fields()
-    //     .filter_map(|field_item| {
-    //         if !field_item.field().access.is_write() {
-    //             Some(Diagnostic::field_must_be_writable(field_item.ident()))
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect()
-
+fn validate<'cx>(
+    input: &Input<'cx>,
+    model: &'cx Model,
+    field_dependencies: &HashMap<&FieldIndex, bool>,
+) -> Diagnostics {
     let mut diagnostics = Vec::new();
 
     // require non-inert fields
@@ -383,6 +390,16 @@ fn validate<'cx>(input: &Input<'cx>, model: &'cx Model) -> Diagnostics {
     }
 
     validate_entitlements(input, model, &mut diagnostics);
+
+    // forbid "read" fields
+    for field in input.visit_fields() {
+        if matches!(field.entry(), GateEntry::Dynamic(..))
+            || (!*field_dependencies.get(field.field().index()).unwrap()
+                && matches!(field.entry(), GateEntry::View(..)))
+        {
+            diagnostics.push(Diagnostic::cannot_read(field.ident()));
+        }
+    }
 
     diagnostics
 }

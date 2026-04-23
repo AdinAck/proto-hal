@@ -6,7 +6,6 @@ use quote::quote;
 use syn::{Expr, Ident};
 
 use crate::macros::{
-    diagnostic::{Diagnostic, Diagnostics},
     gates::{
         fragments,
         utils::{
@@ -30,7 +29,6 @@ pub fn read(model: Model, tokens: TokenStream) -> TokenStream {
     };
 
     let (input, mut diagnostics) = Input::parse(&args, &model);
-    diagnostics.extend(validate(&input));
 
     let mut overridden_base_addrs: HashMap<Ident, Expr> = HashMap::new();
 
@@ -117,19 +115,6 @@ pub fn read(model: Model, tokens: TokenStream) -> TokenStream {
     }
 }
 
-fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
-    input
-        .visit_fields()
-        .filter_map(|field_item| {
-            if !field_item.field().access.is_read() {
-                Some(Diagnostic::field_must_be_readable(field_item.ident()))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 fn make_parameter<'cx>(
     peripheral_item: &PeripheralItem<'cx, policies::peripheral::ForbidPath, EntryPolicy<'cx>>,
     register_item: &RegisterItem<'cx, EntryPolicy<'cx>>,
@@ -145,6 +130,7 @@ fn make_parameter<'cx>(
     let field_ident = field_item.ident();
     let ty = field_item.field().type_name();
 
+    // TODO: this will change with hardware write entitlements
     let ref_ = if let Access::Store(..) = &field_item.field().access {
         quote! { & }
     } else {

@@ -1,5 +1,3 @@
-use std::ops::Not as _;
-
 use quote::{ToTokens as _, format_ident};
 use syn::Ident;
 
@@ -8,6 +6,7 @@ use crate::macros::parsing::semantic::{self, FieldItem, RegisterItem, policies::
 pub fn generics<'cx>(
     register_item: &RegisterItem<'cx, GateEntry<'cx>>,
     field_item: &FieldItem<'cx, GateEntry<'cx>>,
+    is_dependency: bool,
 ) -> FieldGenerics {
     let generic_ident = format_ident!(
         "{}{}{}",
@@ -16,12 +15,9 @@ pub fn generics<'cx>(
         field_item.field().type_name(),
     );
 
-    // the only time the input doesn't have a generic is if the field is passed dynamically
-    let input_generic = field_item
-        .entry()
-        .binding()
-        .is_dynamic()
-        .not()
+    // there is an input generic iff the field is either an entitlement dependency of another, or
+    // it is statically transitioned
+    let input_generic = (is_dependency || matches!(field_item.entry(), GateEntry::Static(..)))
         .then_some(generic_ident.clone());
 
     // an output generic is only warrented if the transition destination is to be inferred
