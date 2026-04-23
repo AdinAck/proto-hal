@@ -262,6 +262,7 @@ pub fn static_initial<'cx>(
     NonZeroU32::new((inert & !mask.map(|value| value.get()).unwrap_or(0)) | statics)
 }
 
+// TODO: is this function right at all?
 pub fn field_is_entangled<'cx, EntryPolicy>(
     model: &'cx Model,
     input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
@@ -277,16 +278,8 @@ where
             .field()
             .write_entitlements()
             .into_iter()
-            .chain(
-                other_field_item
-                    .field()
-                    .ontological_entitlements(),
-            )
-            .chain(
-                other_field_item
-                    .field()
-                    .hardware_write_entitlements(),
-            )
+            .chain(other_field_item.field().ontological_entitlements())
+            .chain(other_field_item.field().hardware_write_entitlements())
             .chain(
                 other_field_numericity
                     .iter()
@@ -327,6 +320,8 @@ pub fn validate_entitlements<'cx>(
             );
         }
 
+        let mut statewise_entangled = false;
+
         // check for statewise entitlements
         let mut statewise_entitlement_spaces = field.field().statewise_entitlements();
 
@@ -339,9 +334,7 @@ pub fn validate_entitlements<'cx>(
                 statewise_entitlement_spaces,
             );
 
-            if let GateEntry::DynamicTransition(..) = field.entry() {
-                diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
-            }
+            statewise_entangled = true;
         }
 
         // reverse entitlements
@@ -362,6 +355,17 @@ pub fn validate_entitlements<'cx>(
                 diagnostics,
                 dependents,
             );
+        }
+
+        if model
+            .try_get_reverse_statewise_entitlements(field.field().index())
+            .is_some()
+        {
+            statewise_entangled = true;
+        }
+
+        if statewise_entangled && let GateEntry::DynamicTransition(..) = field.entry() {
+            diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
         }
     }
 }
