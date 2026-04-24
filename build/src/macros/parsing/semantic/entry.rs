@@ -78,7 +78,13 @@ impl<'cx> FieldEntry<'cx> {
                 field_ident,
             )?),
             (Some(binding), None) if binding.is_viewed() => Self::View(binding),
-            (Some(binding), None) if binding.is_dynamic() => Self::BoundDynamic(binding),
+            (Some(binding), None) if binding.is_dynamic() => {
+                if !field.access.is_read() {
+                    Err(Diagnostic::field_must_be_readable(field_ident))?
+                }
+
+                Self::BoundDynamic(binding)
+            }
             (Some(binding), None) => Self::Consumed(binding),
             (Some(binding), Some(transition)) if binding.is_dynamic() => {
                 Self::BoundDynamicTransition(

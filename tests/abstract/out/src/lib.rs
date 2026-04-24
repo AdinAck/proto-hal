@@ -129,9 +129,7 @@ mod tests {
             let a = p.foo.foo0.a;
 
             hal::write_in_place! {
-                foo::foo0 {
-                    a(a) => _,
-                },
+                foo::foo0::a(a) => _,
                 @base_addr(foo, addr_of_foo())
             }
 
@@ -151,7 +149,7 @@ mod tests {
                     foo0::a(&a),
                 },
                 @base_addr(foo, addr_of_foo())
-            }
+            };
         }
     }
 }

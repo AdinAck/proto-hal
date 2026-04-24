@@ -28,9 +28,13 @@ pub fn constraints<'cx>(
     output_generic: Option<&Ident>,
     return_ty: Option<&TokenStream>,
 ) -> Option<TokenStream> {
-    // if the subject field's write access has entitlements, the entitlements
-    // must be satisfied in the input to the gate, and the fields used to
-    // satisfy the entitlements cannot be written
+    // constraints must be applied for every warrented transation for every register write
+    //
+    // write entitlement constraints must be applied to the incumbent field states in the boundary *before* writing to
+    // the register which imposes the constraints.
+    //
+    // statewise entitlement constraints must be applied in boundaries between writes to registers imposing or providing
+    // the entitlements. (every line in "A | B | C |")
 
     let mut constraints = Vec::new();
     let span = field_ident.span();
@@ -108,6 +112,7 @@ fn write_entitlements<'cx>(
         let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
+            true,
         );
 
         let entitlement_input_ty = fragments::input_ty(
@@ -183,6 +188,7 @@ fn statewise_entitlements<'cx>(
         let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
+            true,
         );
 
         let entitlement_return_ty = fragments::transition_return_ty(
