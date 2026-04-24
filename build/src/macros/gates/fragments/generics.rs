@@ -64,9 +64,13 @@ pub struct FieldGenerics {
     /// The generic for the state of the field upon *exiting* the gate.
     pub output: Option<Ident>,
     /// The generic for the pattern used to satisfy the field's write entitlements.
+    ///
+    /// /// *Note: The write entitlements are required by and satisfy states immediately **before** a write to the incumbent
+    /// register.*
     pub write_pattern: Option<Ident>,
     /// The generic for the pattern used to satisfy the field state's statewise entitlements.
     ///
-    /// *Note: The statewise entitlements are required by and satisfy states at exit.*
+    /// *Note: The statewise entitlements are required by and satisfy states immediately **after** a write to the incumbent
+    /// register.*
     pub statewise_pattern: Option<Ident>,
 }
