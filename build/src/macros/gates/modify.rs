@@ -10,9 +10,9 @@ use crate::macros::{
     gates::{
         fragments::{self, FieldGenerics},
         utils::{
-            binding_suggestions, field_is_dependency, mask, module_suggestions, render_diagnostics,
-            return_rank::ReturnRank, static_initial, unique_field_ident, unique_register_ident,
-            validate_entitlements,
+            self, binding_suggestions, field_is_dependency, mask, module_suggestions,
+            render_diagnostics, return_rank::ReturnRank, static_initial, unique_field_ident,
+            unique_register_ident, validate_entitlements,
         },
     },
     parsing::{
@@ -112,6 +112,9 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     let mut conjures = Vec::new();
     let mut rebinds = Vec::new();
 
+    // start with all fields in their input state
+    let mut field_states = utils::input_field_states(&input, &field_dependencies);
+
     for peripheral_item in input.visit_peripherals() {
         let peripheral_path = peripheral_item.path();
 
@@ -194,17 +197,20 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 ));
             }
 
+            let post_field_states = utils::field_states_after_register(
+                &field_states,
+                &field_dependencies,
+                peripheral_path,
+                register_item,
+            );
+
             for field_item in register_item.fields().values() {
                 let binding = field_item.entry().binding();
                 if binding.is_ident() {
                     rebinds.push(binding.as_ref());
                 }
 
-                let FieldGenerics {
-                    input: input_generic,
-                    output: output_generic,
-                    ..
-                } = fragments::generics(
+                let field_generics = fragments::generics(
                     register_item,
                     field_item,
                     *field_dependencies.get(field_item.field().index()).unwrap(),
@@ -215,7 +221,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     register_item.ident(),
                     field_item.ident(),
                     field_item.field(),
-                    input_generic.as_ref(),
+                    field_generics.input.as_ref(),
                 );
 
                 let transition_return_ty = fragments::transition_return_ty(
@@ -224,20 +230,21 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.entry(),
                     field_item.field(),
                     field_item.ident(),
-                    output_generic.as_ref(),
+                    field_generics.output.as_ref(),
                 );
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
-                    &model,
                     peripheral_path,
                     register_ident,
                     binding,
                     field_item.ident(),
                     field_item.field(),
-                    input_generic.as_ref(),
-                    output_generic.as_ref(),
+                    field_generics.input.as_ref(),
+                    field_generics.output.as_ref(),
                     transition_return_ty.as_ref(),
+                    &field_states,
+                    &post_field_states,
                 ) {
                     constraints.push(local_constraints);
                 }
@@ -247,11 +254,11 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     conjures.push(fragments::conjure());
                 }
 
-                if let Some(generic) = input_generic {
+                if let Some(generic) = field_generics.input {
                     generics.push(generic);
                 }
 
-                if let Some(generic) = output_generic {
+                if let Some(generic) = field_generics.output {
                     generics.push(generic);
                 }
 
@@ -290,6 +297,9 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     return_idents.as_ref(),
                 ));
             }
+
+            // the pre-states of the next register are the post-states of the current register
+            field_states = post_field_states;
         }
     }
 

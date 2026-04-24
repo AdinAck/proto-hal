@@ -921,7 +921,7 @@ impl<'cx> View<'cx, VariantNode> {
 
 impl<'cx> View<'cx, entitlement::Space> {
     /// View the fields containing these entitlements.
-    pub fn entitlement_fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> {
+    pub fn entitlement_fields(&self) -> impl Iterator<Item = View<'cx, FieldNode>> + use<'cx> {
         let mut fields = IndexMap::new();
 
         for entitlement in self.node.entitlements() {

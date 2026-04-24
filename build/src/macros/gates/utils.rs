@@ -1,6 +1,6 @@
 pub mod return_rank;
 
-use std::{num::NonZeroU32, ops::Deref};
+use std::{collections::HashMap, num::NonZeroU32, ops::Deref};
 
 use indexmap::IndexSet;
 use model::{
@@ -12,10 +12,11 @@ use model::{
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::Ident;
+use syn::{Ident, Path};
 
 use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
+    gates::fragments,
     parsing::{
         semantic::{
             self, FieldEntry, FieldItem, Gate, PeripheralEntry, RegisterItem,
@@ -407,4 +408,68 @@ pub fn validate_entitlements<'cx>(
             diagnostics.push(Diagnostic::entangled_dynamic_transition(field.ident()));
         }
     }
+}
+
+pub fn input_field_states<'cx>(
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
+    field_dependencies: &HashMap<&FieldIndex, bool>,
+) -> HashMap<FieldIndex, TokenStream> {
+    HashMap::from_iter(input.visit_peripherals().flat_map(|peripheral_item| {
+        peripheral_item
+            .registers()
+            .values()
+            .flat_map(|register_item| {
+                register_item.fields().values().map(|field_item| {
+                    let generics = fragments::generics(
+                        register_item,
+                        field_item,
+                        *field_dependencies.get(field_item.field().index()).unwrap(),
+                    );
+
+                    (
+                        *field_item.field().index(),
+                        fragments::input_ty(
+                            peripheral_item.path(),
+                            register_item.ident(),
+                            field_item.ident(),
+                            field_item.field(),
+                            generics.input.as_ref(),
+                        ),
+                    )
+                })
+            })
+    }))
+}
+
+pub fn field_states_after_register<'cx>(
+    field_states: &HashMap<FieldIndex, TokenStream>,
+    field_dependencies: &HashMap<&FieldIndex, bool>,
+    peripheral_path: &Path,
+    register_item: &RegisterItem<'cx, GateEntry<'cx>>,
+) -> HashMap<FieldIndex, TokenStream> {
+    // field states after this register
+    let mut post_field_states = field_states.clone();
+
+    for field_item in register_item.fields().values() {
+        let generics = fragments::generics(
+            register_item,
+            field_item,
+            *field_dependencies.get(field_item.field().index()).unwrap(),
+        );
+
+        let Some(transition_return_ty) = fragments::transition_return_ty(
+            peripheral_path,
+            register_item.ident(),
+            field_item.entry(),
+            field_item.field(),
+            field_item.ident(),
+            generics.output.as_ref(),
+        ) else {
+            continue;
+        };
+
+        post_field_states.insert(*field_item.field().index(), transition_return_ty);
+    }
+
+    post_field_states
 }

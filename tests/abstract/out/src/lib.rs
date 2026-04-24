@@ -126,12 +126,13 @@ mod tests {
         fn access() {
             let mut p = unsafe { crate::acquire() };
 
-            let a = p.foo.foo0.a;
-
-            hal::write_in_place! {
-                foo::foo0::a(a) => _,
+            hal::write! {
+                foo {
+                    foo0::a(p.foo.foo0.a) => _,
+                    foo1::write_requires_v5(&mut p.foo.foo1.write_requires_v5) => Noop,
+                },
                 @base_addr(foo, addr_of_foo())
-            }
+            };
 
             assert!(
                 unsafe {
@@ -142,14 +143,6 @@ mod tests {
                 }
                 .is_v5()
             );
-
-            hal::write! {
-                foo {
-                    foo1::write_requires_v5(&mut p.foo.foo1.write_requires_v5) => Noop,
-                    foo0::a(&a),
-                },
-                @base_addr(foo, addr_of_foo())
-            };
         }
     }
 }
