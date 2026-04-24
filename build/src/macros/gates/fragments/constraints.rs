@@ -108,6 +108,7 @@ fn write_entitlements<'cx>(
         let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
+            true,
         );
 
         let entitlement_input_ty = fragments::input_ty(
@@ -183,6 +184,7 @@ fn statewise_entitlements<'cx>(
         let generics = fragments::generics(
             entitlement_register_item,
             entitlement_field_item,
+            true,
         );
 
         let entitlement_return_ty = fragments::transition_return_ty(

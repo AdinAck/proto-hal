@@ -262,23 +262,62 @@ pub fn static_initial<'cx>(
     NonZeroU32::new((inert & !mask.map(|value| value.get()).unwrap_or(0)) | statics)
 }
 
-// TODO: is this function right at all?
-pub fn field_is_entangled<'cx, EntryPolicy>(
+/// Determine if the provided field is an entitlement dependency of any other field in the gate.
+///
+/// This is important for the **modify** gate for determining which fields should be read dynamically.
+/// Fields which are read will be available as runtime values for other fields being dynamically written to.
+/// Additionaly, read fields will be part of the return from the modify gate. Fields which are present *purely* to
+/// satisfy an entitlement of another field, **must** be omitted from the afformentioned process, as they are not
+/// *dynamic*. This is important because the modify gate must know which type to accept (`Dynamic` vs a static state).
+///
+/// Some example scenarios:
+///
+/// Let field A have a write entitlement to a variant of field B.
+///
+/// ```ignore
+/// modify! {
+///     a(a) => b,
+///     b(&b),
+/// }
+/// ```
+///
+/// This does not compile because field B is not read, it's static state is leveraged to perform the write to field A.
+///
+/// ```ignore
+/// modify! {
+///     a(&mut a),
+///     b(&b),
+/// }
+/// ```
+///
+/// This not only compiles, but also *does* read field B since it is not an entitlement dependency of anything.
+pub fn field_is_dependency<'cx>(
     model: &'cx Model,
-    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, EntryPolicy>,
+    input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     field: &View<'cx, FieldNode>,
-) -> bool
-where
-    EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
-{
+) -> bool {
     for other_field_item in input.visit_fields() {
+        if other_field_item.ident() == &&field.ident {
+            continue;
+        }
+
         let other_field_numericity = other_field_item.field().resolvable();
+
+        // if the other field is being written to, and the provided field supplies that write entitlement, the provided
+        // field is a dependency
+        if other_field_item.entry().transition().is_some()
+            && let Some(write_space) = other_field_item.field().write_entitlements()
+            && write_space
+                .entitlement_fields()
+                .any(|f| f.index() == field.index())
+        {
+            return true;
+        }
 
         for entitlement_set in other_field_item
             .field()
             .write_entitlements()
             .into_iter()
-            .chain(other_field_item.field().ontological_entitlements())
             .chain(other_field_item.field().hardware_write_entitlements())
             .chain(
                 other_field_numericity

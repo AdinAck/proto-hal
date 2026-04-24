@@ -33,6 +33,7 @@ pub enum Kind {
     CannotUnmaskFundamental,
     UnincumbentField,
     EntangledDynamicTransition,
+    CannotRead,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -313,6 +314,15 @@ impl Diagnostic {
                 "field \"{offending}\" possesses statewise entanglements \
                 and as such cannot be dynamically transitioned"
             ),
+            offending,
+        )
+    }
+
+    /// cannot read field "foo" in a write-only gate
+    pub fn cannot_read(offending: &Ident) -> Self {
+        Self::new(
+            Kind::EntangledDynamicTransition,
+            format!("cannot read field \"{offending}\" in a write-only gate"),
             offending,
         )
     }
