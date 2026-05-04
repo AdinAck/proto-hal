@@ -9,9 +9,9 @@ use syn::{Expr, Ident};
 use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
     gates::{
-        fragments::{self, FieldGenerics},
+        fragments,
         utils::{
-            binding_suggestions, field_is_dependency, module_suggestions, render_diagnostics,
+            self, binding_suggestions, field_is_dependency, module_suggestions, render_diagnostics,
             static_initial, unique_field_ident, validate_entitlements,
         },
     },
@@ -90,6 +90,9 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
     let mut conjures = Vec::new();
     let mut rebinds = Vec::new();
 
+    // start with all fields in their input state
+    let mut field_states = utils::input_field_states(&input, &field_dependencies);
+
     for peripheral_item in input.visit_peripherals() {
         let peripheral_path = peripheral_item.path();
 
@@ -112,38 +115,51 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     static_initial(&model, register_item)
                         .map(|value| value.get().to_token_stream()),
                     |register_item, field_item| {
-                        let FieldGenerics {
-                            input: input_generic,
-                            output: output_generic,
-                            ..
-                        } = fragments::generics(
+                        let field_generics = fragments::generics(
                             register_item,
                             field_item,
                             *field_dependencies.get(field_item.field().index()).unwrap(),
                         );
 
-                        Some(match (field_item.entry(), input_generic, output_generic) {
-                            (GateEntry::DynamicTransition(..), ..) => {
-                                let ident = unique_field_ident(
-                                    register_item.peripheral(),
-                                    register_item.register(),
-                                    field_item.field(),
-                                );
+                        Some(
+                            match (
+                                field_item.entry(),
+                                field_generics.input,
+                                field_generics.output,
+                            ) {
+                                (GateEntry::DynamicTransition(..), ..) => {
+                                    let ident = unique_field_ident(
+                                        register_item.peripheral(),
+                                        register_item.register(),
+                                        field_item.field(),
+                                    );
 
-                                quote! { #ident.1 as u32 }
-                            }
-                            (GateEntry::View(..), Some(generic), ..)
-                            | (GateEntry::Static(..), .., Some(generic)) => {
-                                quote! { #generic::VALUE }
-                            }
-                            (GateEntry::Static(.., semantic::Transition::Expr(expr)), .., None) => {
-                                quote! { #expr as u32 }
-                            }
-                            (..) => None?,
-                        })
+                                    quote! { #ident.1 as u32 }
+                                }
+                                (GateEntry::View(..), Some(generic), ..)
+                                | (GateEntry::Static(..), .., Some(generic)) => {
+                                    quote! { #generic::VALUE }
+                                }
+                                (
+                                    GateEntry::Static(.., semantic::Transition::Expr(expr)),
+                                    ..,
+                                    None,
+                                ) => {
+                                    quote! { #expr as u32 }
+                                }
+                                (..) => None?,
+                            },
+                        )
                     },
                 ));
             }
+
+            let post_field_states = utils::field_states_after_register(
+                &field_states,
+                &field_dependencies,
+                peripheral_path,
+                register_item,
+            );
 
             for field_item in register_item.fields().values() {
                 let binding = field_item.entry().binding();
@@ -151,11 +167,7 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     rebinds.push(binding.as_ref());
                 }
 
-                let FieldGenerics {
-                    input: input_generic,
-                    output: output_generic,
-                    ..
-                } = fragments::generics(
+                let field_generics = fragments::generics(
                     register_item,
                     field_item,
                     *field_dependencies.get(field_item.field().index()).unwrap(),
@@ -166,7 +178,7 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     register_ident,
                     field_item.ident(),
                     field_item.field(),
-                    input_generic.as_ref(),
+                    field_generics.input.as_ref(),
                 );
 
                 let return_ty = fragments::transition_return_ty(
@@ -175,20 +187,21 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     field_item.entry(),
                     field_item.field(),
                     field_item.ident(),
-                    output_generic.as_ref(),
+                    field_generics.output.as_ref(),
                 );
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
-                    &model,
                     peripheral_path,
                     register_ident,
                     binding,
                     field_item.ident(),
                     field_item.field(),
-                    input_generic.as_ref(),
-                    output_generic.as_ref(),
+                    field_generics.input.as_ref(),
+                    field_generics.output.as_ref(),
                     return_ty.as_ref(),
+                    &field_states,
+                    &post_field_states,
                 ) {
                     constraints.push(local_constraints);
                 }
@@ -198,11 +211,11 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     conjures.push(fragments::conjure());
                 }
 
-                if let Some(generic) = input_generic {
+                if let Some(generic) = field_generics.input {
                     generics.push(generic);
                 }
 
-                if let Some(generic) = output_generic {
+                if let Some(generic) = field_generics.output {
                     generics.push(generic);
                 }
 
@@ -239,6 +252,9 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     field_item.entry(),
                 ));
             }
+
+            // the pre-states of the next register are the post-states of the current register
+            field_states = post_field_states;
         }
     }
 

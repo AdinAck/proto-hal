@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 use model::{
-    field::{FieldNode, numericity::Numericity},
-    model::{Model, View},
+    field::{FieldIndex, FieldNode},
+    model::View,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
@@ -18,7 +20,6 @@ use crate::macros::{
 #[allow(clippy::too_many_arguments)]
 pub fn constraints<'cx>(
     input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
-    model: &Model,
     peripheral_path: &Path,
     register_ident: &Ident,
     binding: &Binding,
@@ -27,10 +28,16 @@ pub fn constraints<'cx>(
     input_generic: Option<&Ident>,
     output_generic: Option<&Ident>,
     return_ty: Option<&TokenStream>,
+    pre_field_states: &HashMap<FieldIndex, TokenStream>,
+    post_field_states: &HashMap<FieldIndex, TokenStream>,
 ) -> Option<TokenStream> {
-    // if the subject field's write access has entitlements, the entitlements
-    // must be satisfied in the input to the gate, and the fields used to
-    // satisfy the entitlements cannot be written
+    // constraints must be applied for every warranted transition for every register write
+    //
+    // write entitlement constraints must be applied to the incumbent field states in the boundary *before* writing to
+    // the register which imposes the constraints.
+    //
+    // statewise entitlement constraints must be applied to the incumbent field states in the boundary *after* writing to
+    // the register which imposes the constraints.
 
     let mut constraints = Vec::new();
     let span = field_ident.span();
@@ -48,7 +55,7 @@ pub fn constraints<'cx>(
     }
 
     if binding.is_mutated()
-        && let Some(write_entitlements) = write_entitlements(input, field, span)
+        && let Some(write_entitlements) = write_entitlements(input, field, pre_field_states, span)
     {
         constraints.extend(write_entitlements);
     }
@@ -62,7 +69,7 @@ pub fn constraints<'cx>(
     };
 
     if let Some(statewise_entitlements) =
-        statewise_entitlements(input, model, field, return_ty, span)
+        statewise_entitlements(input, field, return_ty, post_field_states, span)
     {
         constraints.extend(statewise_entitlements);
     }
@@ -73,6 +80,7 @@ pub fn constraints<'cx>(
 fn write_entitlements<'cx>(
     input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     field: &View<'cx, FieldNode>,
+    pre_field_states: &HashMap<FieldIndex, TokenStream>,
     span: Span,
 ) -> Option<Vec<TokenStream>> {
     let field_marker = {
@@ -99,7 +107,7 @@ fn write_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) = input.get_field(
+        let (.., entitlement_register_item, entitlement_field_item) = input.get_field(
             entitlement_peripheral.module_name().to_string(),
             entitlement_register.module_name().to_string(),
             entitlement_field.module_name().to_string(),
@@ -111,13 +119,7 @@ fn write_entitlements<'cx>(
             true,
         );
 
-        let entitlement_input_ty = fragments::input_ty(
-            entitlement_peripheral_item.path(),
-            entitlement_register_item.ident(),
-            entitlement_field_item.ident(),
-            entitlement_field_item.field(),
-            generics.input.as_ref(),
-        );
+        let entitlement_input_ty = pre_field_states.get(entitlement_field.index()).unwrap();
 
         Some(if let Some(write_pattern) = generics.write_pattern {
             quote_spanned! { span =>
@@ -135,27 +137,18 @@ fn write_entitlements<'cx>(
 
 fn statewise_entitlements<'cx>(
     input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
-    model: &Model,
     field: &View<'cx, FieldNode>,
     return_ty: &TokenStream,
+    post_field_states: &HashMap<FieldIndex, TokenStream>,
     span: Span,
 ) -> Option<Vec<TokenStream>> {
-    // get entitlement *fields*
-    let Numericity::Enumerated(enumerated) = field.resolvable()? else {
-        None?
-    };
-
-    let statewise_entitlements = enumerated.variants(model).flat_map(|variant| {
-        variant
-            .statewise_entitlements()
-            .into_iter()
-            .flat_map(|x| x.entitlements())
-    });
+    let repeating_entitlement_fields = field
+        .statewise_entitlements()
+        .flat_map(|space| space.entitlement_fields());
 
     let mut entitlement_fields = IndexMap::new();
 
-    for entitlement in statewise_entitlements {
-        let entitlement_field = entitlement.field(model);
+    for entitlement_field in repeating_entitlement_fields {
         entitlement_fields.insert(*entitlement_field.index(), entitlement_field);
     }
 
@@ -174,7 +167,7 @@ fn statewise_entitlements<'cx>(
 
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
-        let (entitlement_peripheral_item, entitlement_register_item, entitlement_field_item) =
+        let (.., entitlement_register_item, entitlement_field_item) =
             input.get_field(
                 entitlement_peripheral.module_name().to_string(),
                 entitlement_register.module_name().to_string(),
@@ -187,23 +180,8 @@ fn statewise_entitlements<'cx>(
             true,
         );
 
-        let entitlement_return_ty = fragments::transition_return_ty(
-            entitlement_peripheral_item.path(),
-            entitlement_register_item.ident(),
-            entitlement_field_item.entry(),
-            entitlement_field_item.field(),
-            entitlement_field_item.ident(),
-            generics.output.as_ref(),
-        );
-
         let lhs = return_ty.clone();
-        let rhs = entitlement_return_ty.unwrap_or(fragments::input_ty(
-            entitlement_peripheral_item.path(),
-            entitlement_register_item.ident(),
-            entitlement_field_item.ident(),
-            entitlement_field_item.field(),
-            generics.input.as_ref(),
-        ));
+        let rhs = post_field_states.get(entitlement_field.index()).unwrap();
 
         Some(if let Some(statewise_pattern) = generics.statewise_pattern {
             quote_spanned! { span =>
