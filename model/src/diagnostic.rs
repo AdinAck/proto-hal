@@ -49,6 +49,9 @@ pub enum Kind {
 
     // lexical
     Reserved = 3000,
+
+    // custom
+    Custom = 9000,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

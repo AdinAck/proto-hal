@@ -59,5 +59,5 @@ fn generate(model: &Model, output: impl FnOnce(&Model) -> Result<HashMap<String,
         fs::write(&dest_path, contents).unwrap();
     }
 
-    println!("cargo:rustc-link-search={out_dir}");
+    println!("cargo::rustc-link-search={out_dir}");
 }
