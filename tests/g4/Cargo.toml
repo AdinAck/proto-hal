@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-proto-hal = { path = "../../proto-hal" }
+proto-hal = { git = "https://github.com/adinack/proto-hal" }
 stm32-spa = { git = "https://github.com/adinack/stm32-spa", features = ["g474"], default-features = false }
 
 [dev-dependencies]
