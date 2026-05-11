@@ -13,7 +13,7 @@ mod tests {
     mod cordic {
         use super::addr_of_rcc;
 
-        use stm32g4_spa as hal;
+        use stm32_spa as hal;
 
         use hal::{cordic, rcc};
 
@@ -170,7 +170,7 @@ mod tests {
 
         use super::addr_of_rcc;
 
-        use stm32g4_spa as hal;
+        use stm32_spa as hal;
 
         use hal::{crc, rcc};
 
@@ -241,7 +241,7 @@ mod tests {
     mod rcc {
         use core::any::{Any, TypeId};
 
-        use stm32g4_spa as hal;
+        use stm32_spa as hal;
 
         use hal::rcc;
 
