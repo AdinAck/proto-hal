@@ -1,5 +1,7 @@
+use std::process::ExitCode;
+
 use abstract_model::compose;
 
-fn main() {
-    phm::validate(compose());
+fn main() -> ExitCode {
+    phm::validate(compose())
 }
