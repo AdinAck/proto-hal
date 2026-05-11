@@ -10,7 +10,7 @@ use ters::ters;
 
 use crate::{
     Node,
-    diagnostic::{Context, Diagnostic, Diagnostics},
+    diagnostic::{self, Context, Diagnostic, Diagnostics, Rank},
     entitlement::{self, Entitlement, EntitlementIndex},
     field::{
         Field, FieldIndex, FieldNode,
@@ -35,25 +35,6 @@ pub struct Composition {
     model: Model,
     //// Diagnostics emitted during model composition.
     diagnostics: Diagnostics,
-}
-
-impl Composition {
-    /// Capture the composition and produce the resulting model.
-    ///
-    /// This method also produces diagnostics emitted from both:
-    /// 1. the composition itself
-    /// 1. post-composition validation
-    pub fn finish(self) -> (Model, Diagnostics) {
-        let mut diagnostics = self.diagnostics;
-        diagnostics.extend(self.model.validate());
-
-        (self.model, diagnostics)
-    }
-
-    /// Capture the composition and produce the resulting *unvalidated* model.
-    pub fn release(self) -> Model {
-        self.model
-    }
 }
 
 /// The proto-hal device model. A HAL is generated purely from this structure.
@@ -104,9 +85,37 @@ impl Composition {
         }
     }
 
-    pub fn with_interrupts(mut self, interrupts: impl IntoIterator<Item = Interrupt>) -> Self {
+    // TODO: check for duplicates now instead of later?
+    /// Add the provided interrupts to the composition.
+    pub fn add_interrupts(&mut self, interrupts: impl IntoIterator<Item = Interrupt>) {
         self.interrupts.extend(interrupts);
-        self
+    }
+
+    /// Manually insert a diagnostic into the composition to be emitted during validation.
+    pub fn add_diagnostic(&mut self, rank: Rank, message: impl Into<String>) {
+        self.diagnostics.insert(Diagnostic::new(
+            rank,
+            diagnostic::Kind::Custom,
+            message,
+            Context::new(),
+        ));
+    }
+
+    /// Capture the composition and produce the resulting model.
+    ///
+    /// This method also produces diagnostics emitted from both:
+    /// 1. the composition itself
+    /// 1. post-composition validation
+    pub fn finish(self) -> (Model, Diagnostics) {
+        let mut diagnostics = self.diagnostics;
+        diagnostics.extend(self.model.validate());
+
+        (self.model, diagnostics)
+    }
+
+    /// Capture the composition and produce the resulting *unvalidated* model.
+    pub fn release(self) -> Model {
+        self.model
     }
 }
 
