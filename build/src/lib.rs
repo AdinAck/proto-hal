@@ -13,6 +13,7 @@ pub fn render(model: &Model) {
     generate(model, |model| {
         Ok([
             ("hal.rs".to_string(), model.render()?),
+            #[cfg(feature = "interrupts")]
             ("device.x".to_string(), model.interrupts().device_x()),
         ]
         .into())

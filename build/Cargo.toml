@@ -15,6 +15,7 @@ syn = { workspace = true }
 ters = { workspace = true }
 
 [features]
-default = ["integrated"]
+default = ["integrated", "interrupts"]
 macros = []
 integrated = []
+interrupts = []
