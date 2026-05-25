@@ -27,13 +27,13 @@ pub enum Kind {
     ExpectedTransition,
 
     // validation
-    MissingEntitlementDependencies = 1000,
-    MissingEntitlementDependents,
+    CannotRead = 1000,
     MissingFields,
     CannotUnmaskFundamental,
+    MissingEntitlementDependencies = 2000,
+    MissingEntitlementDependents,
     UnincumbentField,
     EntangledDynamicTransition,
-    CannotRead,
 }
 
 pub type Diagnostics = Vec<Diagnostic>;
@@ -85,7 +85,7 @@ impl Diagnostic {
         )
     }
 
-    /// register "foo" not found in peripheral "bar"
+    /// register "bar" not found in peripheral "foo"
     pub fn register_not_found(register_ident: &Ident, peripheral: &Peripheral) -> Self {
         Self::new(
             Kind::RegisterNotFound,
@@ -97,7 +97,7 @@ impl Diagnostic {
         )
     }
 
-    /// field "foo" not found in register "bar"
+    /// field "baz" not found in register "bar"
     pub fn field_not_found(field_ident: &Ident, register: &Register) -> Self {
         Self::new(
             Kind::FieldNotFound,
@@ -179,18 +179,13 @@ impl Diagnostic {
         )
     }
 
-    /// binding cannot be dynamic
-    pub fn binding_cannot_be_dynamic(binding: &Binding) -> Self {
-        Self::new(
-            Kind::BindingCannotBeView,
-            "binding cannot be dynamic",
-            binding.as_ref(),
-        )
-    }
-
     /// unexpected transition
     pub fn unexpected_transition(offending: &impl Spanned) -> Self {
-        Self::new(Kind::UnexpectedBinding, "unexpected transition", offending)
+        Self::new(
+            Kind::UnexpectedTransition,
+            "unexpected transition",
+            offending,
+        )
     }
 
     /// expected transition
@@ -321,7 +316,7 @@ impl Diagnostic {
     /// cannot read field "foo" in a write-only gate
     pub fn cannot_read(offending: &Ident) -> Self {
         Self::new(
-            Kind::EntangledDynamicTransition,
+            Kind::CannotRead,
             format!("cannot read field \"{offending}\" in a write-only gate"),
             offending,
         )

@@ -167,6 +167,7 @@ impl Diagnostic {
         ])
     }
 
+    /// no variants of field [{field}] correspond to reset value {field_reset}
     pub fn invalid_reset<'cx>(
         field: &View<'cx, FieldNode>,
         variants: impl Iterator<Item = View<'cx, VariantNode>>,
@@ -204,7 +205,7 @@ impl Diagnostic {
         ])
     }
 
-    /// entitlement [foo] resides within unresolvable field [bar] and as such cannot be entitled to
+    /// entitlement [foo] targets field [bar] which is unresolvable and as such cannot be entitled to
     pub fn unresolvable(
         model: &Model,
         entitlement: &Entitlement,
@@ -215,7 +216,7 @@ impl Diagnostic {
             Rank::Error,
             Kind::Unresolvable,
             format!(
-                "entitlement [{}] resides within unresolvable field [{}] and as such cannot be entitled to",
+                "entitlement [{}] targets field [{}] which is unresolvable and as such cannot be entitled to",
                 entitlement.to_string(model).bold(),
                 field.module_name().to_string().bold()
             ),
@@ -302,7 +303,7 @@ impl Diagnostic {
 
         Self::new(
             Rank::Error,
-            Kind::ReadCannotBeInert,
+            Kind::Reserved,
             format!("\"{offending}\" is a reserved keyword for {level}s"),
             context,
         )
