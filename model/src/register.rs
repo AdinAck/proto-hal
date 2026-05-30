@@ -160,7 +160,7 @@ impl<'cx> View<'cx, RegisterNode> {
                     .notes(
                         if ontological_entitlements.is_some() || other_ontological_entitlements.is_some() {
                             vec![format!(
-                                "overlapping fields have non-trivial intersecting entitlement spaces [{}] and [{}]",
+                                "overlapping fields have non-trivial intersecting ontological entitlement spaces [{}] and [{}]",
                                 ontological_entitlements.map(|x| x.entitlements().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
                                 other_ontological_entitlements.map(|x| x.entitlements().map(|e| e.to_string(self.model).bold().to_string()).collect::<Vec<_>>().join(", ")).unwrap_or("".to_string()),
                             )]

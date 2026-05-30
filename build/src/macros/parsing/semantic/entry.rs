@@ -24,7 +24,7 @@ pub enum FieldEntry<'cx> {
     /// ```ignore
     /// (&mut foo)
     /// ```
-    BoundDynamic(&'cx Binding),
+    VolatileView(&'cx Binding),
     /// The entry is a dyamic binding and a transition.
     ///
     /// ```ignore
@@ -83,7 +83,7 @@ impl<'cx> FieldEntry<'cx> {
                     Err(Diagnostic::field_must_be_readable(field_ident))?
                 }
 
-                Self::BoundDynamic(binding)
+                Self::VolatileView(binding)
             }
             (Some(binding), None) => Self::Consumed(binding),
             (Some(binding), Some(transition)) if binding.is_dynamic() => {
