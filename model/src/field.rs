@@ -205,6 +205,42 @@ impl Field {
         }
     }
 
+    /// Create a new field positioned at the provided index. The offset is the field width multiplied by the index.
+    /// If the offset exceeds the register width, it wraps.
+    ///
+    /// ## Example
+    ///
+    /// Width 4:
+    ///
+    /// ```ignore
+    /// | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+    /// ^ bit 0                  bit 31 ^
+    ///
+    /// | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+    /// ^ bit 0                        bit 31 ^
+    /// ```
+    pub fn new_indexed(ident: impl AsRef<str>, index: u8, width: u8) -> Self {
+        Self::new_indexed_wrapping(ident, index, 32, width)
+    }
+
+    /// Create a new field positioned at the provided index, up to the provided wrap index. The offset is the field
+    /// width multiplied by the index. If the offset exceeds the wrap index, it wraps.
+    ///
+    /// ## Example
+    ///
+    /// Width 4, wrap at 4:
+    ///
+    /// ```ignore
+    /// | 0 | 1 | 2 | 3 | - | - | - | - |
+    /// ^ bit 0         ^ bit 16 bit 31 ^
+    ///
+    /// | 4 | 5 | 6 | 7 | - | - | - | - |
+    /// ^ bit 0         ^ bit 16 bit 31 ^
+    /// ```
+    pub fn new_indexed_wrapping(ident: impl AsRef<str>, index: u8, wrap: u8, width: u8) -> Self {
+        Self::new(ident, (index * width) % 32.min(wrap * width), width)
+    }
+
     pub fn docs<I>(mut self, docs: I) -> Self
     where
         I: IntoIterator,
