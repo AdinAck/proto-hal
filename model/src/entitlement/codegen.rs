@@ -9,17 +9,7 @@ use crate::{
 
 impl Entitlement {
     pub fn render_up_to_field(&self, model: &Model) -> TokenStream {
-        let field = self.field(model);
-        let register = model.get_register(field.parent);
-        let peripheral = model.get_peripheral(register.parent.clone());
-
-        let peripheral_ident = peripheral.module_name();
-        let register_ident = register.module_name();
-        let field_ident = field.module_name();
-
-        quote! {
-            #peripheral_ident::#register_ident::#field_ident
-        }
+        self.field(model).path()
     }
 
     pub fn render_entirely(&self, model: &Model) -> TokenStream {
@@ -32,16 +22,12 @@ impl Entitlement {
     }
 
     pub fn render_in_container(&self, model: &Model) -> TokenStream {
-        let path = self.render_entirely(model);
         let field = self.field(model);
+        let path = field.path();
+        let state = self.render_entirely(model);
         let field_ty = field.type_name();
-        let (peripheral, register) = field.parents();
 
-        let peripheral_ident = peripheral.module_name();
-        let register_ident = register.module_name();
-        let field_ident = field.module_name();
-
-        quote! { crate::#peripheral_ident::#register_ident::#field_ident::#field_ty<crate::#path> }
+        quote! { crate::#path::#field_ty<crate::#state> }
     }
 }
 

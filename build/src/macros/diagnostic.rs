@@ -1,6 +1,6 @@
-use model::{Model, entitlement, peripheral::Peripheral, register::Register};
+use model::{Model, entitlement};
 use proc_macro2::Span;
-use syn::{Ident, LitInt, Path, spanned::Spanned};
+use syn::{Ident, LitInt, Path, punctuated::Punctuated, spanned::Spanned, token::PathSep};
 use ters::ters;
 
 use crate::macros::parsing::syntax::Binding;
@@ -11,9 +11,7 @@ pub enum Kind {
     Erased = 0,
     UnexpectedPeripheral,
     ItemAlreadySpecified,
-    ExpectedPeripheralPath,
-    RegisterNotFound,
-    FieldNotFound,
+    NotFound,
     PathCannotContinue,
     FieldMustBeReadable,
     FieldMustBeWritable,
@@ -76,36 +74,18 @@ impl Diagnostic {
         )
     }
 
-    /// expected path to peripheral
-    pub fn expected_peripheral_path(offending: &impl Spanned) -> Self {
+    /// no item found at "foo::bar::baz"
+    pub fn item_not_found(path: &Punctuated<&Ident, PathSep>) -> Self {
         Self::new(
-            Kind::ExpectedPeripheralPath,
-            "expected path to peripheral",
-            offending,
-        )
-    }
-
-    /// register "bar" not found in peripheral "foo"
-    pub fn register_not_found(register_ident: &Ident, peripheral: &Peripheral) -> Self {
-        Self::new(
-            Kind::RegisterNotFound,
+            Kind::NotFound,
             format!(
-                "register \"{register_ident}\" not found in peripheral \"{}\"",
-                peripheral.module_name()
+                "no item found at \"{}\"",
+                path.iter()
+                    .map(|segment| segment.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::")
             ),
-            register_ident,
-        )
-    }
-
-    /// field "baz" not found in register "bar"
-    pub fn field_not_found(field_ident: &Ident, register: &Register) -> Self {
-        Self::new(
-            Kind::FieldNotFound,
-            format!(
-                "field \"{field_ident}\" not found in register \"{}\"",
-                register.module_name()
-            ),
-            field_ident,
+            path,
         )
     }
 

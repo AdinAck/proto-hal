@@ -1,14 +1,14 @@
 use model::field::{FieldNode, numericity::Numericity};
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
-use syn::{Ident, Path, spanned::Spanned as _};
+use syn::{Path, spanned::Spanned as _};
 
 use crate::macros::parsing::semantic;
 
 pub fn write_argument_value(
     peripheral_path: &Path,
-    register_ident: &Ident,
-    field_ident: &Ident,
+    register_path: &Path,
+    field_path: &Path,
     field: &FieldNode,
     transition: &semantic::Transition,
 ) -> TokenStream {
@@ -24,7 +24,7 @@ pub fn write_argument_value(
 
     if let Some(Numericity::Enumerated(..)) = field.access.get_write() {
         quote! {{
-            use #peripheral_path::#register_ident::#field_ident::WriteVariant::{self as Variant, *};
+            use #peripheral_path::#register_path::#field_path::WriteVariant::{self as Variant, *};
             #block
         }}
     } else {

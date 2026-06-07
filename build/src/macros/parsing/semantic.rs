@@ -57,9 +57,7 @@ where
         let mut peripherals = Default::default();
 
         for tree in &args.trees {
-            if let Err(e) =
-                parse_peripheral::<PeripheralEntryPolicy, _>(model, &mut peripherals, tree)
-            {
+            if let Err(e) = parse_peripheral(model, &mut peripherals, tree) {
                 diagnostics.extend(e);
             }
         }
@@ -163,6 +161,8 @@ where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
+    path: Path,
+    #[get]
     ident: &'cx Ident,
     #[get]
     peripheral: View<'cx, PeripheralNode>,
@@ -181,6 +181,8 @@ where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
     #[get]
+    path: Path,
+    #[get]
     ident: &'cx Ident,
     #[get]
     field: View<'cx, FieldNode>,
@@ -190,9 +192,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use model::{field::Field, peripheral::Peripheral, register::Register};
+    use model::{field::Field, peripheral::Peripheral, prelude::*, register::Register};
     use quote::quote;
-    use syn::{Ident, Path, parse_quote};
+    use syn::parse_quote;
 
     use crate::macros::{
         diagnostic,
@@ -230,7 +232,7 @@ mod tests {
         assert_eq!(peripheral.path(), &peripheral_path);
         assert_eq!(
             **peripheral.entry().as_ref().expect("expected entry"),
-            &syn::parse2::<syntax::Binding>(quote! { #peripheral_binding }).unwrap()
+            &syn::parse2::<syntax::Binding>(peripheral_binding).unwrap()
         );
         assert_eq!(peripheral.peripheral().ident, peripheral_name);
     }
@@ -274,7 +276,7 @@ mod tests {
         assert_eq!(peripheral0.path(), &peripheral0_path);
         assert_eq!(
             **peripheral0.entry().as_ref().expect("expected binding"),
-            &syn::parse2::<syntax::Binding>(quote! { #peripheral0_binding }).unwrap()
+            &syn::parse2::<syntax::Binding>(peripheral0_binding).unwrap()
         );
         assert_eq!(peripheral0.peripheral().ident, peripheral0_name);
 
@@ -285,9 +287,9 @@ mod tests {
     #[test]
     fn single_register() {
         let peripheral_name = "foo";
-        let peripheral_path: Path = parse_quote! { ::external::foo };
+        let peripheral_path = parse_quote! { ::external::foo };
         let register_name = "bar";
-        let register_ident: Ident = parse_quote! { bar };
+        let register_ident = quote! { bar };
 
         let mut model = model::Composition::new();
         model
@@ -307,7 +309,7 @@ mod tests {
             .get_register(peripheral_name, register_name)
             .expect("register should exist");
 
-        assert_eq!(peripheral.path(), &parse_quote!( #peripheral_path ));
+        assert_eq!(peripheral.path(), &peripheral_path);
         assert_eq!(register.ident().to_string(), register_ident.to_string());
         assert!(register.fields().is_empty());
         assert!(e.is_empty(), "semantic parsing should succeed");
@@ -316,11 +318,11 @@ mod tests {
     #[test]
     fn field_must_be_writable() {
         let peripheral_name = "foo";
-        let peripheral_path: Path = parse_quote! { ::external::foo };
+        let peripheral_path = quote! { ::external::foo };
         let register_name = "bar";
-        let register_ident: Ident = parse_quote! { bar };
+        let register_ident = quote! { bar };
         let field_name = "baz";
-        let field_ident: Ident = parse_quote! { baz };
+        let field_ident = quote! { baz };
 
         let mut model = model::Composition::new();
         model
@@ -345,11 +347,11 @@ mod tests {
     #[test]
     fn single_field() {
         let peripheral_name = "foo";
-        let peripheral_path: Path = parse_quote! { ::external::foo };
+        let peripheral_path = parse_quote! { ::external::foo };
         let register_name = "bar";
-        let register_ident: Ident = parse_quote! { bar };
+        let register_ident = quote! { bar };
         let field_name = "baz";
-        let field_ident: Ident = parse_quote! { baz };
+        let field_ident = quote! { baz };
 
         let mut model = model::Composition::new();
         model

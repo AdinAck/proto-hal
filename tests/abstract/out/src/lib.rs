@@ -17,7 +17,7 @@ mod tests {
 
         use crate as hal;
 
-        use hal::foo::foo0::a;
+        use hal::p_group::foo::r_group::foo0::f_group::a;
 
         #[test]
         fn acquire() {
@@ -47,12 +47,12 @@ mod tests {
 
             use crate as hal;
 
-            use hal::foo;
+            use hal::p_group::foo;
 
             #[test]
             fn unsafe_read() {
                 critical_section::with(|_| {
-                    unsafe { MOCK_FOO = foo::foo0::a::Variant::V1 as _ };
+                    unsafe { MOCK_FOO = foo::r_group::foo0::f_group::a::Variant::V1 as _ };
 
                     assert!(
                         unsafe {
@@ -71,7 +71,7 @@ mod tests {
                 critical_section::with(|_| {
                     unsafe {
                         hal::write_from_zero_untracked! {
-                            foo::foo0::a => V2,
+                            foo::r_group::foo0::f_group::a => V2,
                             @base_addr(foo, addr_of_foo())
                         }
                     };
@@ -90,14 +90,14 @@ mod tests {
                 critical_section::with(|cs| {
                     unsafe {
                         hal::write_from_zero_untracked! {
-                            foo::foo0::a => V3,
+                            foo::r_group::foo0::f_group::a => V3,
                             @base_addr(foo, addr_of_foo())
                         }
                     }
 
                     unsafe {
                         hal::modify_untracked! {
-                            foo::foo0::a => Variant::from_bits(a as u32 + 1),
+                            foo::r_group::foo0::f_group::a => Variant::from_bits(a as u32 + 1),
                             @critical_section(cs),
                             @base_addr(foo, addr_of_foo())
                         }
@@ -120,7 +120,7 @@ mod tests {
 
         use crate as hal;
 
-        use hal::foo;
+        use hal::p_group::foo;
 
         #[test]
         fn access() {
@@ -128,7 +128,7 @@ mod tests {
 
             hal::write! {
                 foo {
-                    foo0::a(p.foo.foo0.a) => _,
+                    r_group::foo0::f_group::a(p.foo.foo0.a) => _,
                     foo1::write_requires_v5(&mut p.foo.foo1.write_requires_v5) => Noop,
                 },
                 @base_addr(foo, addr_of_foo())

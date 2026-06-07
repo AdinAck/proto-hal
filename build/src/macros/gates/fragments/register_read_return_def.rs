@@ -9,16 +9,16 @@ use crate::macros::{gates::fragments::read_value_ty, parsing::semantic::FieldKey
 pub fn register_read_return_def<'cx>(
     peripheral_path: &Path,
     regester_ty: &Ident,
-    register_ident: &Ident,
-    fields: &IndexMap<FieldKey, (Ident, View<'cx, FieldNode>)>,
+    register_path: &Path,
+    fields: &IndexMap<FieldKey, (Path, View<'cx, FieldNode>)>,
 ) -> TokenStream {
-    let field_idents = fields.values().map(|(.., field)| field.module_name());
+    let field_idents = fields.values().map(|(.., field)| field.ident());
 
-    let field_tys = fields.values().filter_map(|(field_ident, field)| {
+    let field_tys = fields.values().filter_map(|(field_path, field)| {
         Some(read_value_ty(
             peripheral_path,
-            register_ident,
-            field_ident,
+            register_path,
+            field_path,
             field.access.get_read()?,
         ))
     });
