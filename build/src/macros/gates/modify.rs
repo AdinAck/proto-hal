@@ -370,13 +370,14 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
 
     let body = if cs.is_none() {
         quote! {
+            #rebinds {
+                ::proto_hal::critical_section::with(|_| {
+                    #suggestions
+                    #errors
 
-            ::proto_hal::critical_section::with(|_| {
-                #suggestions
-                #errors
-
-                #body
-            })
+                    #body
+                })
+            } #semicolon
         }
     } else {
         quote! {
