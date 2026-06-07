@@ -11,7 +11,7 @@ pub fn register_address(
     register: &Register,
     overridden_base_addrs: &HashMap<Ident, Expr>,
 ) -> TokenStream {
-    if let Some(expr) = overridden_base_addrs.get(&peripheral.module_name()) {
+    if let Some(expr) = overridden_base_addrs.get(&peripheral.ident()) {
         let offset = register.offset as usize;
         if offset == 0 {
             quote! { #expr }

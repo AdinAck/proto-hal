@@ -1,6 +1,7 @@
 use derive_more::{AsRef, Deref};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{ToTokens as _, quote};
 use syn::Ident;
 
 use crate::{
@@ -62,28 +63,34 @@ impl Variant {
         self
     }
 
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
+    }
+
     pub fn module_name(&self) -> Ident {
-        Ident::new(
-            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
-            Span::call_site(),
-        )
+        // always the ident
+        self.ident()
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
+    }
+}
+
+impl<'cx> View<'cx, VariantNode> {
+    pub fn path_segment(&self) -> TokenStream {
+        // always the module name
+        self.module_name().to_token_stream()
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.module_name().clone().to_string());
+        let new_context = context.clone().and(self.ident().to_string());
 
         // TODO: these are old...
         let reserved = ["variant", "generic", "preserve", "dynamic"]; // note: waiting for const type inference
 
-        if reserved.contains(&self.module_name().to_string().as_str()) {
+        if reserved.contains(&self.ident().to_string().as_str()) {
             diagnostics.insert(Diagnostic::reserved(
                 &self.type_name(),
                 reserved.iter(),
@@ -145,7 +152,7 @@ impl<'cx> View<'cx, VariantNode> {
     }
 
     pub fn generate(&self, parent: View<'cx, FieldNode>) -> TokenStream {
-        let ident = self.module_name();
+        let module = self.module_name();
         let ty = self.type_name();
         let mut body = quote! {};
 
@@ -155,14 +162,14 @@ impl<'cx> View<'cx, VariantNode> {
         body.extend(self.generate_entitlements(parent, statewise_entitlements.as_deref().copied()));
 
         quote! {
-            pub mod #ident {
+            pub mod #module {
                 #[allow(unused)]
                 use super::*;
 
                 #body
             }
 
-            pub use #ident::#ty;
+            pub use #module::#ty;
         }
     }
 }

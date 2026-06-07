@@ -151,7 +151,7 @@ impl Diagnostic {
         let resolvable_fields = register
             .fields()
             .filter(|field| field.is_resolvable())
-            .map(|field| field.module_name().to_string().bold().to_string())
+            .map(|field| field.ident().to_string().bold().to_string())
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -191,7 +191,7 @@ impl Diagnostic {
             Kind::InvalidReset,
             format!(
                 "no variants of field [{}] correspond to reset value {}",
-                field.module_name().to_string().bold(),
+                field.ident().to_string().bold(),
                 field_reset.to_string().bold(),
             ),
             context,
@@ -218,7 +218,7 @@ impl Diagnostic {
             format!(
                 "entitlement [{}] targets field [{}] which is unresolvable and as such cannot be entitled to",
                 entitlement.to_string(model).bold(),
-                field.module_name().to_string().bold()
+                field.ident().to_string().bold()
             ),
             context,
         )

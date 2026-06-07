@@ -1,15 +1,21 @@
 #![allow(clippy::disallowed_names)]
 
-use phm::{Composition, Field, Peripheral, Register, Variant};
+use phm::{Composition, Field, Peripheral, Register, Variant, prelude::*};
 
 pub fn compose() -> Composition {
     let mut composition = Composition::new();
 
-    let mut foo = composition.add_peripheral(Peripheral::new("foo", 0));
+    let mut p_group = composition.add_group("p_group");
 
-    let mut foo0 = foo.add_register(Register::new("foo0", 0).reset(3));
+    let mut foo = p_group.add_peripheral(Peripheral::new("foo", 0));
 
-    let mut a = foo0.add_store_field(Field::new("a", 0, 4));
+    let mut r_group = foo.add_group("r_group");
+
+    let mut foo0 = r_group.add_register(Register::new("foo0", 0).reset(3));
+
+    let mut f_group = foo0.add_group("f_group");
+
+    let mut a = f_group.add_store_field(Field::new("a", 0, 4));
 
     for i in 0..5 {
         a.add_variant(Variant::new(format!("V{i}"), i));
@@ -35,7 +41,9 @@ pub fn compose() -> Composition {
 #[cfg(test)]
 mod tests {
     mod hal {
-        use phm::{Composition, diagnostic, peripheral::Peripheral, register::Register};
+        use phm::{
+            Composition, diagnostic, peripheral::Peripheral, prelude::*, register::Register,
+        };
 
         /// Create an empty model.
         #[test]
@@ -158,7 +166,9 @@ mod tests {
     }
 
     mod peripherals {
-        use phm::{Composition, diagnostic, peripheral::Peripheral, register::Register};
+        use phm::{
+            Composition, diagnostic, peripheral::Peripheral, prelude::*, register::Register,
+        };
 
         #[test]
         fn many_registers() {

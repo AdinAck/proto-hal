@@ -97,8 +97,6 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
         let peripheral_path = peripheral_item.path();
 
         for register_item in peripheral_item.registers().values() {
-            let register_ident = register_item.ident();
-
             if register_item.fields().values().any(|field_item| {
                 matches!(
                     field_item.entry(),
@@ -175,27 +173,27 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
-                    register_ident,
-                    field_item.ident(),
+                    register_item.path(),
+                    field_item.path(),
                     field_item.field(),
                     field_generics.input.as_ref(),
                 );
 
                 let return_ty = fragments::transition_return_ty(
                     peripheral_path,
-                    register_ident,
+                    register_item.path(),
                     field_item.entry(),
                     field_item.field(),
-                    field_item.ident(),
+                    field_item.path(),
                     field_generics.output.as_ref(),
                 );
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
                     peripheral_path,
-                    register_ident,
+                    register_item.path(),
                     binding,
-                    field_item.ident(),
+                    field_item.path(),
                     field_item.field(),
                     field_generics.input.as_ref(),
                     field_generics.output.as_ref(),
@@ -229,8 +227,8 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                     field_item.field().access.get_write().map(|write| {
                         fragments::write_value_ty(
                             peripheral_path,
-                            register_ident,
-                            field_item.ident(),
+                            register_item.path(),
+                            field_item.path(),
                             write,
                         )
                     })
@@ -246,8 +244,8 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
 
                 arguments.push(fragments::write_argument(
                     peripheral_path,
-                    register_ident,
-                    field_item.ident(),
+                    register_item.path(),
+                    field_item.path(),
                     field_item.field(),
                     field_item.entry(),
                 ));
@@ -356,7 +354,7 @@ fn validate<'cx>(
                             .get_write()
                             .is_some_and(|x| x.some_inert(model).is_none())
                 })
-                .map(|field| (field.module_name(), field))
+                .map(|field| (field.ident(), field))
                 .collect::<IndexMap<_, _>>();
 
             // if there are no fields at this bit, continue to check the next bit

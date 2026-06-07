@@ -10,17 +10,17 @@ pub fn register_read_return_init<'cx>(
     peripheral_path: &Path,
     peripheral: &Peripheral,
     register_ty: &Ident,
-    register_ident: &Ident,
+    register_path: &Path,
     register: &View<'cx, RegisterNode>,
-    fields: &IndexMap<FieldKey, (Ident, View<'cx, FieldNode>)>,
+    fields: &IndexMap<FieldKey, (Path, View<'cx, FieldNode>)>,
 ) -> TokenStream {
-    let field_idents = fields.values().map(|(.., field)| field.module_name());
+    let field_idents = fields.values().map(|(.., field)| field.ident());
 
-    let field_values = fields.values().filter_map(|(field_ident, field)| {
+    let field_values = fields.values().filter_map(|(field_path, field)| {
         read_value_expr(
             peripheral_path,
-            register_ident,
-            field_ident,
+            register_path,
+            field_path,
             peripheral,
             register,
             field,

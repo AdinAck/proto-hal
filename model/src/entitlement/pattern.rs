@@ -203,7 +203,7 @@ impl Pattern {
                         .join(", ");
                     format!(
                         "<{} | {}>",
-                        model.get_field(field_index).module_name(),
+                        model.get_field(field_index).ident(),
                         entitlement_idents
                     )
                 })

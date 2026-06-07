@@ -3,7 +3,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use colored::Colorize;
 use derive_more::{AsRef, Deref, DerefMut};
 use indexmap::{IndexMap, IndexSet};
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::Ident;
 use ters::ters;
@@ -15,6 +15,10 @@ use crate::{
     field::{
         Field, FieldIndex, FieldNode,
         access::{self, Access},
+    },
+    group::{
+        FieldGroupIndex, FieldGroupNode, Group, GroupNode, PeripheralGroupIndex,
+        PeripheralGroupNode, RegisterGroupIndex, RegisterGroupNode,
     },
     interrupts::{Interrupt, Interrupts},
     peripheral::{PeripheralIndex, PeripheralNode},
@@ -42,8 +46,11 @@ pub struct Composition {
 #[derive(Debug, Clone, Default)]
 pub struct Model {
     peripherals: IndexMap<PeripheralIndex, PeripheralNode>,
+    peripheral_groups: IndexMap<PeripheralGroupIndex, PeripheralGroupNode>,
     registers: Vec<RegisterNode>,
+    register_groups: IndexMap<RegisterGroupIndex, RegisterGroupNode>,
     fields: Vec<FieldNode>,
+    field_groups: IndexMap<FieldGroupIndex, FieldGroupNode>,
     variants: Vec<VariantNode>,
 
     entitlements: HashMap<EntitlementIndex, entitlement::Space>,
@@ -59,14 +66,51 @@ impl Composition {
         Self::default()
     }
 
-    /// Add a peripheral to the model.
-    pub fn add_peripheral<'cx>(&'cx mut self, peripheral: Peripheral) -> PeripheralEntry<'cx> {
-        let index = PeripheralIndex(peripheral.module_name());
-        let name = peripheral.module_name().to_string();
+    pub fn add_group<'ncx>(&'ncx mut self, name: impl AsRef<str>) -> PeripheralGroupEntry<'ncx> {
+        let ident = Ident::new(name.as_ref(), Span::call_site());
+        let index = PeripheralGroupIndex(ident.clone());
+
+        if self.peripheral_groups.contains_key(&index) {
+            self.diagnostics
+                .insert(Diagnostic::exists(&name.as_ref(), Context::new()));
+        }
+
+        self.peripheral_groups.insert(
+            index.clone(),
+            GroupNode {
+                parent: (),
+                group: Group {
+                    ident: ident.clone(),
+                },
+                members: Default::default(),
+            },
+        );
+
+        Entry {
+            model: self,
+            index,
+            context: Context::with_path([ident.to_string()]),
+            _p: PhantomData,
+        }
+    }
+
+    fn add_peripheral_inner<'cx>(
+        &'cx mut self,
+        peripheral: Peripheral,
+        group: Option<PeripheralGroupIndex>,
+    ) -> PeripheralEntry<'cx> {
+        let index = PeripheralIndex(peripheral.ident());
+        let name = peripheral.ident().to_string();
 
         if self.peripherals.contains_key(&index) {
             self.diagnostics
                 .insert(Diagnostic::exists(&name, Context::new()));
+        }
+
+        if let Some(group_index) = &group {
+            let group = self.peripheral_groups.get_mut(group_index).unwrap();
+
+            group.members.insert(peripheral.ident(), index.clone());
         }
 
         self.peripherals.insert(
@@ -74,6 +118,7 @@ impl Composition {
             PeripheralNode {
                 peripheral,
                 registers: Default::default(),
+                group,
             },
         );
 
@@ -81,6 +126,90 @@ impl Composition {
             model: self,
             index,
             context: Context::with_path([name]),
+            _p: PhantomData,
+        }
+    }
+
+    fn add_register_inner<'ncx>(
+        &'ncx mut self,
+        register: Register,
+        peripheral_index: PeripheralIndex,
+        group: Option<RegisterGroupIndex>,
+        context: Context,
+    ) -> RegisterEntry<'ncx> {
+        let index = RegisterIndex(self.registers.len());
+        let name = register.ident().to_string();
+
+        // update parent
+        let peripheral = self.model.peripherals.get_mut(&peripheral_index).unwrap();
+
+        if peripheral.registers.contains_key(&register.ident()) {
+            self.diagnostics
+                .insert(Diagnostic::exists(&name, context.clone()));
+        }
+
+        if let Some(group_index) = &group {
+            let group = self.model.register_groups.get_mut(group_index).unwrap();
+
+            group.members.insert(register.ident(), index);
+        }
+
+        peripheral.add_child_index(index, register.ident());
+
+        // insert child
+        self.model.registers.push(RegisterNode {
+            parent: peripheral_index.clone(),
+            register,
+            fields: Default::default(),
+            group,
+        });
+
+        Entry {
+            model: self,
+            index,
+            context: context.and(name),
+            _p: PhantomData,
+        }
+    }
+
+    fn add_field_inner<'ncx, Meta>(
+        &'ncx mut self,
+        field: Field,
+        access: Access,
+        register_index: RegisterIndex,
+        group: Option<FieldGroupIndex>,
+        context: Context,
+    ) -> FieldEntry<'ncx, Meta> {
+        let index = FieldIndex(self.fields.len());
+        let name = field.ident().to_string();
+
+        let register = self.model.registers.get_mut(*register_index).unwrap();
+
+        if register.fields.contains_key(&field.ident()) {
+            self.diagnostics
+                .insert(Diagnostic::exists(&field.ident(), context.clone()));
+        }
+
+        if let Some(group_index) = &group {
+            let group = self.model.field_groups.get_mut(group_index).unwrap();
+
+            group.members.insert(field.ident(), index);
+        }
+
+        register.add_child_index(index, field.ident());
+
+        self.fields.push(FieldNode {
+            parent: register_index,
+            field,
+            access,
+            group,
+        });
+
+        Entry {
+            model: self,
+            index,
+
+            context: context.and(name),
             _p: PhantomData,
         }
     }
@@ -145,24 +274,34 @@ impl Model {
         }
     }
 
-    pub fn try_get_peripheral(&self, index: PeripheralIndex) -> Option<View<'_, PeripheralNode>> {
-        let Some(node) = self.peripherals.get(&index) else {
-            None?
-        };
+    pub fn get_peripheral(&self, index: PeripheralIndex) -> View<'_, PeripheralNode> {
+        self.try_get_peripheral(index).unwrap()
+    }
 
+    pub fn try_get_peripheral(&self, index: PeripheralIndex) -> Option<View<'_, PeripheralNode>> {
         Some(View {
             model: self,
+            node: self.peripherals.get(&index)?,
             index,
-            node,
         })
     }
 
-    pub fn get_peripheral(&self, index: PeripheralIndex) -> View<'_, PeripheralNode> {
-        View {
+    pub fn get_peripheral_group(
+        &self,
+        index: PeripheralGroupIndex,
+    ) -> View<'_, PeripheralGroupNode> {
+        self.try_get_peripheral_group(index).unwrap()
+    }
+
+    pub fn try_get_peripheral_group(
+        &self,
+        index: PeripheralGroupIndex,
+    ) -> Option<View<'_, PeripheralGroupNode>> {
+        Some(View {
             model: self,
-            node: &self.peripherals[&index],
+            node: self.peripheral_groups.get(&index)?,
             index,
-        }
+        })
     }
 
     pub fn get_register(&self, index: RegisterIndex) -> View<'_, RegisterNode> {
@@ -173,12 +312,43 @@ impl Model {
         }
     }
 
+    pub fn get_register_group(&self, index: RegisterGroupIndex) -> View<'_, RegisterGroupNode> {
+        self.try_get_register_group(index).unwrap()
+    }
+
+    pub fn try_get_register_group(
+        &self,
+        index: RegisterGroupIndex,
+    ) -> Option<View<'_, RegisterGroupNode>> {
+        Some(View {
+            model: self,
+            node: self.register_groups.get(&index)?,
+            index,
+        })
+    }
+
     pub fn get_field(&self, index: FieldIndex) -> View<'_, FieldNode> {
         View {
             model: self,
             node: &self.fields[*index],
             index,
         }
+    }
+
+    pub fn get_field_group(&self, index: FieldGroupIndex) -> View<'_, FieldGroupNode> {
+        View {
+            model: self,
+            node: &self.field_groups[&index],
+            index,
+        }
+    }
+
+    pub fn try_get_field_group(&self, index: FieldGroupIndex) -> Option<View<'_, FieldGroupNode>> {
+        Some(View {
+            model: self,
+            node: self.field_groups.get(&index)?,
+            index,
+        })
     }
 
     pub fn get_variant(&self, index: VariantIndex) -> View<'_, VariantNode> {
@@ -226,6 +396,32 @@ impl Model {
         })
     }
 
+    pub fn peripheral_groups<'cx>(
+        &'cx self,
+    ) -> impl Iterator<Item = View<'cx, PeripheralGroupNode>> {
+        self.peripheral_groups.iter().map(|(index, node)| View {
+            model: self,
+            index: index.clone(),
+            node,
+        })
+    }
+
+    pub fn register_groups<'cx>(&'cx self) -> impl Iterator<Item = View<'cx, RegisterGroupNode>> {
+        self.register_groups.iter().map(|(index, node)| View {
+            model: self,
+            index: index.clone(),
+            node,
+        })
+    }
+
+    pub fn field_groups<'cx>(&'cx self) -> impl Iterator<Item = View<'cx, FieldGroupNode>> {
+        self.field_groups.iter().map(|(index, node)| View {
+            model: self,
+            index: index.clone(),
+            node,
+        })
+    }
+
     pub fn peripheral_count(&self) -> usize {
         self.peripherals.len()
     }
@@ -265,8 +461,8 @@ impl Model {
 
             if lhs.base_addr + lhs.width() > rhs.base_addr {
                 diagnostics.insert(Diagnostic::overlap(
-                    &lhs.module_name(),
-                    &rhs.module_name(),
+                    &lhs.ident(),
+                    &rhs.ident(),
                     &format!(
                         "0x{:08x}...0x{:08x}",
                         rhs.domain().start,
@@ -310,11 +506,25 @@ impl Model {
 // codegen
 impl Model {
     fn generate_peripherals(&self) -> TokenStream {
-        self.peripherals().fold(quote! {}, |mut acc, peripheral| {
-            acc.extend(peripheral.generate());
+        let standalone = self
+            .peripherals()
+            .filter(|peripheral| peripheral.group.is_none())
+            .fold(quote! {}, |mut acc, peripheral| {
+                acc.extend(peripheral.generate());
+
+                acc
+            });
+
+        let grouped = self.peripheral_groups().fold(quote! {}, |mut acc, group| {
+            acc.extend(group.generate());
 
             acc
-        })
+        });
+
+        quote! {
+            #standalone
+            #grouped
+        }
     }
 
     fn generate_peripherals_struct<'cx>(
@@ -322,16 +532,20 @@ impl Model {
         peripherals: &Vec<View<'cx, PeripheralNode>>,
     ) -> TokenStream {
         let mut fundamental_peripheral_idents = Vec::new();
+        let mut fundamental_peripheral_paths = Vec::new();
         let mut conditional_peripheral_idents = Vec::new();
+        let mut conditional_peripheral_paths = Vec::new();
 
         for peripheral in peripherals {
             if self
                 .entitlements
                 .contains_key(&EntitlementIndex::Peripheral(peripheral.index.clone()))
             {
-                conditional_peripheral_idents.push(peripheral.module_name());
+                conditional_peripheral_idents.push(peripheral.ident());
+                conditional_peripheral_paths.push(peripheral.path());
             } else {
-                fundamental_peripheral_idents.push(peripheral.module_name());
+                fundamental_peripheral_idents.push(peripheral.ident());
+                fundamental_peripheral_paths.push(peripheral.path());
             }
         }
 
@@ -339,24 +553,24 @@ impl Model {
             pub struct Dynamic {
                 // fundamental
                 #(
-                    pub #fundamental_peripheral_idents: #fundamental_peripheral_idents::Dynamic,
+                    pub #fundamental_peripheral_idents: #fundamental_peripheral_paths::Dynamic,
                 )*
 
                 // conditional
                 #(
-                    pub #conditional_peripheral_idents: #conditional_peripheral_idents::Masked,
+                    pub #conditional_peripheral_idents: #conditional_peripheral_paths::Masked,
                 )*
             }
 
             pub struct Reset {
                 // fundamental
                 #(
-                    pub #fundamental_peripheral_idents: #fundamental_peripheral_idents::Reset,
+                    pub #fundamental_peripheral_idents: #fundamental_peripheral_paths::Reset,
                 )*
 
                 // conditional
                 #(
-                    pub #conditional_peripheral_idents: #conditional_peripheral_idents::Masked,
+                    pub #conditional_peripheral_idents: #conditional_peripheral_paths::Masked,
                 )*
             }
 
@@ -419,9 +633,46 @@ impl ToTokens for Model {
     }
 }
 
+pub trait AddPeripheral {
+    /// Add a peripheral to the parent.
+    fn add_peripheral<'ncx>(&'ncx mut self, peripheral: Peripheral) -> PeripheralEntry<'ncx>;
+}
+
+pub trait AddRegister {
+    /// Add a register to the parent.
+    fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx>;
+}
+
+pub trait AddField {
+    /// Add a field to the parent with [`Read`](access::Read) access.
+    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read>;
+
+    /// Add a field to the parent with [`Write`](access::Write) access.
+    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write>;
+
+    /// Add a field to the parent with [`ReadWrite`](access::ReadWrite) access.
+    fn add_read_write_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::ReadWrite>;
+
+    /// Add a field to the parent with [`Store`](access::Store) access.
+    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store>;
+
+    /// Add a field to the parent with [`VolatileStore`](access::VolatileStore) access.
+    fn add_volatile_store_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::VolatileStore>;
+}
+
+pub type GroupEntry<'cx, I> = Entry<'cx, I, ()>;
 pub type PeripheralEntry<'cx> = Entry<'cx, PeripheralIndex, ()>;
+pub type PeripheralGroupEntry<'cx> = GroupEntry<'cx, PeripheralGroupIndex>;
 pub type RegisterEntry<'cx> = Entry<'cx, RegisterIndex, ()>;
+pub type RegisterGroupEntry<'cx> = GroupEntry<'cx, RegisterGroupIndex>;
 pub type FieldEntry<'cx, AccessModality> = Entry<'cx, FieldIndex, AccessModality>;
+pub type FieldGroupEntry<'cx> = GroupEntry<'cx, FieldGroupIndex>;
 pub type VariantEntry<'cx> = Entry<'cx, VariantIndex, ()>;
 
 #[derive(Debug)]
@@ -430,6 +681,12 @@ pub struct Entry<'cx, Index, Meta> {
     index: Index,
     context: Context,
     _p: PhantomData<Meta>,
+}
+
+impl AddPeripheral for Composition {
+    fn add_peripheral<'ncx>(&'ncx mut self, peripheral: Peripheral) -> PeripheralEntry<'ncx> {
+        self.add_peripheral_inner(peripheral, None)
+    }
 }
 
 impl<'cx, Index, Meta> Entry<'cx, Index, Meta> {
@@ -478,36 +735,32 @@ impl<'cx, Index, Meta> Entry<'cx, Index, Meta> {
     }
 }
 
-impl<'cx> Entry<'cx, PeripheralIndex, ()> {
-    /// Add a register to the peripheral.
-    pub fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
-        let index = RegisterIndex(self.model.registers.len());
-        let name = register.module_name().to_string();
+impl<'cx> PeripheralEntry<'cx> {
+    pub fn add_group<'ncx>(&'ncx mut self, name: impl AsRef<str>) -> RegisterGroupEntry<'ncx> {
+        let ident = Ident::new(name.as_ref(), Span::call_site());
+        let index = RegisterGroupIndex(ident.clone());
 
-        // update parent
-        let peripheral = self.model.peripherals.get_mut(&self.index).unwrap();
-
-        let exists = peripheral.registers.contains_key(&register.module_name());
-
-        peripheral.add_child_index(index, register.module_name());
-
-        if exists {
+        if self.model.register_groups.contains_key(&index) {
             self.model
                 .diagnostics
-                .insert(Diagnostic::exists(&name, self.context.clone()));
+                .insert(Diagnostic::exists(&name.as_ref(), self.context.clone()));
         }
 
-        // insert child
-        self.model.registers.push(RegisterNode {
-            parent: self.index.clone(),
-            register,
-            fields: Default::default(),
-        });
+        self.model.register_groups.insert(
+            index.clone(),
+            GroupNode {
+                parent: self.index.clone(),
+                group: Group {
+                    ident: ident.clone(),
+                },
+                members: Default::default(),
+            },
+        );
 
         Entry {
             model: self.model,
             index,
-            context: self.context.clone().and(name),
+            context: self.context.clone().and(ident.to_string()),
             _p: PhantomData,
         }
     }
@@ -533,93 +786,41 @@ impl<'cx> Entry<'cx, PeripheralIndex, ()> {
     }
 }
 
-impl<'cx> Entry<'cx, RegisterIndex, ()> {
-    fn new_index_and_add_to_parent(&mut self, field: &Field) -> FieldIndex {
-        let index = FieldIndex(self.model.fields.len());
+impl<'cx> AddRegister for PeripheralEntry<'cx> {
+    fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
+        self.model
+            .add_register_inner(register, self.index.clone(), None, self.context.clone())
+    }
+}
 
-        // update parent
-        let register = self.model.registers.get_mut(*self.index).unwrap();
+impl<'cx> RegisterEntry<'cx> {
+    pub fn add_group<'ncx>(&'ncx mut self, name: impl AsRef<str>) -> FieldGroupEntry<'ncx> {
+        let ident = Ident::new(name.as_ref(), Span::call_site());
+        let index = FieldGroupIndex(ident.clone());
 
-        let exists = register.fields.contains_key(&field.module_name());
-
-        register.add_child_index(index, field.module_name());
-
-        if exists {
-            self.model.diagnostics.insert(Diagnostic::exists(
-                &field.module_name(),
-                self.context.clone(),
-            ));
+        if self.model.field_groups.contains_key(&index) {
+            self.model
+                .diagnostics
+                .insert(Diagnostic::exists(&name.as_ref(), self.context.clone()));
         }
 
-        index
-    }
+        self.model.field_groups.insert(
+            index.clone(),
+            GroupNode {
+                parent: self.index,
+                group: Group {
+                    ident: ident.clone(),
+                },
+                members: Default::default(),
+            },
+        );
 
-    fn insert_child_with_access(&mut self, field: Field, access: Access) {
-        self.model.fields.push(FieldNode {
-            parent: self.index,
-            field,
-            access,
-        });
-    }
-
-    fn make_child_entry<'ncx, Meta>(
-        &'ncx mut self,
-        index: FieldIndex,
-        name: String,
-    ) -> FieldEntry<'ncx, Meta> {
         Entry {
             model: self.model,
             index,
-
-            context: self.context.clone().and(name),
+            context: self.context.clone().and(ident.to_string()),
             _p: PhantomData,
         }
-    }
-
-    /// Add a field to the register with [`Read`](access::Read) access.
-    pub fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
-        let index = self.new_index_and_add_to_parent(&field);
-        let name = field.module_name().to_string();
-        self.insert_child_with_access(field, Access::Read(Default::default()));
-        self.make_child_entry(index, name)
-    }
-
-    /// Add a field to the register with [`Write`](access::Write) access.
-    pub fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
-        let index = self.new_index_and_add_to_parent(&field);
-        let name = field.module_name().to_string();
-        self.insert_child_with_access(field, Access::Write(Default::default()));
-        self.make_child_entry(index, name)
-    }
-
-    /// Add a field to the register with [`ReadWrite`](access::ReadWrite) access.
-    pub fn add_read_write_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> FieldEntry<'ncx, access::ReadWrite> {
-        let index = self.new_index_and_add_to_parent(&field);
-        let name = field.module_name().to_string();
-        self.insert_child_with_access(field, Access::ReadWrite(Default::default()));
-        self.make_child_entry(index, name)
-    }
-
-    /// Add a field to the register with [`Store`](access::Store) access.
-    pub fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
-        let index = self.new_index_and_add_to_parent(&field);
-        let name = field.module_name().to_string();
-        self.insert_child_with_access(field, Access::Store(Default::default()));
-        self.make_child_entry(index, name)
-    }
-
-    /// Add a field to the register with [`VolatileStore`](access::VolatileStore) access.
-    pub fn add_volatile_store_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> FieldEntry<'ncx, access::VolatileStore> {
-        let index = self.new_index_and_add_to_parent(&field);
-        let name = field.module_name().to_string();
-        self.insert_child_with_access(field, Access::VolatileStore(Default::default()));
-        self.make_child_entry(index, name)
     }
 
     pub fn docs<I>(self, docs: I) -> Self
@@ -637,6 +838,64 @@ impl<'cx> Entry<'cx, RegisterIndex, ()> {
         node.register = f(node.register.clone());
 
         self
+    }
+}
+
+impl<'cx> AddField for RegisterEntry<'cx> {
+    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
+        self.model.add_field_inner(
+            field,
+            Access::Read(Default::default()),
+            self.index,
+            None,
+            self.context.clone(),
+        )
+    }
+
+    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
+        self.model.add_field_inner(
+            field,
+            Access::Write(Default::default()),
+            self.index,
+            None,
+            self.context.clone(),
+        )
+    }
+
+    fn add_read_write_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::ReadWrite> {
+        self.model.add_field_inner(
+            field,
+            Access::ReadWrite(Default::default()),
+            self.index,
+            None,
+            self.context.clone(),
+        )
+    }
+
+    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
+        self.model.add_field_inner(
+            field,
+            Access::Store(Default::default()),
+            self.index,
+            None,
+            self.context.clone(),
+        )
+    }
+
+    fn add_volatile_store_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::VolatileStore> {
+        self.model.add_field_inner(
+            field,
+            Access::VolatileStore(Default::default()),
+            self.index,
+            None,
+            self.context.clone(),
+        )
     }
 }
 
@@ -806,6 +1065,96 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
                 .or_default()
                 .insert(parent_index);
         }
+    }
+}
+
+// group entries
+
+impl<'cx> AddPeripheral for PeripheralGroupEntry<'cx> {
+    fn add_peripheral<'ncx>(&'ncx mut self, peripheral: Peripheral) -> PeripheralEntry<'ncx> {
+        self.model
+            .add_peripheral_inner(peripheral, Some(self.index.clone()))
+    }
+}
+
+impl<'cx> AddRegister for RegisterGroupEntry<'cx> {
+    fn add_register<'ncx>(&'ncx mut self, register: Register) -> RegisterEntry<'ncx> {
+        let group = self.model.get_register_group(self.index.clone());
+
+        self.model.add_register_inner(
+            register,
+            group.parent.clone(),
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
+    }
+}
+
+impl<'cx> AddField for FieldGroupEntry<'cx> {
+    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
+        let group = self.model.get_field_group(self.index.clone());
+
+        self.model.add_field_inner(
+            field,
+            Access::Read(Default::default()),
+            group.parent,
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
+    }
+
+    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
+        let group = self.model.get_field_group(self.index.clone());
+
+        self.model.add_field_inner(
+            field,
+            Access::Write(Default::default()),
+            group.parent,
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
+    }
+
+    fn add_read_write_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::ReadWrite> {
+        let group = self.model.get_field_group(self.index.clone());
+
+        self.model.add_field_inner(
+            field,
+            Access::ReadWrite(Default::default()),
+            group.parent,
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
+    }
+
+    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
+        let group = self.model.get_field_group(self.index.clone());
+
+        self.model.add_field_inner(
+            field,
+            Access::Store(Default::default()),
+            group.parent,
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
+    }
+
+    fn add_volatile_store_field<'ncx>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, access::VolatileStore> {
+        let group = self.model.get_field_group(self.index.clone());
+
+        self.model.add_field_inner(
+            field,
+            Access::VolatileStore(Default::default()),
+            group.parent,
+            Some(self.index.clone()),
+            self.context.clone(),
+        )
     }
 }
 

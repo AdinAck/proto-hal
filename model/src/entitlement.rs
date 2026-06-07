@@ -67,7 +67,7 @@ impl EntitlementIndex {
                 vec![
                     model
                         .get_peripheral(peripheral_index.clone())
-                        .module_name()
+                        .ident()
                         .to_string(),
                 ]
             }
@@ -79,9 +79,9 @@ impl EntitlementIndex {
                 let peripheral = model.get_peripheral(register.parent.clone());
 
                 vec![
-                    peripheral.module_name().to_string(),
-                    register.module_name().to_string(),
-                    field.module_name().to_string(),
+                    peripheral.ident().to_string(),
+                    register.ident().to_string(),
+                    field.ident().to_string(),
                 ]
             }
             EntitlementIndex::Variant(variant_index) => {
@@ -91,10 +91,10 @@ impl EntitlementIndex {
                 let peripheral = model.get_peripheral(register.parent.clone());
 
                 vec![
-                    peripheral.module_name().to_string(),
-                    register.module_name().to_string(),
-                    field.module_name().to_string(),
-                    variant.module_name().to_string(),
+                    peripheral.ident().to_string(),
+                    register.ident().to_string(),
+                    field.ident().to_string(),
+                    variant.ident().to_string(),
                 ]
             }
         })
@@ -106,6 +106,7 @@ mod tests {
     use crate::{
         Composition, Entitlement, Field, Model, Peripheral, Register, Variant,
         entitlement::{Pattern, Space},
+        prelude::*,
     };
 
     mod patterns {

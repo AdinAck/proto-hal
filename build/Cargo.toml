@@ -7,7 +7,7 @@ edition = "2024"
 colored = { workspace = true }
 derive_more.workspace = true
 indexmap = { workspace = true }
-Inflector = { workspace = true }
+heck = { workspace = true }
 model = { package = "proto-hal-model", path = "../model", default-features = false }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }

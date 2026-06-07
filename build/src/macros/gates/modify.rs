@@ -88,12 +88,10 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     let return_init = fragments::read_return_init(&return_rank);
     let return_idents = match return_rank {
         ReturnRank::Empty => None,
-        ReturnRank::Field { field, .. } => Some(field.module_name().to_token_stream()),
-        ReturnRank::Register { register, .. } => Some(register.module_name().to_token_stream()),
+        ReturnRank::Field { field, .. } => Some(field.ident().to_token_stream()),
+        ReturnRank::Register { register, .. } => Some(register.ident().to_token_stream()),
         ReturnRank::Peripheral(map) => {
-            let idents = map
-                .values()
-                .map(|(_, peripheral, ..)| peripheral.module_name());
+            let idents = map.values().map(|(_, peripheral, ..)| peripheral.ident());
 
             Some(quote! { #(#idents),* })
         }
@@ -119,7 +117,6 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
         let peripheral_path = peripheral_item.path();
 
         for register_item in peripheral_item.registers().values() {
-            let register_ident = register_item.ident();
             let register_unique_ident =
                 unique_register_ident(register_item.peripheral(), register_item.register());
             let addr = fragments::register_address(
@@ -218,27 +215,27 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
 
                 let input_ty = fragments::input_ty(
                     peripheral_path,
-                    register_item.ident(),
-                    field_item.ident(),
+                    register_item.path(),
+                    field_item.path(),
                     field_item.field(),
                     field_generics.input.as_ref(),
                 );
 
                 let transition_return_ty = fragments::transition_return_ty(
                     peripheral_path,
-                    register_item.ident(),
+                    register_item.path(),
                     field_item.entry(),
                     field_item.field(),
-                    field_item.ident(),
+                    field_item.path(),
                     field_generics.output.as_ref(),
                 );
 
                 if let Some(local_constraints) = fragments::constraints(
                     &input,
                     peripheral_path,
-                    register_ident,
+                    register_item.path(),
                     binding,
-                    field_item.ident(),
+                    field_item.path(),
                     field_item.field(),
                     field_generics.input.as_ref(),
                     field_generics.output.as_ref(),
@@ -272,8 +269,8 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                     field_item.field().access.get_write().map(|write| {
                         fragments::write_value_ty(
                             peripheral_path,
-                            register_item.ident(),
-                            field_item.ident(),
+                            register_item.path(),
+                            field_item.path(),
                             write,
                         )
                     })
@@ -290,8 +287,8 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
 
                 arguments.push(fragments::modify_argument(
                     peripheral_path,
-                    register_item.ident(),
-                    field_item.ident(),
+                    register_item.path(),
+                    field_item.path(),
                     field_item.field(),
                     field_item.entry(),
                     return_idents.as_ref(),

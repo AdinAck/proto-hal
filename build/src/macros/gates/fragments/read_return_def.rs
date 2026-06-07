@@ -9,7 +9,7 @@ pub fn read_return_def<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
         ReturnRank::Empty | ReturnRank::Field { .. } => None,
         ReturnRank::Register {
             peripheral_path,
-            register_ident,
+            register_path: register_ident,
             register,
             fields,
             ..
@@ -24,9 +24,8 @@ pub fn read_return_def<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                 .values()
                 .map(|(peripheral_path, peripheral, registers)| {
                     let peripheral_ty = peripheral.type_name();
-                    let register_idents = registers
-                        .values()
-                        .map(|(_, register, ..)| register.module_name());
+                    let register_idents =
+                        registers.values().map(|(_, register, ..)| register.ident());
 
                     let (register_tys, register_defs) = registers
                         .values()

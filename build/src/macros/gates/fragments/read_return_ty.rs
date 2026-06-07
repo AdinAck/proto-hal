@@ -13,8 +13,8 @@ pub fn read_return_ty<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             ..
         } => Some(read_value_ty(
             peripheral_path,
-            &register.ident,
-            &field.ident,
+            &register.path_segment(),
+            &field.path_segment(),
             field.access.get_read()?,
         )),
         ReturnRank::Register { register, .. } => {
