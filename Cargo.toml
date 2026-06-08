@@ -20,3 +20,4 @@ proto-hal = { path = "proto-hal" }
 proto-hal-build = { path = "build" }
 proto-hal-model = { path = "model" }
 proto-hal-macros = { path = "macros" }
+proto-hal-model-macros = { path = "model-macros" }
