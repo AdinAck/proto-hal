@@ -21,3 +21,11 @@ proto-hal-build = { path = "build" }
 proto-hal-model = { path = "model" }
 proto-hal-macros = { path = "macros" }
 proto-hal-model-macros = { path = "model-macros" }
+
+[patch."https://github.com/adinack/cortex-m-spa"]
+cortex-m-spa = { path = "/Users/adinack/Projects/cortex-m-spa/out" }
+cortex-m-spa-model = { path = "/Users/adinack/Projects/cortex-m-spa/model" }
+
+[patch."https://github.com/adinack/stm32-spa"]
+stm32-spa = { path = "/Users/adinack/Projects/stm32-spa/out" }
+stm32-spa-model = { path = "/Users/adinack/Projects/stm32-spa/model" }
