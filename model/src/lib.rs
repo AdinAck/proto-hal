@@ -1,9 +1,11 @@
 pub mod diagnostic;
 pub mod entitlement;
 pub mod field;
+pub mod group;
 pub mod interrupts;
 pub mod model;
 pub mod peripheral;
+pub mod prelude;
 pub mod register;
 pub mod validation;
 pub mod variant;

@@ -10,17 +10,17 @@ use crate::macros::parsing::{
 
 pub fn transition_return_ty(
     peripheral_path: &Path,
-    register_ident: &Ident,
+    register_path: &Path,
     entry: &GateEntry,
     field: &FieldNode,
-    field_ident: &Ident,
+    field_path: &Path,
     output_generic: Option<&Ident>,
 ) -> Option<TokenStream> {
     let ty_name = field.type_name();
 
     if let Some(output_generic) = output_generic {
         return Some(quote! {
-            #peripheral_path::#register_ident::#field_ident::#ty_name<#output_generic>
+            #peripheral_path::#register_path::#field_path::#ty_name<#output_generic>
         });
     }
 
@@ -40,7 +40,7 @@ pub fn transition_return_ty(
                         syntax::Transition::Lit(..) => variant.type_name().to_token_stream(),
                     };
                     quote! {
-                        #peripheral_path::#register_ident::#field_ident::#ty_name<#peripheral_path::#register_ident::#field_ident::#ty>
+                        #peripheral_path::#register_path::#field_path::#ty_name<#peripheral_path::#register_path::#field_path::#ty>
                     }
                 }
                 semantic::Transition::Expr(expr) => {
@@ -51,10 +51,10 @@ pub fn transition_return_ty(
                     let state = if let Some(numeric_ty) = numeric_ty {
                         quote! { ::proto_hal::stasis::#numeric_ty<{#expr}> }
                     } else {
-                        quote! { #peripheral_path::#register_ident::#field_ident::#expr }
+                        quote! { #peripheral_path::#register_path::#field_path::#expr }
                     };
 
-                    quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#state> }
+                    quote! { #peripheral_path::#register_path::#field_path::#ty_name<#state> }
                 }
                 semantic::Transition::Lit(lit_int) => {
                     let state = if let Some(numeric_ty) = numeric_ty {
@@ -65,7 +65,7 @@ pub fn transition_return_ty(
                         quote! { #lit_int }
                     };
 
-                    quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#state> }
+                    quote! { #peripheral_path::#register_path::#field_path::#ty_name<#state> }
                 }
             }
         }

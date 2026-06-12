@@ -4,10 +4,7 @@ use model::{
     peripheral::PeripheralNode,
     register::RegisterNode,
 };
-use proc_macro2::Span;
-use syn::{
-    Ident, Path, parse_quote, punctuated::Punctuated, spanned::Spanned as _, token::PathSep,
-};
+use syn::{Ident, Path, parse_quote, punctuated::Punctuated, token::PathSep};
 
 use crate::macros::{
     diagnostic::{Diagnostic, Diagnostics},
@@ -33,10 +30,13 @@ where
 
     let path = &tree.path;
     let mut segments = path.segments.iter().map(|segment| &segment.ident);
-    let (peripheral, peripheral_path, peripheral_ident) =
-        fuzzy_find_peripheral(model, &mut segments, path.span())?;
 
-    let peripheral_path: Path = {
+    let (peripheral_path, peripheral_ident, peripheral) = take_until(&mut segments, |ident| {
+        model.try_get_peripheral(ident.clone().into())
+    })?
+    .expect("node path should not be empty");
+
+    let peripheral_path = {
         let leading_colon = path.leading_colon;
         parse_quote! { #leading_colon #peripheral_path }
     };
@@ -59,7 +59,9 @@ where
             registers: Default::default(),
         });
 
-    let Some(register_ident) = segments.next() else {
+    let Some((register_path, register_ident, register)) =
+        take_until(&mut segments, |ident| peripheral.try_get_register(ident))?
+    else {
         // path ends on peripheral item
         match &tree.node {
             Node::Leaf(entry) => {
@@ -89,9 +91,9 @@ where
         };
     };
 
-    let register = find_register(register_ident, &peripheral)?;
-
-    let Some(field_ident) = segments.next() else {
+    let Some((field_path, field_ident, field)) =
+        take_until(&mut segments, |ident| register.try_get_field(ident))?
+    else {
         // path ends on register item
 
         match &tree.node {
@@ -99,6 +101,7 @@ where
                 peripheral_item.registers.insert(
                     RegisterKey::from_model(&register),
                     RegisterItem {
+                        path: register_path,
                         ident: register_ident,
                         peripheral,
                         register,
@@ -114,6 +117,7 @@ where
                         child,
                         peripheral.clone(),
                         register_ident,
+                        register_path.clone(),
                         register.clone(),
                     ) {
                         diagnostics.extend(e);
@@ -134,8 +138,11 @@ where
         &mut peripheral_item.registers,
         tree,
         field_ident,
+        field_path,
+        field,
         peripheral,
         register_ident,
+        register_path,
         register,
     )?;
 
@@ -160,19 +167,24 @@ where
     let path = &tree.path;
     let mut segments = path.segments.iter().map(|segment| &segment.ident);
 
-    let register_ident = segments.next().expect("expected at least one path segment");
+    let (register_path, register_ident, register) =
+        take_until(&mut segments, |ident| peripheral.try_get_register(ident))?
+            .expect("node path should not be empty");
 
-    let register = find_register(register_ident, &peripheral)?;
-
-    if let Some(field_ident) = segments.next() {
+    if let Some((field_path, field_ident, field)) =
+        take_until(&mut segments, |ident| register.try_get_field(ident))?
+    {
         // single field
         put_field(
             model,
             register_map,
             tree,
             field_ident,
+            field_path,
+            field,
             peripheral,
             register_ident,
+            register_path,
             register,
         )?;
     } else {
@@ -187,6 +199,7 @@ where
                         child,
                         peripheral.clone(),
                         register_ident,
+                        register_path.clone(),
                         register.clone(),
                     ) {
                         diagnostics.extend(e);
@@ -198,6 +211,7 @@ where
                 register_map.insert(
                     RegisterKey::from_model(&register),
                     RegisterItem {
+                        path: register_path,
                         ident: register_ident,
                         peripheral,
                         register,
@@ -221,23 +235,29 @@ fn parse_field<'cx, EntryPolicy>(
     tree: &'cx Tree,
     peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
+    register_path: Path,
     register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
-    let field_segment = tree
-        .path
-        .require_ident()
-        .map_err(Into::<Diagnostic>::into)?;
+    let path = &tree.path;
+    let mut segments = path.segments.iter().map(|segment| &segment.ident);
+
+    let (field_path, field_ident, field) =
+        take_until(&mut segments, |ident| register.try_get_field(ident))?
+            .expect("node path should not be empty");
 
     put_field(
         model,
         register_map,
         tree,
-        field_segment,
+        field_ident,
+        field_path,
+        field,
         peripheral,
         register_ident,
+        register_path,
         register,
     )
 }
@@ -248,21 +268,23 @@ fn put_field<'cx, EntryPolicy>(
     register_map: &mut RegisterMap<'cx, EntryPolicy>,
     tree: &'cx Tree,
     field_ident: &'cx Ident,
+    field_path: Path,
+    field: View<'cx, FieldNode>,
     peripheral: View<'cx, PeripheralNode>,
     register_ident: &'cx Ident,
+    register_path: Path,
     register: View<'cx, RegisterNode>,
 ) -> Result<(), Diagnostics>
 where
     EntryPolicy: Refine<'cx, Input = FieldEntry<'cx>>,
 {
-    let field = find_field(field_ident, &register)?;
-
     match &tree.node {
         Node::Branch(..) => Err(Diagnostic::path_cannot_contine(&tree.path, field_ident))?,
         Node::Leaf(entry) => {
             if register_map
                 .entry(RegisterKey::from_model(&register))
                 .or_insert(RegisterItem {
+                    path: register_path,
                     ident: register_ident,
                     peripheral,
                     register,
@@ -272,6 +294,7 @@ where
                 .insert(
                     FieldKey::from_model(&field),
                     FieldItem {
+                        path: field_path,
                         ident: field_ident,
                         entry: EntryPolicy::refine(
                             field_ident,
@@ -290,37 +313,32 @@ where
     Ok(())
 }
 
-fn fuzzy_find_peripheral<'cx>(
-    model: &'cx Model,
-    path: &mut impl Iterator<Item = &'cx Ident>,
-    span: Span,
-) -> Result<(View<'cx, PeripheralNode>, Path, &'cx Ident), Diagnostic> {
-    let mut peripheral_path = Punctuated::<_, PathSep>::new();
+/// Take from a tree node path until the provided predicate is met, or the path ends.
+///
+/// If the predicate is satisfied, the path region consumed up to and including the satisfying ident is returned along
+/// with the satisfying ident.
+///
+/// If the predicate is *not* satisfied, and the path region consumed is empty, `None` is returned.
+///
+/// If the predicate is *not* satisfied, and the path region consumed is *not* empty, an "item not found" diagnostic is
+/// returned.
+fn take_until<'cx, T>(
+    segments: &mut impl Iterator<Item = &'cx Ident>,
+    predicate: impl Fn(&Ident) -> Option<T>,
+) -> Result<Option<(Path, &'cx Ident, T)>, Diagnostic> {
+    let mut path = Punctuated::<_, PathSep>::new();
 
-    for ident in path {
-        peripheral_path.push(ident);
-        if let Some(peripheral) = model.try_get_peripheral(ident.clone().into()) {
-            return Ok((peripheral, parse_quote! { #peripheral_path }, ident));
+    for segment in segments {
+        path.push(segment);
+
+        if let Some(t) = predicate(segment) {
+            return Ok(Some((parse_quote! { #path }, segment, t)));
         }
     }
 
-    Err(Diagnostic::expected_peripheral_path(&span))
-}
-
-fn find_register<'cx>(
-    ident: &Ident,
-    peripheral: &View<'cx, PeripheralNode>,
-) -> Result<View<'cx, RegisterNode>, Diagnostic> {
-    peripheral
-        .try_get_register(ident)
-        .ok_or(Diagnostic::register_not_found(ident, peripheral))
-}
-
-fn find_field<'cx>(
-    ident: &Ident,
-    register: &View<'cx, RegisterNode>,
-) -> Result<View<'cx, FieldNode>, Diagnostic> {
-    register
-        .try_get_field(ident)
-        .ok_or(Diagnostic::field_not_found(ident, register))
+    if path.is_empty() {
+        Ok(None)
+    } else {
+        Err(Diagnostic::item_not_found(&path))
+    }
 }

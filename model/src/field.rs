@@ -4,16 +4,17 @@ pub mod numericity;
 use std::ops::Range;
 
 use derive_more::{AsRef, Deref};
-use inflector::Inflector as _;
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident, LitInt};
+use syn::{Ident, LitInt, Path, parse_quote};
 
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
     entitlement::{self, codegen::generate_entitlements},
     field::{access::Access, numericity::Numericity},
+    group::{FieldGroupIndex, FieldGroupNode},
     model::View,
     register::RegisterIndex,
 };
@@ -30,6 +31,7 @@ pub struct FieldNode {
     #[as_ref]
     pub(super) field: Field,
     pub access: Access,
+    pub(super) group: Option<FieldGroupIndex>,
 }
 
 impl Node for FieldNode {
@@ -105,6 +107,30 @@ impl<'cx> View<'cx, FieldNode> {
         }
     }
 
+    pub fn path(&self) -> TokenStream {
+        let parents = self.parents().1.path();
+        let segment = self.path_segment();
+
+        quote! { #parents::#segment }
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, FieldGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_field_group(group.clone()))
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let new_context = context.clone().and(self.ident.clone().to_string());
         let mut diagnostics = Diagnostics::new();
@@ -172,9 +198,10 @@ impl<'cx> View<'cx, FieldNode> {
         // TODO: these are old...
         let reserved = ["reset", "_new_state", "_old_state"];
 
-        if reserved.contains(&self.module_name().to_string().as_str()) {
+        // TODO: check module name
+        if reserved.contains(&self.ident().to_string().as_str()) {
             diagnostics.insert(Diagnostic::reserved(
-                &self.module_name(),
+                &self.ident(),
                 reserved.iter(),
                 new_context.clone(),
             ));
@@ -267,18 +294,12 @@ impl Field {
         }
     }
 
-    pub fn module_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_lowercase().as_str(),
-            Span::call_site(),
-        )
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_pascal_case().as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
     }
 
     /// The domain of the parent register in which the field occupies.
@@ -377,7 +398,7 @@ impl<'cx> View<'cx, FieldNode> {
 
             let is_variant_idents = variants
                 .iter()
-                .map(|variant| format_ident!("is_{}", variant.module_name()));
+                .map(|variant| format_ident!("is_{}", variant.ident()));
 
             quote! {
                 #[derive(Clone, Copy)]

@@ -7,7 +7,7 @@ resolver = "2"
 colored = "3.0.0"
 derive_more = { version = "2.0.1", features = ["as_ref", "deref", "deref_mut", "from"] }
 indexmap = "2.11.4"
-Inflector = "0.11.4"
+heck = "0.5.0"
 proc-macro2 = { version = "1.0.101", features = ["span-locations"] }
 quote = "1.0.42"
 syn = { version = "2.0.106", features = ["full", "extra-traits"] }
@@ -21,3 +21,11 @@ proto-hal-build = { path = "build" }
 proto-hal-model = { path = "model" }
 proto-hal-macros = { path = "macros" }
 proto-hal-model-macros = { path = "model-macros" }
+
+[patch."https://github.com/adinack/cortex-m-spa"]
+cortex-m-spa = { path = "/Users/adinack/Projects/cortex-m-spa/out" }
+cortex-m-spa-model = { path = "/Users/adinack/Projects/cortex-m-spa/model" }
+
+[patch."https://github.com/adinack/stm32-spa"]
+stm32-spa = { path = "/Users/adinack/Projects/stm32-spa/out" }
+stm32-spa-model = { path = "/Users/adinack/Projects/stm32-spa/model" }

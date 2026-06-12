@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use model::{field::FieldNode, model::View, peripheral::PeripheralNode, register::RegisterNode};
-use syn::{Ident, Path};
+use syn::Path;
 
 use crate::macros::parsing::semantic::{
     self, FieldEntry, FieldItem, FieldKey, PeripheralKey, RegisterKey,
@@ -9,8 +9,8 @@ use crate::macros::parsing::semantic::{
 
 type PeripheralMap<'cx> =
     IndexMap<PeripheralKey, (Path, View<'cx, PeripheralNode>, RegisterMap<'cx>)>;
-type RegisterMap<'cx> = IndexMap<RegisterKey, (Ident, View<'cx, RegisterNode>, FieldMap<'cx>)>;
-type FieldMap<'cx> = IndexMap<FieldKey, (Ident, View<'cx, FieldNode>)>;
+type RegisterMap<'cx> = IndexMap<RegisterKey, (Path, View<'cx, RegisterNode>, FieldMap<'cx>)>;
+type FieldMap<'cx> = IndexMap<FieldKey, (Path, View<'cx, FieldNode>)>;
 
 /// The rank of the structure to be returned from the gate.
 pub enum ReturnRank<'cx> {
@@ -22,10 +22,10 @@ pub enum ReturnRank<'cx> {
         peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
         register_key: RegisterKey,
-        register_ident: Ident,
+        register_path: Path,
         register: View<'cx, RegisterNode>,
         field_key: FieldKey,
-        field_ident: Ident,
+        field_path: Path,
         field: View<'cx, FieldNode>,
     },
     /// Only one register is present.
@@ -33,7 +33,7 @@ pub enum ReturnRank<'cx> {
         peripheral_key: PeripheralKey,
         peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
-        register_ident: Ident,
+        register_path: Path,
         register_key: RegisterKey,
         register: View<'cx, RegisterNode>,
         fields: FieldMap<'cx>,
@@ -50,10 +50,10 @@ impl<'cx> ReturnRank<'cx> {
         peripheral_path: Path,
         peripheral: View<'cx, PeripheralNode>,
         register_key: RegisterKey,
-        register_ident: Ident,
+        register_path: Path,
         register: View<'cx, RegisterNode>,
         field_key: FieldKey,
-        field_ident: Ident,
+        field_path: Path,
         field: View<'cx, FieldNode>,
     ) -> Self {
         match self {
@@ -67,10 +67,10 @@ impl<'cx> ReturnRank<'cx> {
                     peripheral_path,
                     peripheral,
                     register_key,
-                    register_ident,
+                    register_path,
                     register,
                     field_key,
-                    field_ident,
+                    field_path,
                     field,
                 }
             }
@@ -79,10 +79,10 @@ impl<'cx> ReturnRank<'cx> {
                 peripheral_path: existing_peripheral_path,
                 peripheral: existing_peripheral,
                 register_key: existing_register_key,
-                register_ident: existing_register_ident,
+                register_path: existing_register_path,
                 register: existing_register,
                 field_key: existing_field_key,
-                field_ident: existing_field_ident,
+                field_path: existing_field_path,
                 field: existing_field,
             } => {
                 // the new field is in:
@@ -97,11 +97,11 @@ impl<'cx> ReturnRank<'cx> {
                         peripheral_path,
                         peripheral,
                         register_key,
-                        register_ident,
+                        register_path,
                         register,
                         fields: IndexMap::from([
-                            (existing_field_key, (existing_field_ident, existing_field)),
-                            (field_key, (field_ident, field)),
+                            (existing_field_key, (existing_field_path, existing_field)),
+                            (field_key, (field_path, field)),
                         ]),
                     }
                 } else {
@@ -118,11 +118,11 @@ impl<'cx> ReturnRank<'cx> {
                             IndexMap::from([(
                                 existing_register_key,
                                 (
-                                    existing_register_ident,
+                                    existing_register_path,
                                     existing_register,
                                     IndexMap::from([(
                                         existing_field_key,
-                                        (existing_field_ident, existing_field),
+                                        (existing_field_path, existing_field),
                                     )]),
                                 ),
                             )]),
@@ -136,9 +136,9 @@ impl<'cx> ReturnRank<'cx> {
                         .2
                         .entry(register_key)
                         .or_insert((
-                            register_ident,
+                            register_path,
                             register,
-                            IndexMap::from([(field_key, (field_ident, field))]),
+                            IndexMap::from([(field_key, (field_path, field))]),
                         ));
 
                     ReturnRank::Peripheral(map)
@@ -149,7 +149,7 @@ impl<'cx> ReturnRank<'cx> {
                 peripheral_path: existing_peripheral_path,
                 peripheral: existing_peripheral,
                 register_key: existing_register_key,
-                register_ident: existing_register_ident,
+                register_path: existing_register_ident,
                 register: existing_register,
                 fields: mut existing_fields,
             } => {
@@ -160,14 +160,14 @@ impl<'cx> ReturnRank<'cx> {
                 if register_key == existing_register_key {
                     // 1. the field is in the *existing* register, promote to Kind::Register
 
-                    existing_fields.insert(field_key, (field_ident, field));
+                    existing_fields.insert(field_key, (field_path, field));
 
                     ReturnRank::Register {
                         peripheral_key: existing_peripheral_key,
                         peripheral_path: existing_peripheral_path,
                         peripheral: existing_peripheral,
                         register_key: existing_register_key,
-                        register_ident: existing_register_ident,
+                        register_path: existing_register_ident,
                         register: existing_register,
                         fields: existing_fields,
                     }
@@ -197,9 +197,9 @@ impl<'cx> ReturnRank<'cx> {
                         .2
                         .entry(register_key)
                         .or_insert((
-                            register_ident,
+                            register_path,
                             register,
-                            IndexMap::from([(field_key, (field_ident, field))]),
+                            IndexMap::from([(field_key, (field_path, field))]),
                         ));
 
                     ReturnRank::Peripheral(map)
@@ -217,9 +217,9 @@ impl<'cx> ReturnRank<'cx> {
                     .2
                     .entry(register_key)
                     .or_insert((
-                        register_ident,
+                        register_path,
                         register,
-                        IndexMap::from([(field_key, (field_ident, field))]),
+                        IndexMap::from([(field_key, (field_path, field))]),
                     ));
 
                 ReturnRank::Peripheral(map)
@@ -247,10 +247,10 @@ impl<'cx> ReturnRank<'cx> {
                             peripheral_item.path().clone(),
                             peripheral_item.peripheral().clone(),
                             register_key.clone(),
-                            (*register_item.ident()).clone(),
+                            register_item.path().clone(),
                             register_item.register().clone(),
                             field_key.clone(),
-                            (*field_item.ident()).clone(),
+                            field_item.path().clone(),
                             field_item.field().clone(),
                         );
                     }
@@ -284,10 +284,10 @@ impl<'cx> ReturnRank<'cx> {
                                 peripheral_item.path().clone(),
                                 peripheral_item.peripheral().clone(),
                                 RegisterKey::from_model(&register),
-                                register.module_name(),
+                                register.path_segment(),
                                 register.clone(),
                                 FieldKey::from_model(&field),
-                                field.module_name(),
+                                field.path_segment(),
                                 field,
                             );
                         }
@@ -305,10 +305,10 @@ impl<'cx> ReturnRank<'cx> {
                                 peripheral_item.path().clone(),
                                 peripheral_item.peripheral().clone(),
                                 RegisterKey::from_model(register_item.register()),
-                                (*register_item.ident()).clone(),
+                                register_item.path().clone(),
                                 register_item.register().clone(),
                                 FieldKey::from_model(&field),
-                                field.module_name(),
+                                field.path_segment(),
                                 field,
                             );
                         }
@@ -322,10 +322,10 @@ impl<'cx> ReturnRank<'cx> {
                             peripheral_item.path().clone(),
                             peripheral_item.peripheral().clone(),
                             register_key.clone(),
-                            (*register_item.ident()).clone(),
+                            register_item.path().clone(),
                             register_item.register().clone(),
                             field_key.clone(),
-                            (*field_item.ident()).clone(),
+                            field_item.path().clone(),
                             field_item.field().clone(),
                         );
                     }

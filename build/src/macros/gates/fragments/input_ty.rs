@@ -5,16 +5,16 @@ use syn::{Ident, Path};
 
 pub fn input_ty(
     peripheral_path: &Path,
-    register_ident: &Ident,
-    field_ident: &Ident,
+    register_path: &Path,
+    field_path: &Path,
     field: &Field,
     input_generic: Option<&Ident>,
 ) -> TokenStream {
     let ty_name = field.type_name();
 
     if let Some(generic) = input_generic {
-        quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<#generic> }
+        quote! { #peripheral_path::#register_path::#field_path::#ty_name<#generic> }
     } else {
-        quote! { #peripheral_path::#register_ident::#field_ident::#ty_name<::proto_hal::stasis::Dynamic> }
+        quote! { #peripheral_path::#register_path::#field_path::#ty_name<::proto_hal::stasis::Dynamic> }
     }
 }

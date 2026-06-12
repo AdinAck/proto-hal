@@ -58,12 +58,10 @@ pub fn modify_untracked(model: Model, tokens: TokenStream) -> TokenStream {
     let return_init = fragments::read_return_init(&return_rank);
     let return_idents = match return_rank {
         ReturnRank::Empty => None,
-        ReturnRank::Field { field, .. } => Some(field.module_name().to_token_stream()),
-        ReturnRank::Register { register, .. } => Some(register.module_name().to_token_stream()),
+        ReturnRank::Field { field, .. } => Some(field.ident().to_token_stream()),
+        ReturnRank::Register { register, .. } => Some(register.ident().to_token_stream()),
         ReturnRank::Peripheral(map) => {
-            let idents = map
-                .values()
-                .map(|(_, peripheral, ..)| peripheral.module_name());
+            let idents = map.values().map(|(_, peripheral, ..)| peripheral.ident());
 
             Some(quote! { #(#idents),* })
         }
@@ -133,15 +131,15 @@ pub fn modify_untracked(model: Model, tokens: TokenStream) -> TokenStream {
 
                     closure_return_tys.push(fragments::write_value_ty(
                         peripheral_path,
-                        register_item.ident(),
-                        field_item.ident(),
+                        register_item.path(),
+                        field_item.path(),
                         write,
                     ));
 
                     write_exprs.push(fragments::write_argument_value(
                         peripheral_path,
-                        register_item.ident(),
-                        field_item.ident(),
+                        register_item.path(),
+                        field_item.path(),
                         field_item.field(),
                         transition,
                     ));

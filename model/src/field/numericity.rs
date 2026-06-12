@@ -50,18 +50,18 @@ impl Numericity {
         match self {
             Numericity::Numeric(..) => {
                 *self = Numericity::Enumerated(Enumerated {
-                    variants: IndexMap::from([(variant.module_name(), index)]),
+                    variants: IndexMap::from([(variant.ident(), index)]),
                 })
             }
             Numericity::Enumerated(enumerated) => {
-                if enumerated.variants.contains_key(&variant.module_name()) {
+                if enumerated.variants.contains_key(&variant.ident()) {
                     diagnostics.insert(Diagnostic::exists(
                         &variant.type_name(),
-                        context.and(variant.type_name().to_string()),
+                        context.and(variant.ident().to_string()),
                     ));
                 }
 
-                enumerated.variants.insert(variant.module_name(), index);
+                enumerated.variants.insert(variant.ident(), index);
             }
         }
 

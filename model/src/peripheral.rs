@@ -1,28 +1,23 @@
 use std::ops::Range;
 
-use derive_more::{AsRef, Deref};
+use derive_more::{AsRef, Deref, From};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use indexmap::IndexMap;
-use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
-use syn::Ident;
+use quote::{ToTokens, quote};
+use syn::{Ident, Path, parse_quote};
 
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
     entitlement::{self, codegen::generate_entitlements},
+    group::{PeripheralGroupIndex, PeripheralGroupNode},
     model::View,
-    register::{RegisterIndex, RegisterNode},
+    register::RegisterIndex,
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Deref)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deref, From)]
 pub struct PeripheralIndex(pub(super) Ident);
-
-impl From<Ident> for PeripheralIndex {
-    fn from(ident: Ident) -> Self {
-        Self(ident)
-    }
-}
 
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct PeripheralNode {
@@ -30,6 +25,7 @@ pub struct PeripheralNode {
     #[as_ref]
     pub(super) peripheral: Peripheral,
     pub(super) registers: IndexMap<Ident, RegisterIndex>,
+    pub(super) group: Option<PeripheralGroupIndex>,
 }
 
 impl Node for PeripheralNode {
@@ -87,15 +83,12 @@ impl Peripheral {
         }
     }
 
-    pub fn module_name(&self) -> Ident {
-        self.ident.clone()
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_pascal_case().as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
     }
 }
 
@@ -113,9 +106,30 @@ impl<'cx> View<'cx, PeripheralNode> {
         self.base_addr..(self.base_addr + self.width())
     }
 
+    pub fn path(&self) -> TokenStream {
+        self.path_segment().to_token_stream()
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, PeripheralGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_peripheral_group(group.clone()))
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.ident.clone().to_string());
+        let new_context = context.clone().and(self.ident().to_string());
 
         if !self.base_addr.is_multiple_of(4) {
             diagnostics.insert(Diagnostic::address_unaligned(
@@ -133,8 +147,8 @@ impl<'cx> View<'cx, PeripheralNode> {
 
             if lhs.offset + 4 > rhs.offset {
                 diagnostics.insert(Diagnostic::overlap(
-                    &lhs.module_name(),
-                    &rhs.module_name(),
+                    &lhs.ident(),
+                    &rhs.ident(),
                     &format!("0x{:x}...0x{:x}", rhs.offset, lhs.offset + 3),
                     new_context.clone(),
                 ));
@@ -151,12 +165,29 @@ impl<'cx> View<'cx, PeripheralNode> {
 
 // codegen
 impl<'cx> View<'cx, PeripheralNode> {
-    fn generate_registers(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
-        registers.iter().fold(quote! {}, |mut acc, register| {
-            acc.extend(register.generate());
+    fn generate_registers(&self) -> TokenStream {
+        let standalone = self
+            .registers()
+            .filter(|register| register.group.is_none())
+            .fold(quote! {}, |mut acc, register| {
+                acc.extend(register.generate());
 
-            acc
-        })
+                acc
+            });
+
+        let grouped = self
+            .model
+            .register_groups()
+            .fold(quote! {}, |mut acc, group| {
+                acc.extend(group.generate());
+
+                acc
+            });
+
+        quote! {
+            #standalone
+            #grouped
+        }
     }
 
     fn generate_masked(
@@ -178,16 +209,18 @@ impl<'cx> View<'cx, PeripheralNode> {
         })
     }
 
-    fn generate_reset(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
-        let register_idents = registers
-            .iter()
-            .map(|register| register.module_name())
+    fn generate_reset(&self) -> TokenStream {
+        let register_idents = self
+            .registers()
+            .map(|register| register.ident())
             .collect::<Vec<_>>();
+
+        let register_modules = self.registers().map(|register| register.path_segment());
 
         quote! {
             pub struct Reset {
                 #(
-                    pub #register_idents: #register_idents::Reset,
+                    pub #register_idents: #register_modules::Reset,
                 )*
             }
 
@@ -203,16 +236,18 @@ impl<'cx> View<'cx, PeripheralNode> {
         }
     }
 
-    fn generate_dynamic(&self, registers: &Vec<View<'cx, RegisterNode>>) -> TokenStream {
-        let register_idents = registers
-            .iter()
-            .map(|register| register.module_name())
+    fn generate_dynamic(&self) -> TokenStream {
+        let register_idents = self
+            .registers()
+            .map(|register| register.ident())
             .collect::<Vec<_>>();
+
+        let register_modules = self.registers().map(|register| register.path_segment());
 
         quote! {
             pub struct Dynamic {
                 #(
-                    pub #register_idents: #register_idents::Dynamic,
+                    pub #register_idents: #register_modules::Dynamic,
                 )*
             }
 
@@ -246,15 +281,14 @@ impl<'cx> View<'cx, PeripheralNode> {
     pub fn generate(&self) -> TokenStream {
         let mut body = quote! {};
 
-        let module_name = self.module_name();
-        let registers = self.registers().collect();
+        let module = self.ident();
 
         let ontological_entitlements = self.ontological_entitlements();
 
-        body.extend(self.generate_registers(&registers));
+        body.extend(self.generate_registers());
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
-        body.extend(self.generate_reset(&registers));
-        body.extend(self.generate_dynamic(&registers));
+        body.extend(self.generate_reset());
+        body.extend(self.generate_dynamic());
         body.extend(self.generate_entitlements(ontological_entitlements.as_deref().copied()));
 
         let docs = &self.docs;
@@ -262,7 +296,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         quote! {
             #(#[doc = #docs])*
             #[allow(clippy::module_inception)]
-            pub mod #module_name {
+            pub mod #module {
                 #body
             }
         }

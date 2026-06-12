@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use derive_more::{AsRef, Deref};
-use inflector::Inflector;
+use heck::ToPascalCase as _;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{
@@ -161,9 +161,8 @@ pub fn peripheral(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     inner(tokens, |input| {
         extension_trait(
             input,
-            quote! { ::phm::Composition },
+            quote! { ::phm::model::AddPeripheral },
             no_modality(|| quote! { ::phm::model::PeripheralEntry<'ncx> }),
-            None,
         )
     })
 }
@@ -173,9 +172,8 @@ pub fn register(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     inner(tokens, |input| {
         extension_trait(
             input,
-            quote! { ::phm::model::PeripheralEntry<'cx> },
+            quote! { ::phm::model::AddRegister },
             no_modality(|| quote! { ::phm::model::RegisterEntry<'ncx> }),
-            Some(quote! { <'cx> }),
         )
     })
 }
@@ -185,12 +183,11 @@ pub fn field(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     inner(tokens, |input| {
         extension_trait(
             input,
-            quote! { ::phm::model::RegisterEntry<'cx> },
+            quote! { ::phm::model::AddField },
             require_modality(
                 input.r#trait.span(),
                 |modality| quote! { ::phm::model::FieldEntry<'ncx, ::phm::field::access::#modality> },
             ),
-            Some(quote! { <'cx> }),
         )
     })
 }
@@ -627,7 +624,6 @@ fn extension_trait(
     }: &ComponentInput,
     parent: TokenStream,
     child: impl FnOnce(&Option<Ident>) -> syn::Result<TokenStream>,
-    lifetime: Option<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let child = child(modality)?;
     let defs = funcs.functions.iter().map(|Function { name, params, .. }| {
@@ -645,7 +641,11 @@ fn extension_trait(
          }| {
             quote! {
                 #(#attrs)*
-                fn #name<'ncx>(&'ncx mut self, #params) -> #child { #body }
+                fn #name<'ncx>(&'ncx mut self, #params) -> #child {
+                    use ::phm::prelude::*;
+
+                    #body
+                }
             }
         },
     );
@@ -656,7 +656,7 @@ fn extension_trait(
             #(#defs)*
         }
 
-        impl #lifetime #r#trait for #parent {
+        impl<T> #r#trait for T where T: #parent {
             #(#impls)*
         }
     })
