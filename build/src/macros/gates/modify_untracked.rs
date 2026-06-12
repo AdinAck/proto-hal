@@ -52,7 +52,8 @@ pub fn modify_untracked(model: Model, tokens: TokenStream) -> TokenStream {
     let suggestions = module_suggestions(&args, &diagnostics);
     let errors = render_diagnostics(diagnostics);
 
-    let return_rank = ReturnRank::from_input_relaxed(&input, |field| field.access.is_read());
+    let return_rank =
+        ReturnRank::from_input_relaxed(&input, |field| field.access.access().is_read());
     let return_ty = fragments::read_return_ty(&return_rank);
     let return_def = fragments::read_return_def(&return_rank);
     let return_init = fragments::read_return_init(&return_rank);
@@ -90,7 +91,7 @@ pub fn modify_untracked(model: Model, tokens: TokenStream) -> TokenStream {
             if register_item
                 .register()
                 .fields()
-                .any(|field| field.access.is_read())
+                .any(|field| field.access.access().is_read())
             {
                 read_reg_idents.push(register_unique_ident.clone());
                 read_addrs.push(addr.clone());
@@ -120,7 +121,7 @@ pub fn modify_untracked(model: Model, tokens: TokenStream) -> TokenStream {
             }
 
             for field_item in register_item.fields().values() {
-                if let Some(write) = field_item.field().access.get_write()
+                if let Some(write) = field_item.field().access.access().get_write()
                     && let Some(transition) = field_item.entry().deref()
                 {
                     closure_idents.push(unique_field_ident(
@@ -202,7 +203,7 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
     input
         .visit_fields()
         .filter_map(|field_item| {
-            if !field_item.field().access.is_read() && field_item.entry().is_none() {
+            if !field_item.field().access.access().is_read() && field_item.entry().is_none() {
                 Some(Diagnostic::field_must_be_readable(field_item.ident()))
             } else {
                 None

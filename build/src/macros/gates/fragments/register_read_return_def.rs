@@ -19,7 +19,7 @@ pub fn register_read_return_def<'cx>(
             peripheral_path,
             register_path,
             field_path,
-            field.access.get_read()?,
+            field.access.access().get_read()?,
         ))
     });
 

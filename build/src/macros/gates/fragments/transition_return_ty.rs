@@ -24,7 +24,7 @@ pub fn transition_return_ty(
         });
     }
 
-    let numeric_ty = match field.access.get_write()? {
+    let numeric_ty = match field.access.access().get_write()? {
         Numericity::Numeric(numeric) => Some(numeric.ty(field.width).1),
         _ => None,
     };

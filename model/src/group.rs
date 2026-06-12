@@ -56,6 +56,12 @@ impl Group {
 }
 
 impl<'cx> View<'cx, PeripheralGroupNode> {
+    pub fn path(&self) -> TokenStream {
+        let module = self.group.module_name();
+
+        quote! { #module }
+    }
+
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
         let members = self
@@ -72,6 +78,13 @@ impl<'cx> View<'cx, PeripheralGroupNode> {
 }
 
 impl<'cx> View<'cx, RegisterGroupNode> {
+    pub fn path(&self) -> TokenStream {
+        let path = self.model.get_peripheral(self.parent.clone()).path();
+        let module = self.group.module_name();
+
+        quote! { #path::#module }
+    }
+
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
         let members = self
@@ -88,6 +101,13 @@ impl<'cx> View<'cx, RegisterGroupNode> {
 }
 
 impl<'cx> View<'cx, FieldGroupNode> {
+    pub fn path(&self) -> TokenStream {
+        let path = self.model.get_register(self.parent).path();
+        let module = self.group.module_name();
+
+        quote! { #path::#module }
+    }
+
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
         let members = self

@@ -22,7 +22,7 @@ pub fn write_argument_value(
         semantic::Transition::Lit(lit_int) => quote! { #lit_int },
     };
 
-    if let Some(Numericity::Enumerated(..)) = field.access.get_write() {
+    if let Some(Numericity::Enumerated(..)) = field.access.access().get_write() {
         quote! {{
             use #peripheral_path::#register_path::#field_path::WriteVariant::{self as Variant, *};
             #block

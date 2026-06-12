@@ -33,7 +33,7 @@ pub fn read_value_expr(
         quote! { (#reg #shift) & #mask }
     };
 
-    Some(match field.access.get_read()? {
+    Some(match field.access.access().get_read()? {
         Numericity::Numeric(..) => value,
         Numericity::Enumerated(..) => quote! {
             unsafe { #peripheral_path::#register_path::#field_path::ReadVariant::from_bits(#value) }

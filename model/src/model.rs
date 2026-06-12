@@ -175,7 +175,7 @@ impl Composition {
     fn add_field_inner<'ncx, Meta>(
         &'ncx mut self,
         field: Field,
-        access: Access,
+        access: access::Source,
         register_index: RegisterIndex,
         group: Option<FieldGroupIndex>,
         context: Context,
@@ -845,7 +845,7 @@ impl<'cx> AddField for RegisterEntry<'cx> {
     fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
         self.model.add_field_inner(
             field,
-            Access::Read(Default::default()),
+            access::Source::Inherent(Access::Read(Default::default())),
             self.index,
             None,
             self.context.clone(),
@@ -855,7 +855,7 @@ impl<'cx> AddField for RegisterEntry<'cx> {
     fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
         self.model.add_field_inner(
             field,
-            Access::Write(Default::default()),
+            access::Source::Inherent(Access::Write(Default::default())),
             self.index,
             None,
             self.context.clone(),
@@ -868,7 +868,7 @@ impl<'cx> AddField for RegisterEntry<'cx> {
     ) -> FieldEntry<'ncx, access::ReadWrite> {
         self.model.add_field_inner(
             field,
-            Access::ReadWrite(Default::default()),
+            access::Source::Inherent(Access::ReadWrite(Default::default())),
             self.index,
             None,
             self.context.clone(),
@@ -878,7 +878,7 @@ impl<'cx> AddField for RegisterEntry<'cx> {
     fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
         self.model.add_field_inner(
             field,
-            Access::Store(Default::default()),
+            access::Source::Inherent(Access::Store(Default::default())),
             self.index,
             None,
             self.context.clone(),
@@ -891,7 +891,7 @@ impl<'cx> AddField for RegisterEntry<'cx> {
     ) -> FieldEntry<'ncx, access::VolatileStore> {
         self.model.add_field_inner(
             field,
-            Access::VolatileStore(Default::default()),
+            access::Source::Inherent(Access::VolatileStore(Default::default())),
             self.index,
             None,
             self.context.clone(),
@@ -905,7 +905,12 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
 
         (
             index,
-            &mut self.model.fields.get_mut(*self.index).unwrap().access,
+            self.model
+                .fields
+                .get_mut(*self.index)
+                .unwrap()
+                .access
+                .inherent_mut().expect("TODO: shouldn't be possible to add inherent schema elements to fields with a linked schema"),
         )
     }
 
@@ -1096,7 +1101,7 @@ impl<'cx> AddField for FieldGroupEntry<'cx> {
 
         self.model.add_field_inner(
             field,
-            Access::Read(Default::default()),
+            access::Source::Inherent(Access::Read(Default::default())),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),
@@ -1108,7 +1113,7 @@ impl<'cx> AddField for FieldGroupEntry<'cx> {
 
         self.model.add_field_inner(
             field,
-            Access::Write(Default::default()),
+            access::Source::Inherent(Access::Write(Default::default())),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),
@@ -1123,7 +1128,7 @@ impl<'cx> AddField for FieldGroupEntry<'cx> {
 
         self.model.add_field_inner(
             field,
-            Access::ReadWrite(Default::default()),
+            access::Source::Inherent(Access::ReadWrite(Default::default())),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),
@@ -1135,7 +1140,7 @@ impl<'cx> AddField for FieldGroupEntry<'cx> {
 
         self.model.add_field_inner(
             field,
-            Access::Store(Default::default()),
+            access::Source::Inherent(Access::Store(Default::default())),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),
@@ -1150,7 +1155,7 @@ impl<'cx> AddField for FieldGroupEntry<'cx> {
 
         self.model.add_field_inner(
             field,
-            Access::VolatileStore(Default::default()),
+            access::Source::Inherent(Access::VolatileStore(Default::default())),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),

@@ -128,7 +128,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
             if register_item
                 .register()
                 .fields()
-                .any(|field| field.access.is_read())
+                .any(|field| field.access.access().is_read())
             {
                 read_reg_idents.push(register_unique_ident.clone());
                 read_addrs.push(addr.clone());
@@ -154,7 +154,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 let initial = register_item
                     .register()
                     .fields()
-                    .any(|field| field.access.is_read())
+                    .any(|field| field.access.access().is_read())
                     .then_some(quote! {
                         (#register_unique_ident #mask) #static_initial
                     });
@@ -266,7 +266,7 @@ fn modify_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
                 ));
 
                 let write_value_ty = if field_item.entry().transition().is_some() {
-                    field_item.field().access.get_write().map(|write| {
+                    field_item.field().access.access().get_write().map(|write| {
                         fragments::write_value_ty(
                             peripheral_path,
                             register_item.path(),

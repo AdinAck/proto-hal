@@ -223,7 +223,7 @@ pub fn static_initial<'cx>(
         .register()
         .fields()
         .filter_map(|field| {
-            let intert_variant = match field.access.get_write()? {
+            let intert_variant = match field.access.access().get_write()? {
                 Numericity::Numeric(..) => None?,
                 Numericity::Enumerated(enumerated) => enumerated.some_inert(model)?,
             };

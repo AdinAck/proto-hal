@@ -131,7 +131,7 @@ fn make_parameter<'cx>(
     let ty = field_item.field().type_name();
 
     // TODO: this will change with hardware write entitlements
-    let ref_ = if let Access::Store(..) = &field_item.field().access {
+    let ref_ = if let Access::Store(..) = &field_item.field().access.access() {
         quote! { & }
     } else {
         quote! { &mut }

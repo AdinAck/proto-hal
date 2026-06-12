@@ -147,7 +147,7 @@ impl Pattern {
                     //       arbitrary since resolvable fields are symmetrical
                     // note: ".resolvable()" is not used as that method relies on this one
                     let Numericity::Enumerated(Enumerated { variants }) =
-                        field.access.get_read()?
+                        field.access.access().get_read()?
                     else {
                         None?
                     };

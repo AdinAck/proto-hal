@@ -85,7 +85,7 @@ fn write_untracked(scheme: Scheme, model: Model, tokens: TokenStream) -> TokenSt
             ));
 
             for field_item in register_item.fields().values() {
-                if let Some(write) = field_item.field().access.get_write() {
+                if let Some(write) = field_item.field().access.access().get_write() {
                     parameter_idents.push(unique_field_ident(
                         register_item.peripheral(),
                         register_item.register(),

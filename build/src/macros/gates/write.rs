@@ -224,7 +224,7 @@ fn write_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStream
                 ));
 
                 let value_ty = if field_item.entry().transition().is_some() {
-                    field_item.field().access.get_write().map(|write| {
+                    field_item.field().access.access().get_write().map(|write| {
                         fragments::write_value_ty(
                             peripheral_path,
                             register_item.path(),
@@ -351,6 +351,7 @@ fn validate<'cx>(
                     field.domain().contains(&position)
                         && field
                             .access
+                            .access()
                             .get_write()
                             .is_some_and(|x| x.some_inert(model).is_none())
                 })

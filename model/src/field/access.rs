@@ -21,7 +21,11 @@
 //! | Store         | Read/Write           | Read            | Symmetrical  |
 //! | VolatileStore | Read/Write           | Read/Write      | Symmetrical  |
 
+pub mod source;
+
 use crate::field::numericity::Numericity;
+
+pub use source::{ParentIndex, Source};
 
 /// This modality indicates that from the software (CPU) perspective, the field
 /// may only be *read*, as a way to view data written to the field by *hardware*.
