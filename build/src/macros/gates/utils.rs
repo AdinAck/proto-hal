@@ -4,7 +4,7 @@ use std::{collections::HashMap, num::NonZeroU32, ops::Deref};
 
 use indexmap::IndexSet;
 use model::{
-    entitlement,
+    entitlement::{self, EntitlementIndex},
     field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
@@ -325,7 +325,14 @@ pub fn field_is_dependency<'cx>(
                     .iter()
                     .flat_map(|numericity| numericity.variants(model))
                     .flatten()
-                    .flat_map(|variant| variant.statewise_entitlements().into_iter()),
+                    .flat_map(|variant| {
+                        model
+                            .try_get_entitlements(EntitlementIndex::Variant(
+                                *other_field_item.field().index(),
+                                *variant.index(),
+                            ))
+                            .into_iter()
+                    }),
             )
         {
             for entitlement_field in entitlement_set.entitlement_fields() {

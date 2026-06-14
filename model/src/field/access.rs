@@ -25,7 +25,7 @@ pub mod source;
 
 use crate::field::numericity::Numericity;
 
-pub use source::{ParentIndex, Source};
+pub use source::Source;
 
 /// This modality indicates that from the software (CPU) perspective, the field
 /// may only be *read*, as a way to view data written to the field by *hardware*.

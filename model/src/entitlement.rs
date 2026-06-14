@@ -21,15 +21,18 @@ pub use space::Space;
 ///
 /// An entitlement is **satisfied** when a hardware state fulfills the requirement.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Entitlement(pub(crate) VariantIndex);
+pub struct Entitlement {
+    pub(crate) field: FieldIndex,
+    pub(crate) variant: VariantIndex,
+}
 
 impl Entitlement {
     pub fn variant<'cx>(&self, model: &'cx Model) -> View<'cx, VariantNode> {
-        model.get_variant(self.0)
+        model.get_variant(self.variant)
     }
 
     pub fn field<'cx>(&self, model: &'cx Model) -> View<'cx, FieldNode> {
-        model.get_field(self.variant(model).parent)
+        model.get_field(self.field)
     }
 
     pub fn to_string(&self, model: &Model) -> String {
@@ -57,7 +60,7 @@ pub enum EntitlementIndex {
     Field(FieldIndex),
     Write(FieldIndex),
     HardwareWrite(FieldIndex),
-    Variant(VariantIndex),
+    Variant(FieldIndex, VariantIndex),
 }
 
 impl EntitlementIndex {
@@ -84,9 +87,9 @@ impl EntitlementIndex {
                     field.ident().to_string(),
                 ]
             }
-            EntitlementIndex::Variant(variant_index) => {
+            EntitlementIndex::Variant(field_index, variant_index) => {
                 let variant = model.get_variant(*variant_index);
-                let field = model.get_field(variant.parent);
+                let field = model.get_field(*field_index);
                 let register = model.get_register(field.parent);
                 let peripheral = model.get_peripheral(register.parent.clone());
 

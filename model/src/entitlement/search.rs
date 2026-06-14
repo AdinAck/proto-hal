@@ -3,7 +3,7 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     Entitlement, Model,
-    entitlement::{Axis, Pattern, Space, pattern},
+    entitlement::{Axis, EntitlementIndex, Pattern, Space, pattern},
     field::FieldIndex,
 };
 
@@ -52,7 +52,10 @@ impl<'cx> Search<'cx> {
             .chain(pattern.entitlements().filter_map(|entitlement| {
                 Some((
                     Axis::Statewise,
-                    entitlement.variant(self.model).statewise_entitlements()?,
+                    self.model.try_get_entitlements(EntitlementIndex::Variant(
+                        entitlement.field,
+                        entitlement.variant,
+                    ))?,
                 ))
             }))
             .find(|(.., space)| self.pattern_contradicts_space(pattern, space))

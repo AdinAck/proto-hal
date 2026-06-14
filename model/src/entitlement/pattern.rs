@@ -152,9 +152,12 @@ impl Pattern {
                         None?
                     };
 
-                    let whole = IndexSet::<Entitlement>::from_iter(
-                        variants.values().copied().map(Entitlement),
-                    );
+                    let whole = IndexSet::<Entitlement>::from_iter(variants.values().copied().map(
+                        |variant_index| Entitlement {
+                            field: field_index,
+                            variant: variant_index,
+                        },
+                    ));
 
                     let mut complement = whole.difference(entitlements).copied().peekable();
 

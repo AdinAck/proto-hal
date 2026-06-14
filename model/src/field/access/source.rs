@@ -1,12 +1,4 @@
-use proc_macro2::TokenStream;
-
-use crate::{
-    Model,
-    field::{FieldIndex, access::Access},
-    group::{FieldGroupIndex, PeripheralGroupIndex, RegisterGroupIndex},
-    peripheral::PeripheralIndex,
-    register::RegisterIndex,
-};
+use crate::{field::access::Access, variant::ParentIndex};
 
 #[derive(Debug, Clone)]
 pub enum Source {
@@ -44,29 +36,6 @@ impl Source {
         match self {
             Self::Linked { access, .. } => Some(access),
             Self::Inherent(..) => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ParentIndex {
-    Peripheral(PeripheralIndex),
-    PeripheralGroup(PeripheralGroupIndex),
-    Register(RegisterIndex),
-    RegisterGroup(RegisterGroupIndex),
-    Field(FieldIndex),
-    FieldGroup(FieldGroupIndex),
-}
-
-impl ParentIndex {
-    pub fn path(self, model: &Model) -> TokenStream {
-        match self {
-            ParentIndex::Peripheral(index) => model.get_peripheral(index).path(),
-            ParentIndex::PeripheralGroup(index) => model.get_peripheral_group(index).path(),
-            ParentIndex::Register(index) => model.get_register(index).path(),
-            ParentIndex::RegisterGroup(index) => model.get_register_group(index).path(),
-            ParentIndex::Field(index) => model.get_field(index).path(),
-            ParentIndex::FieldGroup(index) => model.get_field_group(index).path(),
         }
     }
 }

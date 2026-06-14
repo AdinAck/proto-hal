@@ -23,7 +23,7 @@ use crate::{
     interrupts::{Interrupt, Interrupts},
     peripheral::{PeripheralIndex, PeripheralNode},
     register::{Register, RegisterIndex, RegisterNode},
-    variant::{Variant, VariantIndex, VariantNode},
+    variant::{self, Variant, VariantIndex, VariantNode},
 };
 
 use super::peripheral::Peripheral;
@@ -673,7 +673,7 @@ pub type RegisterEntry<'cx> = Entry<'cx, RegisterIndex, ()>;
 pub type RegisterGroupEntry<'cx> = GroupEntry<'cx, RegisterGroupIndex>;
 pub type FieldEntry<'cx, AccessModality> = Entry<'cx, FieldIndex, AccessModality>;
 pub type FieldGroupEntry<'cx> = GroupEntry<'cx, FieldGroupIndex>;
-pub type VariantEntry<'cx> = Entry<'cx, VariantIndex, ()>;
+pub type VariantEntry<'cx> = Entry<'cx, (FieldIndex, VariantIndex), ()>;
 
 #[derive(Debug)]
 pub struct Entry<'cx, Index, Meta> {
@@ -923,13 +923,13 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
 
         // insert child
         self.model.variants.push(VariantNode {
-            parent: self.index,
+            parent: variant::ParentIndex::Field(self.index),
             variant,
         });
 
         Entry {
             model: self.model,
-            index,
+            index: (self.index, index),
 
             context: self.context.clone().and(name),
             _p: PhantomData,
@@ -1047,10 +1047,13 @@ where
     }
 }
 
-impl<'cx> Entry<'cx, VariantIndex, ()> {
+impl<'cx> Entry<'cx, (FieldIndex, VariantIndex), ()> {
     /// Produce an [entitlement](TODO) from the variant.
     pub fn make_entitlement(&self) -> Entitlement {
-        Entitlement(self.index)
+        Entitlement {
+            field: self.index.0,
+            variant: self.index.1,
+        }
     }
 
     /// Add [statewise entitlements](TODO) to the variant.
@@ -1058,17 +1061,19 @@ impl<'cx> Entry<'cx, VariantIndex, ()> {
         &mut self,
         entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
     ) {
-        self.add_entitlement_space(entitlements.clone(), EntitlementIndex::Variant(self.index));
+        self.add_entitlement_space(
+            entitlements.clone(),
+            EntitlementIndex::Variant(self.index.0, self.index.1),
+        );
 
         for entitlement in entitlements.into_iter().flatten() {
-            let parent_index = self.model.get_variant(self.index).parent;
             let entitlement_field_index = entitlement.field(self.model).index;
 
             self.model
                 .reverse_statewise_entitlements
                 .entry(entitlement_field_index)
                 .or_default()
-                .insert(parent_index);
+                .insert(self.index.0);
         }
     }
 }
@@ -1246,8 +1251,10 @@ impl<'cx> View<'cx, FieldNode> {
                 .into_iter()
                 .flatten()
                 .filter_map(|variant| {
-                    self.model
-                        .try_get_entitlements(EntitlementIndex::Variant(*variant.index()))
+                    self.model.try_get_entitlements(EntitlementIndex::Variant(
+                        self.index,
+                        *variant.index(),
+                    ))
                 })
         })
     }
@@ -1258,27 +1265,6 @@ impl<'cx> View<'cx, FieldNode> {
         let peripheral = register.parent();
 
         (peripheral, register)
-    }
-}
-
-impl<'cx> View<'cx, VariantNode> {
-    pub fn statewise_entitlements(&self) -> Option<View<'cx, entitlement::Space>> {
-        self.model
-            .try_get_entitlements(EntitlementIndex::Variant(self.index))
-    }
-
-    /// View the parent field, register, and peripheral.
-    pub fn parents(
-        &self,
-    ) -> (
-        View<'cx, PeripheralNode>,
-        View<'cx, RegisterNode>,
-        View<'cx, FieldNode>,
-    ) {
-        let field = self.model.get_field(self.parent);
-        let (peripheral, register) = field.parents();
-
-        (peripheral, register, field)
     }
 }
 

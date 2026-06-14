@@ -5,19 +5,47 @@ use quote::{ToTokens as _, quote};
 use syn::Ident;
 
 use crate::{
-    Node,
+    Model, Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{self, codegen::generate_entitlements},
+    entitlement::{self, EntitlementIndex, codegen::generate_entitlements},
     field::{FieldIndex, FieldNode},
+    group::{FieldGroupIndex, PeripheralGroupIndex, RegisterGroupIndex},
     model::View,
+    peripheral::PeripheralIndex,
+    register::RegisterIndex,
 };
+
+#[derive(Debug, Clone)]
+pub enum ParentIndex {
+    Peripheral(PeripheralIndex),
+    PeripheralGroup(PeripheralGroupIndex),
+    Register(RegisterIndex),
+    RegisterGroup(RegisterGroupIndex),
+    Field(FieldIndex),
+    FieldGroup(FieldGroupIndex),
+}
+
+impl ParentIndex {
+    pub fn path(self, model: &Model) -> TokenStream {
+        match self {
+            ParentIndex::Peripheral(index) => model.get_peripheral(index).path(),
+            ParentIndex::PeripheralGroup(index) => model.get_peripheral_group(index).path(),
+            ParentIndex::Register(index) => model.get_register(index).path(),
+            ParentIndex::RegisterGroup(index) => model.get_register_group(index).path(),
+            ParentIndex::Field(index) => model.get_field(index).path(),
+            ParentIndex::FieldGroup(index) => model.get_field_group(index).path(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct VariantIndex(pub(super) usize);
 
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct VariantNode {
-    pub(super) parent: FieldIndex,
+    // TODO: maybe this isn't needed?
+    #[expect(unused)]
+    pub(super) parent: ParentIndex,
     #[deref]
     #[as_ref]
     pub(super) variant: Variant,
@@ -127,7 +155,11 @@ impl<'cx> View<'cx, VariantNode> {
             .expect("field must be resolvable if its variants are being generated")
             .variants(self.model)
             .expect("expected field to have variants")
-            .all(|variant| variant.statewise_entitlements().is_none())
+            .all(|variant| {
+                self.model
+                    .try_get_entitlements(EntitlementIndex::Variant(field.index, variant.index))
+                    .is_none()
+            })
         {
             None?
         }
@@ -156,7 +188,9 @@ impl<'cx> View<'cx, VariantNode> {
         let ty = self.type_name();
         let mut body = quote! {};
 
-        let statewise_entitlements = self.statewise_entitlements();
+        let statewise_entitlements = self
+            .model
+            .try_get_entitlements(EntitlementIndex::Variant(parent.index, self.index));
 
         body.extend(self.generate_state());
         body.extend(self.generate_entitlements(parent, statewise_entitlements.as_deref().copied()));
