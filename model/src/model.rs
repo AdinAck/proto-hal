@@ -179,7 +179,7 @@ impl Composition {
         register_index: RegisterIndex,
         group: Option<FieldGroupIndex>,
         context: Context,
-    ) -> FieldEntry<'ncx, Meta> {
+    ) -> Entry<'ncx, FieldIndex, Meta> {
         let index = FieldIndex(self.fields.len());
         let name = field.ident().to_string();
 
@@ -645,25 +645,43 @@ pub trait AddRegister {
 
 pub trait AddField {
     /// Add a field to the parent with [`Read`](access::Read) access.
-    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read>;
+    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
+        self.add_field(field)
+    }
 
     /// Add a field to the parent with [`Write`](access::Write) access.
-    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write>;
+    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
+        self.add_field(field)
+    }
 
     /// Add a field to the parent with [`ReadWrite`](access::ReadWrite) access.
     fn add_read_write_field<'ncx>(
         &'ncx mut self,
         field: Field,
-    ) -> FieldEntry<'ncx, access::ReadWrite>;
+    ) -> FieldEntry<'ncx, access::ReadWrite> {
+        self.add_field(field)
+    }
 
     /// Add a field to the parent with [`Store`](access::Store) access.
-    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store>;
+    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
+        self.add_field(field)
+    }
 
     /// Add a field to the parent with [`VolatileStore`](access::VolatileStore) access.
     fn add_volatile_store_field<'ncx>(
         &'ncx mut self,
         field: Field,
-    ) -> FieldEntry<'ncx, access::VolatileStore>;
+    ) -> FieldEntry<'ncx, access::VolatileStore> {
+        self.add_field(field)
+    }
+
+    /// Add a field to the parent with [`Read`](access::Read) access.
+    fn add_field<'ncx, AccessModality>(
+        &'ncx mut self,
+        field: Field,
+    ) -> FieldEntry<'ncx, AccessModality>
+    where
+        AccessModality: Default + Into<Access>;
 }
 
 pub type GroupEntry<'cx, I> = Entry<'cx, I, ()>;
@@ -842,56 +860,16 @@ impl<'cx> RegisterEntry<'cx> {
 }
 
 impl<'cx> AddField for RegisterEntry<'cx> {
-    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Read(Default::default())),
-            self.index,
-            None,
-            self.context.clone(),
-        )
-    }
-
-    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Write(Default::default())),
-            self.index,
-            None,
-            self.context.clone(),
-        )
-    }
-
-    fn add_read_write_field<'ncx>(
+    fn add_field<'ncx, AccessModality>(
         &'ncx mut self,
         field: Field,
-    ) -> FieldEntry<'ncx, access::ReadWrite> {
+    ) -> FieldEntry<'ncx, AccessModality>
+    where
+        AccessModality: Default + Into<Access>,
+    {
         self.model.add_field_inner(
             field,
-            access::Source::Inherent(Access::ReadWrite(Default::default())),
-            self.index,
-            None,
-            self.context.clone(),
-        )
-    }
-
-    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Store(Default::default())),
-            self.index,
-            None,
-            self.context.clone(),
-        )
-    }
-
-    fn add_volatile_store_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> FieldEntry<'ncx, access::VolatileStore> {
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::VolatileStore(Default::default())),
+            access::Source::Inherent(AccessModality::default().into()),
             self.index,
             None,
             self.context.clone(),
@@ -910,7 +888,8 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
                 .get_mut(*self.index)
                 .unwrap()
                 .access
-                .inherent_mut().expect("TODO: shouldn't be possible to add inherent schema elements to fields with a linked schema"),
+                .inherent_mut()
+                .expect("expected access source to be inherent since inheriting a schema takes the field entry"),
         )
     }
 
@@ -936,25 +915,6 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
         }
     }
 
-    /// Add a variant to the field.
-    ///
-    /// If the field's access modality exposes both *read* and *write* access,
-    /// this will add the variant to *both*.
-    pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
-        let mut diagnostics = Diagnostics::new();
-        let context = self.context.clone();
-        let (index, access) = self.new_index_and_get_access();
-
-        // update parent
-
-        access.visit_numericities(|numericity| {
-            diagnostics.extend(numericity.add_child(&variant, index, context.clone()));
-        });
-
-        self.model.diagnostics.extend(diagnostics);
-        self.insert_child_and_make_entry(index, variant)
-    }
-
     /// Add [ontological entitlements](TODO) to the field.
     pub fn ontological_entitlements(
         &mut self,
@@ -973,7 +933,28 @@ impl<'cx, Meta> Entry<'cx, FieldIndex, Meta> {
     }
 }
 
-impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
+impl<'cx, AccessModality> FieldEntry<'cx, AccessModality> {
+    /// Add a variant to the field.
+    ///
+    /// If the field's access modality exposes both *read* and *write* access,
+    /// this will add the variant to *both*.
+    pub fn add_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
+        let mut diagnostics = Diagnostics::new();
+        let context = self.context.clone();
+        let (index, access) = self.new_index_and_get_access();
+
+        // update parent
+
+        access.visit_numericities(|numericity| {
+            diagnostics.extend(numericity.add_child(&variant, index, context.clone()));
+        });
+
+        self.model.diagnostics.extend(diagnostics);
+        self.insert_child_and_make_entry(index, variant)
+    }
+}
+
+impl<'cx> FieldEntry<'cx, access::ReadWrite> {
     /// Add a variant to the field for read access **only**.
     pub fn add_read_variant<'ncx>(&'ncx mut self, variant: Variant) -> VariantEntry<'ncx> {
         let mut diagnostics = Diagnostics::new();
@@ -1011,7 +992,7 @@ impl<'cx> Entry<'cx, FieldIndex, access::ReadWrite> {
     }
 }
 
-impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
+impl<'cx> FieldEntry<'cx, access::VolatileStore> {
     /// Add [hardware write access entitlements](TODO) to the field.
     pub fn hardware_write_entitlements(
         &mut self,
@@ -1034,9 +1015,9 @@ impl<'cx> Entry<'cx, FieldIndex, access::VolatileStore> {
     }
 }
 
-impl<'cx, Meta> Entry<'cx, FieldIndex, Meta>
+impl<'cx, AccessModality> FieldEntry<'cx, AccessModality>
 where
-    Meta: access::IsWrite,
+    AccessModality: access::IsWrite,
 {
     /// Add [write access entitlements](TODO) to the field.
     pub fn write_entitlements(
@@ -1101,66 +1082,18 @@ impl<'cx> AddRegister for RegisterGroupEntry<'cx> {
 }
 
 impl<'cx> AddField for FieldGroupEntry<'cx> {
-    fn add_read_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Read> {
-        let group = self.model.get_field_group(self.index.clone());
-
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Read(Default::default())),
-            group.parent,
-            Some(self.index.clone()),
-            self.context.clone(),
-        )
-    }
-
-    fn add_write_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Write> {
-        let group = self.model.get_field_group(self.index.clone());
-
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Write(Default::default())),
-            group.parent,
-            Some(self.index.clone()),
-            self.context.clone(),
-        )
-    }
-
-    fn add_read_write_field<'ncx>(
+    fn add_field<'ncx, AccessModality>(
         &'ncx mut self,
         field: Field,
-    ) -> FieldEntry<'ncx, access::ReadWrite> {
+    ) -> FieldEntry<'ncx, AccessModality>
+    where
+        AccessModality: Default + Into<Access>,
+    {
         let group = self.model.get_field_group(self.index.clone());
 
         self.model.add_field_inner(
             field,
-            access::Source::Inherent(Access::ReadWrite(Default::default())),
-            group.parent,
-            Some(self.index.clone()),
-            self.context.clone(),
-        )
-    }
-
-    fn add_store_field<'ncx>(&'ncx mut self, field: Field) -> FieldEntry<'ncx, access::Store> {
-        let group = self.model.get_field_group(self.index.clone());
-
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::Store(Default::default())),
-            group.parent,
-            Some(self.index.clone()),
-            self.context.clone(),
-        )
-    }
-
-    fn add_volatile_store_field<'ncx>(
-        &'ncx mut self,
-        field: Field,
-    ) -> FieldEntry<'ncx, access::VolatileStore> {
-        let group = self.model.get_field_group(self.index.clone());
-
-        self.model.add_field_inner(
-            field,
-            access::Source::Inherent(Access::VolatileStore(Default::default())),
+            access::Source::Inherent(AccessModality::default().into()),
             group.parent,
             Some(self.index.clone()),
             self.context.clone(),

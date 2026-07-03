@@ -25,6 +25,7 @@ pub mod source;
 
 use crate::field::numericity::Numericity;
 
+use derive_more::From;
 pub use source::Source;
 
 /// This modality indicates that from the software (CPU) perspective, the field
@@ -95,7 +96,7 @@ pub struct VolatileStore {
     pub numericity: Numericity,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum Access {
     Read(Read),
     Write(Write),
@@ -177,36 +178,6 @@ impl Access {
             Access::Store(store) => f(&mut store.numericity),
             Access::VolatileStore(volatile_store) => f(&mut volatile_store.numericity),
         }
-    }
-}
-
-impl From<Read> for Access {
-    fn from(read: Read) -> Self {
-        Self::Read(read)
-    }
-}
-
-impl From<Write> for Access {
-    fn from(write: Write) -> Self {
-        Self::Write(write)
-    }
-}
-
-impl From<ReadWrite> for Access {
-    fn from(readwrite: ReadWrite) -> Self {
-        Self::ReadWrite(readwrite)
-    }
-}
-
-impl From<Store> for Access {
-    fn from(store: Store) -> Self {
-        Self::Store(store)
-    }
-}
-
-impl From<VolatileStore> for Access {
-    fn from(volatile_store: VolatileStore) -> Self {
-        Self::VolatileStore(volatile_store)
     }
 }
 
