@@ -1,3 +1,4 @@
+pub mod decl;
 pub mod diagnostic;
 pub mod entitlement;
 pub mod field;
@@ -7,6 +8,7 @@ pub mod model;
 pub mod peripheral;
 pub mod prelude;
 pub mod register;
+pub mod schema;
 pub mod validation;
 pub mod variant;
 
@@ -16,6 +18,7 @@ pub use interrupts::{Interrupt, Interrupts};
 pub use model::{Composition, Model};
 pub use peripheral::Peripheral;
 pub use register::Register;
+pub use schema::Schema;
 pub use validation::validate;
 pub use variant::Variant;
 

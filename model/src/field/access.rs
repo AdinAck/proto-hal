@@ -166,6 +166,28 @@ impl Access {
         self.get_write().is_some()
     }
 
+    /// Visit the numericities a variant of the given side occupies: the read
+    /// numericity, the write numericity, or — unsided — every numericity.
+    pub fn visit_numericities_of(
+        &mut self,
+        side: Option<crate::decl::Side>,
+        mut f: impl FnMut(&mut Numericity),
+    ) {
+        match side {
+            None => self.visit_numericities(f),
+            Some(crate::decl::Side::Read) => {
+                if let Some(numericity) = self.get_read_mut() {
+                    f(numericity)
+                }
+            }
+            Some(crate::decl::Side::Write) => {
+                if let Some(numericity) = self.get_write_mut() {
+                    f(numericity)
+                }
+            }
+        }
+    }
+
     /// Visit the numericities of this access.
     pub fn visit_numericities(&mut self, mut f: impl FnMut(&mut Numericity)) {
         match self {

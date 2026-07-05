@@ -64,6 +64,15 @@ impl<'cx> View<'cx, PeripheralGroupNode> {
 
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
+
+        let parent = crate::variant::ParentIndex::PeripheralGroup(self.index.clone());
+
+        let schemas = self
+            .model
+            .schemas_placed_at(Some(&parent))
+            .map(|schema| schema.generate())
+            .collect::<Vec<_>>();
+
         let members = self
             .members
             .values()
@@ -71,6 +80,7 @@ impl<'cx> View<'cx, PeripheralGroupNode> {
 
         quote! {
             pub mod #module {
+                #(#schemas)*
                 #(#members)*
             }
         }
@@ -87,6 +97,15 @@ impl<'cx> View<'cx, RegisterGroupNode> {
 
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
+
+        let parent = crate::variant::ParentIndex::RegisterGroup(self.index.clone());
+
+        let schemas = self
+            .model
+            .schemas_placed_at(Some(&parent))
+            .map(|schema| schema.generate())
+            .collect::<Vec<_>>();
+
         let members = self
             .members
             .values()
@@ -94,6 +113,7 @@ impl<'cx> View<'cx, RegisterGroupNode> {
 
         quote! {
             pub mod #module {
+                #(#schemas)*
                 #(#members)*
             }
         }
@@ -110,6 +130,15 @@ impl<'cx> View<'cx, FieldGroupNode> {
 
     pub fn generate(&self) -> TokenStream {
         let module = self.module_name();
+
+        let parent = crate::variant::ParentIndex::FieldGroup(self.index.clone());
+
+        let schemas = self
+            .model
+            .schemas_placed_at(Some(&parent))
+            .map(|schema| schema.generate())
+            .collect::<Vec<_>>();
+
         let members = self
             .members
             .values()
@@ -117,6 +146,7 @@ impl<'cx> View<'cx, FieldGroupNode> {
 
         quote! {
             pub mod #module {
+                #(#schemas)*
                 #(#members)*
             }
         }

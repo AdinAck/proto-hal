@@ -13,9 +13,10 @@ use crate::{
     model::View,
     peripheral::PeripheralIndex,
     register::RegisterIndex,
+    schema::SchemaIndex,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParentIndex {
     Peripheral(PeripheralIndex),
     PeripheralGroup(PeripheralGroupIndex),
@@ -23,6 +24,7 @@ pub enum ParentIndex {
     RegisterGroup(RegisterGroupIndex),
     Field(FieldIndex),
     FieldGroup(FieldGroupIndex),
+    Schema(SchemaIndex),
 }
 
 impl ParentIndex {
@@ -34,6 +36,7 @@ impl ParentIndex {
             ParentIndex::RegisterGroup(index) => model.get_register_group(index).path(),
             ParentIndex::Field(index) => model.get_field(index).path(),
             ParentIndex::FieldGroup(index) => model.get_field_group(index).path(),
+            ParentIndex::Schema(index) => model.get_schema(index).path(),
         }
     }
 }
@@ -43,8 +46,6 @@ pub struct VariantIndex(pub(super) usize);
 
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct VariantNode {
-    // TODO: maybe this isn't needed?
-    #[expect(unused)]
     pub(super) parent: ParentIndex,
     #[deref]
     #[as_ref]

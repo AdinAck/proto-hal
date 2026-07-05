@@ -9,7 +9,7 @@ use syn::Ident;
 use ters::ters;
 
 use crate::{
-    Node,
+    Node, decl,
     diagnostic::{self, Context, Diagnostic, Diagnostics, Rank},
     entitlement::{self, Entitlement, EntitlementIndex},
     field::{
@@ -21,8 +21,10 @@ use crate::{
         PeripheralGroupNode, RegisterGroupIndex, RegisterGroupNode,
     },
     interrupts::{Interrupt, Interrupts},
+    field::numericity::Numericity,
     peripheral::{PeripheralIndex, PeripheralNode},
     register::{Register, RegisterIndex, RegisterNode},
+    schema::{Schema, SchemaIndex, SchemaNode},
     variant::{self, Variant, VariantIndex, VariantNode},
 };
 
@@ -52,6 +54,7 @@ pub struct Model {
     fields: Vec<FieldNode>,
     field_groups: IndexMap<FieldGroupIndex, FieldGroupNode>,
     variants: Vec<VariantNode>,
+    schemas: Vec<SchemaNode>,
 
     entitlements: HashMap<EntitlementIndex, entitlement::Space>,
     reverse_statewise_entitlements: HashMap<FieldIndex, IndexSet<FieldIndex>>,
@@ -248,6 +251,493 @@ impl Composition {
     }
 }
 
+// Declaration-tree construction: the successor to the `Entry` interfaces.
+// Structure is inserted whole, and entitlements are registered afterwards —
+// once everything they might reference exists — so callers are free of
+// ordering requirements.
+impl Composition {
+    /// Insert a whole peripheral declaration: the peripheral, its registers,
+    /// their fields, and their variants.
+    pub fn insert_peripheral(&mut self, declaration: decl::PeripheralDecl) {
+        let decl::PeripheralDecl {
+            peripheral,
+            registers,
+            register_groups,
+        } = declaration;
+
+        let index = self.add_peripheral_inner(peripheral, None).index.clone();
+
+        self.insert_peripheral_items(index, registers, register_groups);
+    }
+
+    /// Insert a whole peripheral group declaration.
+    pub fn insert_peripheral_group(&mut self, declaration: decl::GroupDecl<decl::PeripheralDecl>) {
+        let group_index = self.add_group(&declaration.name).index.clone();
+
+        for member in declaration.members {
+            let decl::PeripheralDecl {
+                peripheral,
+                registers,
+                register_groups,
+            } = member;
+
+            let index = self
+                .add_peripheral_inner(peripheral, Some(group_index.clone()))
+                .index
+                .clone();
+
+            self.insert_peripheral_items(index, registers, register_groups);
+        }
+    }
+
+    /// Insert a schema at the provided placement ([`None`] is the device
+    /// root): the location its types manifest at.
+    pub fn insert_schema(
+        &mut self,
+        declaration: decl::SchemaDecl,
+        parent: Option<variant::ParentIndex>,
+    ) -> SchemaIndex {
+        let ident = Ident::new(&declaration.ident, Span::call_site());
+        let index = SchemaIndex(self.model.schemas.len());
+
+        // a schema's identity is its placement and its name
+        if self
+            .model
+            .schemas
+            .iter()
+            .any(|node| node.parent == parent && node.schema.ident == ident)
+        {
+            self.diagnostics
+                .insert(Diagnostic::exists(&declaration.ident, Context::new()));
+        }
+
+        let context = Context::with_path([declaration.ident.clone()]);
+        let mut reads = Numericity::default();
+        let mut writes = Numericity::default();
+        let mut diagnostics = Diagnostics::new();
+
+        for member in declaration.variants {
+            let variant_index = VariantIndex(self.model.variants.len());
+
+            if !matches!(member.side, Some(decl::Side::Write)) {
+                diagnostics.extend(reads.add_child(&member.variant, variant_index, context.clone()));
+            }
+
+            if !matches!(member.side, Some(decl::Side::Read)) {
+                diagnostics.extend(writes.add_child(
+                    &member.variant,
+                    variant_index,
+                    context.clone(),
+                ));
+            }
+
+            self.model.variants.push(VariantNode {
+                parent: variant::ParentIndex::Schema(index),
+                variant: member.variant,
+            });
+        }
+
+        self.diagnostics.extend(diagnostics);
+
+        self.model.schemas.push(SchemaNode {
+            parent,
+            schema: Schema {
+                ident,
+                reads,
+                writes,
+                docs: declaration.docs,
+            },
+        });
+
+        index
+    }
+
+    /// Link a field to a schema: the field *assumes* it, exactly reflecting
+    /// (and re-exporting) its variants — projected onto the field's own
+    /// access modality. Compatibility (every side the schema names, the
+    /// field has) is the caller's judgement.
+    pub fn link_field(&mut self, field: FieldIndex, schema: SchemaIndex) {
+        let node = self.model.schemas.get(*schema).unwrap();
+        let reads = node.schema.reads.clone();
+        let writes = node.schema.writes.clone();
+
+        let access = match self.model.fields.get(*field).unwrap().access.access() {
+            Access::Read(..) => access::Read { numericity: reads }.into(),
+            Access::Write(..) => access::Write { numericity: writes }.into(),
+            Access::ReadWrite(..) => access::ReadWrite {
+                read: access::Read { numericity: reads },
+                write: access::Write { numericity: writes },
+            }
+            .into(),
+            // compatible store fields see only plain variants, so the sets
+            // coincide
+            Access::Store(..) => access::Store { numericity: reads }.into(),
+            Access::VolatileStore(..) => access::VolatileStore { numericity: reads }.into(),
+        };
+
+        self.model.fields.get_mut(*field).unwrap().access = access::Source::Linked {
+            parent: variant::ParentIndex::Schema(schema),
+            access,
+        };
+    }
+
+    /// Set a field's reset value — in its own bit-space — post-insertion.
+    pub fn set_field_reset(&mut self, field: FieldIndex, reset: u32) {
+        self.model.fields.get_mut(*field).unwrap().field.reset = Some(reset);
+    }
+
+    /// Extend a field with copies of a schema's variants — the copies are the
+    /// field's own, inherent and private to it — rebuilding the field's
+    /// access in the given shape (the field's own modality).
+    ///
+    /// Each copy keeps the side it occupies in the schema, so a `read`
+    /// variant lands on the read side of a `read write` field.
+    pub fn extend_field(&mut self, field: FieldIndex, schema: SchemaIndex, shape: Access) {
+        let node = self.model.schemas.get(*schema).unwrap();
+        let reads = node.schema.reads.clone();
+        let writes = node.schema.writes.clone();
+
+        let member = |numericity: &Numericity, index: VariantIndex| {
+            matches!(
+                numericity,
+                Numericity::Enumerated(enumerated)
+                    if enumerated.variants.values().any(|member| *member == index)
+            )
+        };
+
+        // the schema's variants in declaration order, each with its side
+        let variants = self
+            .model
+            .variants
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.parent == variant::ParentIndex::Schema(schema))
+            .map(|(index, node)| decl::VariantDecl {
+                variant: node.variant.clone(),
+                side: match (
+                    member(&reads, VariantIndex(index)),
+                    member(&writes, VariantIndex(index)),
+                ) {
+                    (true, false) => Some(decl::Side::Read),
+                    (false, true) => Some(decl::Side::Write),
+                    _ => None,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        self.extend_field_with(field, shape, variants);
+    }
+
+    /// Extend a field with variant copies of the given access shape — as
+    /// [`extend_field`](Self::extend_field), but the schema needn't exist in
+    /// the model.
+    pub fn extend_field_with(
+        &mut self,
+        field: FieldIndex,
+        shape: Access,
+        variants: Vec<decl::VariantDecl>,
+    ) {
+        // a fresh access of the shape — any numericity it carries is discarded
+        let mut access: Access = match &shape {
+            Access::Read(..) => access::Read::default().into(),
+            Access::Write(..) => access::Write::default().into(),
+            Access::ReadWrite(..) => access::ReadWrite::default().into(),
+            Access::Store(..) => access::Store::default().into(),
+            Access::VolatileStore(..) => access::VolatileStore::default().into(),
+        };
+
+        // the field's own variants — inline and previously copied alike —
+        // re-composed into the fresh access on the sides they occupy
+        let own = {
+            let current = self.model.fields.get(*field).unwrap().access.access();
+
+            self.model
+                .variants
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node.parent == variant::ParentIndex::Field(field))
+                .map(|(index, _)| VariantIndex(index))
+                .map(|index| (index, side_of(current, index)))
+                .collect::<Vec<_>>()
+        };
+
+        let context = {
+            let node = self.model.fields.get(*field).unwrap();
+            let register = &self.model.registers[*node.parent];
+            let peripheral = &self.model.peripherals[&register.parent];
+
+            Context::with_path([
+                peripheral.ident().to_string(),
+                register.ident().to_string(),
+                node.ident().to_string(),
+            ])
+        };
+
+        let mut diagnostics = Diagnostics::new();
+
+        for (index, side) in own {
+            let variant = self.model.variants[*index].variant.clone();
+
+            access.visit_numericities_of(side, |numericity| {
+                diagnostics.extend(numericity.add_child(&variant, index, context.clone()));
+            });
+        }
+
+        for member in variants {
+            let index = VariantIndex(self.model.variants.len());
+
+            access.visit_numericities_of(member.side, |numericity| {
+                diagnostics.extend(numericity.add_child(&member.variant, index, context.clone()));
+            });
+
+            self.model.variants.push(VariantNode {
+                parent: variant::ParentIndex::Field(field),
+                variant: member.variant,
+            });
+        }
+
+        self.diagnostics.extend(diagnostics);
+
+        self.model.fields.get_mut(*field).unwrap().access = access::Source::Inherent(access);
+    }
+
+    /// Register entitlements for the indexed item.
+    ///
+    /// Entitlements reference items across the whole device, so they are
+    /// registered *after* structural insertion: every item they might
+    /// reference already exists, and declaration order carries no meaning.
+    pub fn entitle(
+        &mut self,
+        index: EntitlementIndex,
+        entitlements: impl IntoIterator<Item = impl IntoIterator<Item = Entitlement>> + Clone,
+    ) {
+        // reverse lookups
+        match &index {
+            EntitlementIndex::Variant(field, ..) => {
+                for entitlement in entitlements.clone().into_iter().flatten() {
+                    self.model
+                        .reverse_statewise_entitlements
+                        .entry(entitlement.field)
+                        .or_default()
+                        .insert(*field);
+                }
+            }
+            EntitlementIndex::HardwareWrite(field) => {
+                for entitlement in entitlements.clone().into_iter().flatten() {
+                    self.model
+                        .reverse_hardware_write_entitlements
+                        .entry(entitlement.field)
+                        .or_default()
+                        .insert(*field);
+                }
+            }
+            _ => {}
+        }
+
+        let context = index.into_context(&self.model);
+
+        match entitlement::Space::from_iter(&self.model, entitlements) {
+            Ok(space) => {
+                let mut tautology_diagnostics = Diagnostics::new();
+
+                for pattern in space
+                    .patterns()
+                    .filter(|pattern| pattern.is_tautology(&self.model))
+                {
+                    tautology_diagnostics.insert(Diagnostic::tautological_entitlements(
+                        &self.model,
+                        pattern,
+                        context.clone(),
+                    ));
+                }
+
+                self.diagnostics.extend(tautology_diagnostics);
+                self.model.entitlements.insert(index, space);
+            }
+            Err(entitlement::pattern::Error::Contradicts {
+                pattern,
+                space,
+                axis,
+            }) => {
+                self.diagnostics.insert(Diagnostic::invalid_entitlements(
+                    &self.model,
+                    &pattern,
+                    &axis,
+                    &space,
+                    context,
+                ));
+            }
+            Err(entitlement::pattern::Error::StructuralContradiction) => {
+                unreachable!("user-defined patterns should not be structural contradictions")
+            }
+        }
+    }
+
+    fn insert_peripheral_items(
+        &mut self,
+        peripheral: PeripheralIndex,
+        registers: Vec<decl::RegisterDecl>,
+        register_groups: Vec<decl::GroupDecl<decl::RegisterDecl>>,
+    ) {
+        let context = Context::with_path([peripheral.0.to_string()]);
+
+        for register in registers {
+            self.insert_register_decl(register, peripheral.clone(), None, context.clone());
+        }
+
+        for group in register_groups {
+            let ident = Ident::new(&group.name, Span::call_site());
+            let group_index = RegisterGroupIndex(ident.clone());
+
+            if self.model.register_groups.contains_key(&group_index) {
+                self.diagnostics
+                    .insert(Diagnostic::exists(&group.name, context.clone()));
+            }
+
+            self.model.register_groups.insert(
+                group_index.clone(),
+                GroupNode {
+                    parent: peripheral.clone(),
+                    group: Group { ident },
+                    members: Default::default(),
+                },
+            );
+
+            for member in group.members {
+                self.insert_register_decl(
+                    member,
+                    peripheral.clone(),
+                    Some(group_index.clone()),
+                    context.clone(),
+                );
+            }
+        }
+    }
+
+    fn insert_register_decl(
+        &mut self,
+        declaration: decl::RegisterDecl,
+        peripheral: PeripheralIndex,
+        group: Option<RegisterGroupIndex>,
+        context: Context,
+    ) {
+        let name = declaration.register.ident().to_string();
+
+        let register = self
+            .add_register_inner(declaration.register, peripheral, group, context.clone())
+            .index;
+
+        let context = context.and(name);
+
+        for field in declaration.fields {
+            self.insert_field_decl(field, register, None, context.clone());
+        }
+
+        for group in declaration.field_groups {
+            let ident = Ident::new(&group.name, Span::call_site());
+            let group_index = FieldGroupIndex(ident.clone());
+
+            if self.model.field_groups.contains_key(&group_index) {
+                self.diagnostics
+                    .insert(Diagnostic::exists(&group.name, context.clone()));
+            }
+
+            self.model.field_groups.insert(
+                group_index.clone(),
+                GroupNode {
+                    parent: register,
+                    group: Group { ident },
+                    members: Default::default(),
+                },
+            );
+
+            for member in group.members {
+                self.insert_field_decl(
+                    member,
+                    register,
+                    Some(group_index.clone()),
+                    context.clone(),
+                );
+            }
+        }
+    }
+
+    fn insert_field_decl(
+        &mut self,
+        declaration: decl::FieldDecl,
+        register: RegisterIndex,
+        group: Option<FieldGroupIndex>,
+        context: Context,
+    ) {
+        let name = declaration.field.ident().to_string();
+
+        let field = self
+            .add_field_inner::<()>(
+                declaration.field,
+                access::Source::Inherent(declaration.access),
+                register,
+                group,
+                context.clone(),
+            )
+            .index;
+
+        let context = context.and(name);
+
+        for variant in declaration.variants {
+            self.insert_variant_decl(variant, field, context.clone());
+        }
+    }
+
+    fn insert_variant_decl(
+        &mut self,
+        declaration: decl::VariantDecl,
+        field: FieldIndex,
+        context: Context,
+    ) {
+        let index = VariantIndex(self.model.variants.len());
+        let mut diagnostics = Diagnostics::new();
+
+        let access = self
+            .model
+            .fields
+            .get_mut(*field)
+            .unwrap()
+            .access
+            .inherent_mut()
+            .expect("declaration-inserted fields have inherent access");
+
+        access.visit_numericities_of(declaration.side, |numericity| {
+            diagnostics.extend(numericity.add_child(&declaration.variant, index, context.clone()));
+        });
+
+        self.diagnostics.extend(diagnostics);
+
+        self.model.variants.push(VariantNode {
+            parent: variant::ParentIndex::Field(field),
+            variant: declaration.variant,
+        });
+    }
+}
+
+/// The side a variant occupies within an access, derived from numericity
+/// membership: present in only one of a `read write` access's numericities
+/// means sided; anything else means unsided.
+fn side_of(access: &Access, index: VariantIndex) -> Option<decl::Side> {
+    let member_of = |numericity: Option<&Numericity>| {
+        matches!(
+            numericity,
+            Some(Numericity::Enumerated(enumerated))
+                if enumerated.variants.values().any(|member| *member == index)
+        )
+    };
+
+    match (member_of(access.get_read()), member_of(access.get_write())) {
+        (true, false) => Some(decl::Side::Read),
+        (false, true) => Some(decl::Side::Write),
+        _ => None,
+    }
+}
+
 impl Model {
     pub fn render_raw(&self) -> String {
         self.to_token_stream().to_string()
@@ -359,6 +849,47 @@ impl Model {
         }
     }
 
+    /// The variants parented at the given item, in declaration order.
+    pub fn variants_of<'cx>(
+        &'cx self,
+        parent: &'cx variant::ParentIndex,
+    ) -> impl Iterator<Item = View<'cx, VariantNode>> {
+        self.variants
+            .iter()
+            .enumerate()
+            .filter(move |(_, node)| node.parent == *parent)
+            .map(|(index, _)| self.get_variant(VariantIndex(index)))
+    }
+
+    pub fn get_schema(&self, index: SchemaIndex) -> View<'_, SchemaNode> {
+        self.try_get_schema(index).unwrap()
+    }
+
+    pub fn try_get_schema(&self, index: SchemaIndex) -> Option<View<'_, SchemaNode>> {
+        Some(View {
+            model: self,
+            node: self.schemas.get(*index)?,
+            index,
+        })
+    }
+
+    /// The schemas placed at the provided location ([`None`] is the device
+    /// root).
+    pub fn schemas_placed_at<'cx>(
+        &'cx self,
+        parent: Option<&'cx variant::ParentIndex>,
+    ) -> impl Iterator<Item = View<'cx, SchemaNode>> {
+        self.schemas
+            .iter()
+            .enumerate()
+            .filter(move |(.., node)| node.parent.as_ref() == parent)
+            .map(|(index, node)| View {
+                model: self,
+                index: SchemaIndex(index),
+                node,
+            })
+    }
+
     pub fn try_get_entitlements(
         &self,
         index: EntitlementIndex,
@@ -438,6 +969,10 @@ impl Model {
         self.variants.len()
     }
 
+    pub fn schema_count(&self) -> usize {
+        self.schemas.len()
+    }
+
     pub fn entitlement_count(&self) -> usize {
         self.entitlements.len()
     }
@@ -468,8 +1003,9 @@ impl Model {
                         rhs.domain().start,
                         lhs.domain().end - 4
                     ),
-                    new_context.clone(),
-                ));
+                    new_context.clone().and(lhs.ident().to_string()),
+                )
+                .related(new_context.clone().and(rhs.ident().to_string())));
             }
         }
 
@@ -626,6 +1162,10 @@ impl Model {
 impl ToTokens for Model {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let peripherals = self.peripherals().collect();
+
+        for schema in self.schemas_placed_at(None) {
+            tokens.extend(schema.generate());
+        }
 
         tokens.extend(self.generate_peripherals());
         tokens.extend(self.generate_peripherals_struct(&peripherals));

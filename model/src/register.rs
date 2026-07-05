@@ -178,8 +178,9 @@ impl<'cx> View<'cx, RegisterNode> {
                             field.domain().start.max(other.domain().start),
                             field.domain().end.min(other.domain().end - 1),
                         ),
-                        new_context.clone(),
+                        new_context.clone().and(field.ident().to_string()),
                     )
+                    .related(new_context.clone().and(other.ident().to_string()))
                     .notes(
                         if ontological_entitlements.is_some() || other_ontological_entitlements.is_some() {
                             vec![format!(
@@ -206,38 +207,52 @@ impl<'cx> View<'cx, RegisterNode> {
             ));
         }
 
-        match self.reset {
-            Some(reset) => {
-                // every resolvable field should have a valid reset
+        // every resolvable field's reset must come from somewhere — its own
+        // or its register's — and where both exist they must agree
+        for field in self.fields() {
+            let register_slice = self.reset.map(|reset| field.get_reset(reset));
 
-                for field in self.fields() {
-                    let Some(Numericity::Enumerated(enumerated)) = field.resolvable() else {
-                        continue;
-                    };
-
-                    let field_reset = field.get_reset(reset);
-
-                    if enumerated
-                        .variants(self.model)
-                        .any(|variant| variant.bits == field_reset)
-                    {
-                        continue;
-                    }
-
-                    diagnostics.insert(Diagnostic::invalid_reset(
-                        &field,
-                        enumerated.variants(self.model),
-                        field_reset,
-                        reset,
-                        new_context.clone(),
-                    ));
-                }
+            if let (Some(own), Some(slice)) = (field.reset, register_slice)
+                && own != slice
+            {
+                diagnostics.insert(Diagnostic::contradictory_reset(
+                    &field,
+                    own,
+                    slice,
+                    new_context.clone(),
+                ));
             }
-            None => {
-                if self.is_resolvable() {
-                    diagnostics.insert(Diagnostic::expected_reset(self, new_context.clone()));
-                }
+
+            let Some(Numericity::Enumerated(enumerated)) = field.resolvable() else {
+                continue;
+            };
+
+            let Some(effective) = field.reset.or(register_slice) else {
+                continue;
+            };
+
+            if enumerated
+                .variants(self.model)
+                .any(|variant| variant.bits == effective)
+            {
+                continue;
             }
+
+            diagnostics.insert(Diagnostic::invalid_reset(
+                &field,
+                enumerated.variants(self.model),
+                effective,
+                if field.reset.is_some() { None } else { self.reset },
+                new_context.clone(),
+            ));
+        }
+
+        if self.reset.is_none()
+            && self
+                .fields()
+                .any(|field| field.is_resolvable() && field.reset.is_none())
+        {
+            diagnostics.insert(Diagnostic::expected_reset(self, new_context.clone()));
         }
 
         for field in sorted_fields {
@@ -260,11 +275,15 @@ impl<'cx> View<'cx, RegisterNode> {
             },
         );
 
-        let grouped = self.model.field_groups().fold(quote! {}, |mut acc, group| {
-            acc.extend(group.generate());
+        let grouped = self
+            .model
+            .field_groups()
+            .filter(|group| group.parent == self.index)
+            .fold(quote! {}, |mut acc, group| {
+                acc.extend(group.generate());
 
-            acc
-        });
+                acc
+            });
 
         quote! {
             #standalone
@@ -358,6 +377,13 @@ impl<'cx> View<'cx, RegisterNode> {
         let mut body = quote! {};
 
         let module_name = self.ident();
+
+        for schema in self
+            .model
+            .schemas_placed_at(Some(&crate::variant::ParentIndex::Register(self.index)))
+        {
+            body.extend(schema.generate());
+        }
 
         body.extend(self.generate_fields());
         body.extend(self.generate_reset());

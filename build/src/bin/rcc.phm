@@ -1,0 +1,12 @@
+// A model component description: reset and clock control.
+
+/// Reset and clock control.
+peripheral rcc @ 0x4002_1000 {
+    register ahb1enr @ 0x0 reset 0x0 {
+        /// CORDIC clock enable.
+        store field cordicen @ 3 {
+            variant Disabled ~ 0
+            variant Enabled ~ 1
+        }
+    }
+}

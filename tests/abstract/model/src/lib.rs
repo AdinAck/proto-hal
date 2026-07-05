@@ -1,39 +1,32 @@
 #![allow(clippy::disallowed_names)]
 
-use phm::{Composition, Field, Peripheral, Register, Variant, prelude::*};
+use phm::Composition;
 
+/// The device's model description source.
+pub const DEVICE: &str = include_str!("device.phm");
+
+/// The device model, evaluated from [`DEVICE`].
+///
+/// Both the HAL codegen (`out/build.rs`) and the gate macros consume this
+/// model description, so the `.phm` source is the single point of truth for
+/// the test device.
+///
+/// Diagnostics are *not* reported here — the drivers report them naturally:
+/// `out/build.rs` fails the build with full reports, and this crate's `main`
+/// renders them for terminal use.
 pub fn compose() -> Composition {
-    let mut composition = Composition::new();
+    let (file, ..) = syntax::parse(DEVICE, 0);
 
-    let mut p_group = composition.add_group("p_group");
+    let Some(file) = file else {
+        return Composition::new();
+    };
 
-    let mut foo = p_group.add_peripheral(Peripheral::new("foo", 0));
+    let units = vec![proto_hal_build::model::elaborate::Unit {
+        file,
+        imports: Default::default(),
+    }];
 
-    let mut r_group = foo.add_group("r_group");
-
-    let mut foo0 = r_group.add_register(Register::new("foo0", 0).reset(3));
-
-    let mut f_group = foo0.add_group("f_group");
-
-    let mut a = f_group.add_store_field(Field::new("a", 0, 4));
-
-    for i in 0..5 {
-        a.add_variant(Variant::new(format!("V{i}"), i));
-    }
-
-    let v5 = a.add_variant(Variant::new("V5", 5)).make_entitlement();
-
-    let mut foo1 = foo.add_register(Register::new("foo1", 4));
-
-    let mut write_requires_v5 = foo1.add_write_field(Field::new("write_requires_v5", 0, 1));
-
-    write_requires_v5.add_variant(Variant::new("Noop", 0));
-    write_requires_v5.write_entitlements([[v5]]);
-
-    let mut bar = composition.add_peripheral(Peripheral::new("bar", 0x100));
-
-    bar.add_register(Register::new("bar0", 0));
-    bar.add_register(Register::new("bar1", 4));
+    let (composition, ..) = proto_hal_build::model::elaborate::elaborate(&units);
 
     composition
 }

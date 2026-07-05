@@ -11,5 +11,4 @@ macros = { package = "abstract-macros", path = "../macros" }
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [build-dependencies]
-model = { package = "abstract-model", path = "../model" }
-proto-hal-build = { path = "../../../build" }
+proto-hal-build = { path = "../../../build", features = ["phm"] }
