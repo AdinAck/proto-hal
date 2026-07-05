@@ -1,0 +1,114 @@
+// The model description language, by example.
+//
+// Top-level items are noncorporeal *definitions*: nothing here occupies the
+// device until it is elaborated inside the `device` structure. In practice,
+// definitions like these would live in other files and be imported — they are
+// inlined here so this file exercises the whole grammar. Paths (in `requires`
+// clauses and imports) are not resolved yet; some are illustrative.
+
+import rcc
+
+/// The mode of a GPIO pin.
+read write schema pin_mode {
+    variant Input ~ 0
+    variant Output ~ 1
+    variant Alternate ~ 2
+    variant Analog ~ 3
+}
+
+/// A basic enable switch.
+store schema enable {
+    variant Disabled ~ 0
+    variant Enabled ~ 1
+}
+
+/// GPIO port mode register.
+register moder @ 0x0 reset 0xffff_ffff
+
+/// GPIO port output speed register.
+register ospeedr @ 0x8 reset 0x0
+
+/// A generic GPIO port.
+peripheral gpio_port {
+    register #moder {
+        /// The mode of the corresponding pin.
+        field array mode[0..=15] @ [0..=1, ...] assumes pin_mode
+    }
+
+    register #ospeedr
+
+    /// Alternate function registers.
+    register array afr[l, h] @ [0x20, ...] reset 0x0
+}
+
+device example {
+    // schemas must be given a location in the device to be *assumed*
+    // (extension is fine either way — the definitions land in the extending field)
+    schema #enable
+
+    peripheral group gpio {
+        schema #pin_mode
+
+        peripheral array #gpio_port as gpio[a, b, c] @ [0x4800_0000, 0x4800_0400, 0x4800_0800]
+    }
+
+    /// CORDIC co-processor.
+    // this peripheral only exists while its clock is enabled
+    peripheral cordic @ 0x4002_0c00
+        requires rcc.ahb1enr.cordicen.enabled
+    {
+        register csr @ 0x0 reset 0x0 {
+            /// Function select.
+            store field func @ 0..=3 {
+                variant Cos ~ 0
+                variant Sin ~ 1
+                /// Only valid for certain argument formats.
+                variant Sqrt ~ 9 requires (scale.n0 & arg1.q31) | (scale.n1 & arg1.q31)
+            }
+
+            /// Result ready flag.
+            read field rrdy @ 31
+
+            /// Interrupt enable.
+            store field ien @ 16
+                assumes enable
+                reset Disabled
+                write requires csr.rrdy.no_data
+
+            /// DMA read enable, with a burst mode.
+            store field dmaren @ 17..=18 extends enable {
+                variant Burst ~ 2
+            }
+
+            /// Start a calculation.
+            write field start @ 4 {
+                inert variant Idle ~ 0
+                variant Start ~ 1
+            }
+
+            /// Number of algorithm iterations, as multiples of 4.
+            store field precision @ 8..=11 {
+                variant array P[1..=15] ~ [4, ...+4]
+            }
+        }
+    }
+
+    /// A watchdog with an incomplete description.
+    leaky peripheral wwdg @ 0x4000_2c00 {
+        register cr @ 0x0 reset 0x7f {
+            /// Counter value.
+            store field t @ 0..=6 reset 0x7f
+
+            /// Activation bit — set by software, cleared by hardware.
+            volatile store field wdga @ 7 assumes enable
+                hardware write requires cr.t.zero
+        }
+    }
+
+    interrupts {
+        wwdg
+        pvd
+        reserved
+        rtc
+    }
+}
