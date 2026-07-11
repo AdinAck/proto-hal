@@ -1,22 +1,51 @@
 use derive_more::{AsRef, Deref};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{ToTokens as _, quote};
 use syn::Ident;
 
 use crate::{
-    Node,
+    Model, Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    entitlement::{self, codegen::generate_entitlements},
+    entitlement::{self, EntitlementIndex, codegen::generate_entitlements},
     field::{FieldIndex, FieldNode},
+    group::{FieldGroupIndex, PeripheralGroupIndex, RegisterGroupIndex},
     model::View,
+    peripheral::PeripheralIndex,
+    register::RegisterIndex,
 };
+
+#[derive(Debug, Clone)]
+pub enum ParentIndex {
+    Peripheral(PeripheralIndex),
+    PeripheralGroup(PeripheralGroupIndex),
+    Register(RegisterIndex),
+    RegisterGroup(RegisterGroupIndex),
+    Field(FieldIndex),
+    FieldGroup(FieldGroupIndex),
+}
+
+impl ParentIndex {
+    pub fn path(self, model: &Model) -> TokenStream {
+        match self {
+            ParentIndex::Peripheral(index) => model.get_peripheral(index).path(),
+            ParentIndex::PeripheralGroup(index) => model.get_peripheral_group(index).path(),
+            ParentIndex::Register(index) => model.get_register(index).path(),
+            ParentIndex::RegisterGroup(index) => model.get_register_group(index).path(),
+            ParentIndex::Field(index) => model.get_field(index).path(),
+            ParentIndex::FieldGroup(index) => model.get_field_group(index).path(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
 pub struct VariantIndex(pub(super) usize);
 
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct VariantNode {
-    pub(super) parent: FieldIndex,
+    // TODO: maybe this isn't needed?
+    #[expect(unused)]
+    pub(super) parent: ParentIndex,
     #[deref]
     #[as_ref]
     pub(super) variant: Variant,
@@ -62,28 +91,34 @@ impl Variant {
         self
     }
 
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
+    }
+
     pub fn module_name(&self) -> Ident {
-        Ident::new(
-            inflector::cases::snakecase::to_snake_case(self.ident.to_string().as_str()).as_str(),
-            Span::call_site(),
-        )
+        // always the ident
+        self.ident()
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            inflector::cases::pascalcase::to_pascal_case(self.ident.to_string().as_str()).as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
+    }
+}
+
+impl<'cx> View<'cx, VariantNode> {
+    pub fn path_segment(&self) -> TokenStream {
+        // always the module name
+        self.module_name().to_token_stream()
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.module_name().clone().to_string());
+        let new_context = context.clone().and(self.ident().to_string());
 
         // TODO: these are old...
         let reserved = ["variant", "generic", "preserve", "dynamic"]; // note: waiting for const type inference
 
-        if reserved.contains(&self.module_name().to_string().as_str()) {
+        if reserved.contains(&self.ident().to_string().as_str()) {
             diagnostics.insert(Diagnostic::reserved(
                 &self.type_name(),
                 reserved.iter(),
@@ -120,7 +155,11 @@ impl<'cx> View<'cx, VariantNode> {
             .expect("field must be resolvable if its variants are being generated")
             .variants(self.model)
             .expect("expected field to have variants")
-            .all(|variant| variant.statewise_entitlements().is_none())
+            .all(|variant| {
+                self.model
+                    .try_get_entitlements(EntitlementIndex::Variant(field.index, variant.index))
+                    .is_none()
+            })
         {
             None?
         }
@@ -145,24 +184,26 @@ impl<'cx> View<'cx, VariantNode> {
     }
 
     pub fn generate(&self, parent: View<'cx, FieldNode>) -> TokenStream {
-        let ident = self.module_name();
+        let module = self.module_name();
         let ty = self.type_name();
         let mut body = quote! {};
 
-        let statewise_entitlements = self.statewise_entitlements();
+        let statewise_entitlements = self
+            .model
+            .try_get_entitlements(EntitlementIndex::Variant(parent.index, self.index));
 
         body.extend(self.generate_state());
         body.extend(self.generate_entitlements(parent, statewise_entitlements.as_deref().copied()));
 
         quote! {
-            pub mod #ident {
+            pub mod #module {
                 #[allow(unused)]
                 use super::*;
 
                 #body
             }
 
-            pub use #ident::#ty;
+            pub use #module::#ty;
         }
     }
 }

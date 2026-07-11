@@ -4,7 +4,7 @@ use std::{collections::HashMap, num::NonZeroU32, ops::Deref};
 
 use indexmap::IndexSet;
 use model::{
-    entitlement,
+    entitlement::{self, EntitlementIndex},
     field::{Field, FieldIndex, FieldNode, numericity::Numericity},
     model::{Model, View},
     peripheral::Peripheral,
@@ -27,15 +27,15 @@ use crate::macros::{
 };
 
 pub fn unique_register_ident(peripheral: &Peripheral, register: &Register) -> Ident {
-    format_ident!("{}_{}", peripheral.module_name(), register.module_name(),)
+    format_ident!("{}_{}", peripheral.ident(), register.ident(),)
 }
 
 pub fn unique_field_ident(peripheral: &Peripheral, register: &Register, field: &Field) -> Ident {
     format_ident!(
         "{}_{}_{}",
-        peripheral.module_name(),
-        register.module_name(),
-        field.module_name()
+        peripheral.ident(),
+        register.ident(),
+        field.ident()
     )
 }
 
@@ -147,9 +147,9 @@ pub fn validate_entitlement_dependency_presence<'cx, PeripheralEntryPolicy, Fiel
                 let (p, r) = field.parents();
                 input
                     .get_field(
-                        p.module_name().to_string(),
-                        r.module_name().to_string(),
-                        field.module_name().to_string(),
+                        p.ident().to_string(),
+                        r.ident().to_string(),
+                        field.ident().to_string(),
                     )
                     .is_some()
             }) {
@@ -172,7 +172,7 @@ pub fn validate_entitlement_dependency_presence<'cx, PeripheralEntryPolicy, Fiel
         cx_ident,
         input
             .visit_fields()
-            .map(|field| field.field().module_name().to_string()),
+            .map(|field| field.field().ident().to_string()),
         unsatisfiable_spaces.iter().map(Deref::deref),
     ));
 }
@@ -196,13 +196,13 @@ pub fn validate_entitlement_dependent_presence<'cx, PeripheralEntryPolicy, Field
 
         if input
             .get_field(
-                p.module_name().to_string(),
-                r.module_name().to_string(),
-                field.module_name().to_string(),
+                p.ident().to_string(),
+                r.ident().to_string(),
+                field.ident().to_string(),
             )
             .is_none()
         {
-            missing_dependents.insert(field.module_name().to_string());
+            missing_dependents.insert(field.ident().to_string());
         }
     }
 
@@ -223,7 +223,7 @@ pub fn static_initial<'cx>(
         .register()
         .fields()
         .filter_map(|field| {
-            let intert_variant = match field.access.get_write()? {
+            let intert_variant = match field.access.access().get_write()? {
                 Numericity::Numeric(..) => None?,
                 Numericity::Enumerated(enumerated) => enumerated.some_inert(model)?,
             };
@@ -325,7 +325,14 @@ pub fn field_is_dependency<'cx>(
                     .iter()
                     .flat_map(|numericity| numericity.variants(model))
                     .flatten()
-                    .flat_map(|variant| variant.statewise_entitlements().into_iter()),
+                    .flat_map(|variant| {
+                        model
+                            .try_get_entitlements(EntitlementIndex::Variant(
+                                *other_field_item.field().index(),
+                                *variant.index(),
+                            ))
+                            .into_iter()
+                    }),
             )
         {
             for entitlement_field in entitlement_set.entitlement_fields() {
@@ -430,8 +437,8 @@ pub fn input_field_states<'cx>(
                         *field_item.field().index(),
                         fragments::input_ty(
                             peripheral_item.path(),
-                            register_item.ident(),
-                            field_item.ident(),
+                            register_item.path(),
+                            field_item.path(),
                             field_item.field(),
                             generics.input.as_ref(),
                         ),
@@ -459,10 +466,10 @@ pub fn field_states_after_register<'cx>(
 
         let Some(transition_return_ty) = fragments::transition_return_ty(
             peripheral_path,
-            register_item.ident(),
+            register_item.path(),
             field_item.entry(),
             field_item.field(),
-            field_item.ident(),
+            field_item.path(),
             generics.output.as_ref(),
         ) else {
             continue;

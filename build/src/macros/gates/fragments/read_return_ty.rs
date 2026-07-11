@@ -13,9 +13,9 @@ pub fn read_return_ty<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             ..
         } => Some(read_value_ty(
             peripheral_path,
-            &register.ident,
-            &field.ident,
-            field.access.get_read()?,
+            &register.path_segment(),
+            &field.path_segment(),
+            field.access.access().get_read()?,
         )),
         ReturnRank::Register { register, .. } => {
             let ident = register.type_name();

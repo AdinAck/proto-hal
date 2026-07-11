@@ -7,7 +7,7 @@ use model::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{Ident, Path};
+use syn::{Ident, Path, spanned::Spanned as _};
 
 use crate::macros::{
     gates::fragments,
@@ -21,9 +21,9 @@ use crate::macros::{
 pub fn constraints<'cx>(
     input: &semantic::Gate<'cx, policies::peripheral::ForbidPath, policies::field::GateEntry<'cx>>,
     peripheral_path: &Path,
-    register_ident: &Ident,
+    register_path: &Path,
     binding: &Binding,
-    field_ident: &Ident,
+    field_path: &Path,
     field: &View<'cx, FieldNode>,
     input_generic: Option<&Ident>,
     output_generic: Option<&Ident>,
@@ -40,17 +40,17 @@ pub fn constraints<'cx>(
     // the register which imposes the constraints.
 
     let mut constraints = Vec::new();
-    let span = field_ident.span();
+    let span = field_path.span();
 
     if let Some(generic) = input_generic {
         constraints.push(
-            quote_spanned! { span => #generic: ::proto_hal::stasis::State<#peripheral_path::#register_ident::#field_ident::Field> },
+            quote_spanned! { span => #generic: ::proto_hal::stasis::State<#peripheral_path::#register_path::#field_path::Field> },
         );
     }
 
     if let Some(generic) = output_generic {
         constraints.push(
-            quote_spanned! { span => #generic: ::proto_hal::stasis::Physical<#peripheral_path::#register_ident::#field_ident::Field> },
+            quote_spanned! { span => #generic: ::proto_hal::stasis::Physical<#peripheral_path::#register_path::#field_path::Field> },
         );
     }
 
@@ -86,13 +86,11 @@ fn write_entitlements<'cx>(
     let field_marker = {
         let (peripheral, register) = field.parents();
 
-        let peripheral_path = input
-            .get_peripheral(peripheral.module_name().to_string())?
-            .path();
-        let register_ident = register.module_name();
-        let field_ident = field.module_name();
+        let peripheral_path = input.get_peripheral(peripheral.ident().to_string())?.path();
+        let register_path = register.path_segment();
+        let field_path = field.path_segment();
 
-        quote! { #peripheral_path::#register_ident::#field_ident::Field }
+        quote! { #peripheral_path::#register_path::#field_path::Field }
     };
 
     // get entitlement *fields*
@@ -108,9 +106,9 @@ fn write_entitlements<'cx>(
         let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
         let (.., entitlement_register_item, entitlement_field_item) = input.get_field(
-            entitlement_peripheral.module_name().to_string(),
-            entitlement_register.module_name().to_string(),
-            entitlement_field.module_name().to_string(),
+            entitlement_peripheral.ident().to_string(),
+            entitlement_register.ident().to_string(),
+            entitlement_field.ident().to_string(),
         )?;
 
         let generics = fragments::generics(
@@ -169,9 +167,9 @@ fn statewise_entitlements<'cx>(
 
         let (.., entitlement_register_item, entitlement_field_item) =
             input.get_field(
-                entitlement_peripheral.module_name().to_string(),
-                entitlement_register.module_name().to_string(),
-                entitlement_field.module_name().to_string(),
+                entitlement_peripheral.ident().to_string(),
+                entitlement_register.ident().to_string(),
+                entitlement_field.ident().to_string(),
             )?;
 
         let generics = fragments::generics(

@@ -36,6 +36,7 @@ impl<'cx> Transition<'cx> {
                 transition,
                 &field
                     .access
+                    .access()
                     .get_write()
                     .ok_or(Diagnostic::field_must_be_writable(field_ident))?,
             ) {

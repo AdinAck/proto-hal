@@ -147,14 +147,17 @@ impl Pattern {
                     //       arbitrary since resolvable fields are symmetrical
                     // note: ".resolvable()" is not used as that method relies on this one
                     let Numericity::Enumerated(Enumerated { variants }) =
-                        field.access.get_read()?
+                        field.access.access().get_read()?
                     else {
                         None?
                     };
 
-                    let whole = IndexSet::<Entitlement>::from_iter(
-                        variants.values().copied().map(Entitlement),
-                    );
+                    let whole = IndexSet::<Entitlement>::from_iter(variants.values().copied().map(
+                        |variant_index| Entitlement {
+                            field: field_index,
+                            variant: variant_index,
+                        },
+                    ));
 
                     let mut complement = whole.difference(entitlements).copied().peekable();
 
@@ -203,7 +206,7 @@ impl Pattern {
                         .join(", ");
                     format!(
                         "<{} | {}>",
-                        model.get_field(field_index).module_name(),
+                        model.get_field(field_index).ident(),
                         entitlement_idents
                     )
                 })

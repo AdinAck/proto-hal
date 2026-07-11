@@ -76,8 +76,6 @@ fn write_untracked(scheme: Scheme, model: Model, tokens: TokenStream) -> TokenSt
         let peripheral_path = peripheral_item.path();
 
         for register_item in peripheral_item.registers().values() {
-            let register_ident = register_item.ident();
-
             reg_write_values.push(reg_write_value(&scheme, register_item));
 
             addrs.push(fragments::register_address(
@@ -87,7 +85,7 @@ fn write_untracked(scheme: Scheme, model: Model, tokens: TokenStream) -> TokenSt
             ));
 
             for field_item in register_item.fields().values() {
-                if let Some(write) = field_item.field().access.get_write() {
+                if let Some(write) = field_item.field().access.access().get_write() {
                     parameter_idents.push(unique_field_ident(
                         register_item.peripheral(),
                         register_item.register(),
@@ -96,15 +94,15 @@ fn write_untracked(scheme: Scheme, model: Model, tokens: TokenStream) -> TokenSt
 
                     parameter_tys.push(fragments::write_value_ty(
                         peripheral_path,
-                        register_ident,
-                        field_item.ident(),
+                        register_item.path(),
+                        field_item.path(),
                         write,
                     ));
 
                     parameter_write_values.push(fragments::write_argument_value(
                         peripheral_path,
-                        register_ident,
-                        field_item.ident(),
+                        register_item.path(),
+                        field_item.path(),
                         field_item.field(),
                         field_item.entry(),
                     ));

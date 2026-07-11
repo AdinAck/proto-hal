@@ -1,15 +1,16 @@
 use colored::Colorize;
 use derive_more::{AsRef, Deref};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use indexmap::IndexMap;
-use inflector::Inflector as _;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::Ident;
+use syn::{Ident, Path, parse_quote};
 
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
-    field::{FieldIndex, FieldNode, numericity::Numericity},
+    field::{FieldIndex, numericity::Numericity},
+    group::{RegisterGroupIndex, RegisterGroupNode},
     model::View,
     peripheral::PeripheralIndex,
 };
@@ -24,6 +25,7 @@ pub struct RegisterNode {
     #[as_ref]
     pub(super) register: Register,
     pub(super) fields: IndexMap<Ident, FieldIndex>,
+    pub(super) group: Option<RegisterGroupIndex>,
 }
 
 impl Node for RegisterNode {
@@ -49,7 +51,7 @@ pub struct Register {
 impl Register {
     pub fn new(ident: impl AsRef<str>, offset: u32) -> Self {
         Self {
-            ident: Ident::new(ident.as_ref().to_lowercase().as_str(), Span::call_site()),
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
             offset,
             reset: None,
             docs: Vec::new(),
@@ -89,15 +91,12 @@ impl Register {
         }
     }
 
-    pub fn module_name(&self) -> Ident {
-        self.ident.clone()
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), self.ident.span())
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_pascal_case().as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), self.ident.span())
     }
 }
 
@@ -107,9 +106,33 @@ impl<'cx> View<'cx, RegisterNode> {
         self.fields().any(|field| field.is_resolvable())
     }
 
+    pub fn path(&self) -> TokenStream {
+        let parent = self.parent().path();
+        let segment = self.path_segment();
+
+        quote! { #parent::#segment }
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, RegisterGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_register_group(group.clone()))
+    }
+
     pub fn validate(&self, context: &Context) -> Diagnostics {
         let mut diagnostics = Diagnostics::new();
-        let new_context = context.clone().and(self.module_name().to_string());
+        let new_context = context.clone().and(self.ident().to_string());
 
         if !self.offset.is_multiple_of(4) {
             diagnostics.insert(
@@ -148,8 +171,8 @@ impl<'cx> View<'cx, RegisterNode> {
 
                 diagnostics.insert(
                     Diagnostic::overlap(
-                        &field.module_name(),
-                        &other.module_name(),
+                        &field.ident(),
+                        &other.ident(),
                         &format!(
                             "{}...{}",
                             field.domain().start.max(other.domain().start),
@@ -176,7 +199,7 @@ impl<'cx> View<'cx, RegisterNode> {
             && field.domain().end > 32
         {
             diagnostics.insert(Diagnostic::exceeds_domain(
-                &field.module_name(),
+                &field.ident(),
                 &format!("{}...{}", field.domain().start, field.domain().end - 1),
                 &"0...31",
                 new_context.clone(),
@@ -227,34 +250,45 @@ impl<'cx> View<'cx, RegisterNode> {
 
 // codegen
 impl<'cx> View<'cx, RegisterNode> {
-    fn generate_fields(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
-        fields.iter().fold(quote! {}, |mut acc, field| {
-            acc.extend(field.generate());
+    fn generate_fields(&self) -> TokenStream {
+        let standalone = self.fields().filter(|field| field.group.is_none()).fold(
+            quote! {},
+            |mut acc, field| {
+                acc.extend(field.generate());
+
+                acc
+            },
+        );
+
+        let grouped = self.model.field_groups().fold(quote! {}, |mut acc, group| {
+            acc.extend(group.generate());
 
             acc
-        })
+        });
+
+        quote! {
+            #standalone
+            #grouped
+        }
     }
 
-    fn generate_reset(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
-        let field_idents = fields
-            .iter()
-            .map(|field| field.module_name())
-            .collect::<Vec<_>>();
+    fn generate_reset(&self) -> TokenStream {
+        let field_idents = self.fields().map(|field| field.ident()).collect::<Vec<_>>();
 
-        let reset_tys = fields
-            .iter()
+        let reset_tys = self
+            .fields()
             .map(|field| {
-                let ident = field.module_name();
+                let module = field.path_segment();
                 let ty = field.type_name();
 
                 let ontological_entitlements = field.ontological_entitlements();
 
                 let reset_ty = if ontological_entitlements.is_none() {
-                    let reset_ty = field.reset_ty(&quote! { #ident }, self.reset);
+                    let reset_ty = field.reset_ty(&quote! { #module }, self.reset);
 
-                    quote! { #ident::#ty<#reset_ty> }
+                    quote! { #module::#ty<#reset_ty> }
                 } else {
-                    quote! { #ident::Masked }
+                    quote! { #module::Masked }
                 };
 
                 quote! { #reset_ty }
@@ -280,24 +314,21 @@ impl<'cx> View<'cx, RegisterNode> {
         }
     }
 
-    fn generate_dynamic(&self, fields: &Vec<View<'cx, FieldNode>>) -> TokenStream {
-        let field_idents = fields
-            .iter()
-            .map(|field| field.module_name())
-            .collect::<Vec<_>>();
+    fn generate_dynamic(&self) -> TokenStream {
+        let field_idents = self.fields().map(|field| field.ident()).collect::<Vec<_>>();
 
-        let reset_tys = fields
-            .iter()
+        let reset_tys = self
+            .fields()
             .map(|field| {
-                let ident = field.module_name();
+                let module = field.path_segment();
                 let ty = field.type_name();
 
                 let ontological_entitlements = field.ontological_entitlements();
 
                 let reset_ty = if ontological_entitlements.is_none() {
-                    quote! { #ident::#ty<::proto_hal::stasis::Dynamic> }
+                    quote! { #module::#ty<::proto_hal::stasis::Dynamic> }
                 } else {
-                    quote! { #ident::Masked }
+                    quote! { #module::Masked }
                 };
 
                 quote! { #reset_ty }
@@ -326,12 +357,11 @@ impl<'cx> View<'cx, RegisterNode> {
     pub fn generate(&self) -> TokenStream {
         let mut body = quote! {};
 
-        let module_name = self.module_name();
-        let fields = self.fields().collect();
+        let module_name = self.ident();
 
-        body.extend(self.generate_fields(&fields));
-        body.extend(self.generate_reset(&fields));
-        body.extend(self.generate_dynamic(&fields));
+        body.extend(self.generate_fields());
+        body.extend(self.generate_reset());
+        body.extend(self.generate_dynamic());
 
         let docs = &self.docs;
         quote! {

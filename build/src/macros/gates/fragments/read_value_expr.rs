@@ -5,14 +5,14 @@ use model::{
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Path};
+use syn::Path;
 
 use crate::macros::gates::utils::unique_register_ident;
 
 pub fn read_value_expr(
     peripheral_path: &Path,
-    register_ident: &Ident,
-    field_ident: &Ident,
+    register_path: &Path,
+    field_path: &Path,
     peripheral: &Peripheral,
     register: &Register,
     field: &FieldNode,
@@ -33,10 +33,10 @@ pub fn read_value_expr(
         quote! { (#reg #shift) & #mask }
     };
 
-    Some(match field.access.get_read()? {
+    Some(match field.access.access().get_read()? {
         Numericity::Numeric(..) => value,
         Numericity::Enumerated(..) => quote! {
-            unsafe { #peripheral_path::#register_ident::#field_ident::ReadVariant::from_bits(#value) }
+            unsafe { #peripheral_path::#register_path::#field_path::ReadVariant::from_bits(#value) }
         },
     })
 }

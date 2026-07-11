@@ -17,8 +17,8 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             ..
         } => read_value_expr(
             peripheral_path,
-            &register.ident,
-            &field.ident,
+            &register.path_segment(),
+            &field.path_segment(),
             peripheral,
             register,
             field,
@@ -26,7 +26,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
         ReturnRank::Register {
             peripheral_path,
             peripheral,
-            register_ident,
+            register_path,
             register,
             fields,
             ..
@@ -34,7 +34,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
             peripheral_path,
             peripheral,
             &register.type_name(),
-            register_ident,
+            register_path,
             register,
             fields,
         )),
@@ -45,9 +45,9 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                     let peripheral_ty = peripheral.type_name();
                     let (register_idents, register_values) = registers
                         .values()
-                        .map(|(register_ident, register, fields)| {
+                        .map(|(register_path, register, fields)| {
                             (
-                                register.module_name(),
+                                register.ident(),
                                 register_read_return_init(
                                     peripheral_path,
                                     peripheral,
@@ -56,7 +56,7 @@ pub fn read_return_init<'cx>(rank: &ReturnRank<'cx>) -> Option<TokenStream> {
                                         peripheral.type_name(),
                                         register.type_name()
                                     ),
-                                    register_ident,
+                                    register_path,
                                     register,
                                     fields,
                                 ),

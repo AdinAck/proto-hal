@@ -9,7 +9,7 @@ macro_rules! key {
         impl $ty_name {
             /// Produce the key for the provided model component.
             pub fn from_model(component: &$model_component) -> Self {
-                Self(component.module_name().to_string())
+                Self(component.ident().to_string())
             }
 
             /// Speculatively produce a key from the provided identifier.

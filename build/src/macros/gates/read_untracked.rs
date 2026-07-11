@@ -102,7 +102,7 @@ fn validate<'cx>(input: &Input<'cx>) -> Diagnostics {
     input
         .visit_fields()
         .filter_map(|field_item| {
-            if !field_item.field().access.is_read() {
+            if !field_item.field().access.access().is_read() {
                 Some(Diagnostic::field_must_be_readable(field_item.ident()))
             } else {
                 None

@@ -126,16 +126,16 @@ fn make_parameter<'cx>(
         field_item.field(),
     );
     let peripheral_path = peripheral_item.path();
-    let register_ident = register_item.ident();
-    let field_ident = field_item.ident();
+    let register_path = register_item.path();
+    let field_path = field_item.path();
     let ty = field_item.field().type_name();
 
     // TODO: this will change with hardware write entitlements
-    let ref_ = if let Access::Store(..) = &field_item.field().access {
+    let ref_ = if let Access::Store(..) = &field_item.field().access.access() {
         quote! { & }
     } else {
         quote! { &mut }
     };
 
-    quote! { #unique_ident: #ref_ #peripheral_path::#register_ident::#field_ident::#ty<::proto_hal::stasis::Dynamic> }
+    quote! { #unique_ident: #ref_ #peripheral_path::#register_path::#field_path::#ty<::proto_hal::stasis::Dynamic> }
 }

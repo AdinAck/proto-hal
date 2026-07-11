@@ -68,7 +68,7 @@ fn unmask_inner(model: Model, tokens: TokenStream, in_place: bool) -> TokenStrea
     let mut rebinds = Vec::new();
 
     for peripheral_item in input.visit_peripherals() {
-        let peripheral_ident = peripheral_item.peripheral().module_name();
+        let peripheral_ident = peripheral_item.peripheral().ident();
         let peripheral_path = peripheral_item.path();
 
         let Some(ontological_entitlements) =
@@ -277,9 +277,9 @@ fn get_entitlement_input_items<'cx>(
     let (entitlement_peripheral, entitlement_register) = entitlement_field.parents();
 
     input.get_field(
-        entitlement_peripheral.module_name().to_string(),
-        entitlement_register.module_name().to_string(),
-        entitlement_field.module_name().to_string(),
+        entitlement_peripheral.ident().to_string(),
+        entitlement_register.ident().to_string(),
+        entitlement_field.ident().to_string(),
     )
 }
 
@@ -298,12 +298,12 @@ fn field_paths<'cx>(
     field_item: &FieldItem<'cx>,
 ) -> (TokenStream, TokenStream) {
     let peripheral_path = peripheral_item.path();
-    let register_ident = register_item.ident();
-    let field_ident = field_item.ident();
+    let register_path = register_item.path();
+    let field_path = field_item.path();
     let field_ty = field_item.field().type_name();
 
     (
-        quote! { #peripheral_path::#register_ident::#field_ident },
-        quote! { #peripheral_path::#register_ident::#field_ident::#field_ty },
+        quote! { #peripheral_path::#register_path::#field_path },
+        quote! { #peripheral_path::#register_path::#field_path::#field_ty },
     )
 }

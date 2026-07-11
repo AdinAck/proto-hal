@@ -4,16 +4,17 @@ pub mod numericity;
 use std::ops::Range;
 
 use derive_more::{AsRef, Deref};
-use inflector::Inflector as _;
+use heck::{ToPascalCase as _, ToSnakeCase as _};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident, LitInt};
+use syn::{Ident, LitInt, Path, parse_quote};
 
 use crate::{
     Node,
     diagnostic::{Context, Diagnostic, Diagnostics},
     entitlement::{self, codegen::generate_entitlements},
     field::{access::Access, numericity::Numericity},
+    group::{FieldGroupIndex, FieldGroupNode},
     model::View,
     register::RegisterIndex,
 };
@@ -29,7 +30,8 @@ pub struct FieldNode {
     #[deref]
     #[as_ref]
     pub(super) field: Field,
-    pub access: Access,
+    pub access: access::Source,
+    pub(super) group: Option<FieldGroupIndex>,
 }
 
 impl Node for FieldNode {
@@ -48,7 +50,7 @@ impl<'cx> View<'cx, FieldNode> {
         // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
         // TODO: so both possibilities are ignored for now
 
-        match &self.access {
+        match self.access.access() {
             Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
             Access::Store(store) => Some(&store.numericity),
             Access::VolatileStore(volatile_store)
@@ -74,7 +76,7 @@ impl<'cx> View<'cx, FieldNode> {
         path: &TokenStream,
         register_reset: Option<u32>,
     ) -> Option<TokenStream> {
-        let Some(read) = self.access.get_read() else {
+        let Some(read) = self.access.access().get_read() else {
             return Some(quote! { ::proto_hal::stasis::Dynamic });
         };
 
@@ -103,6 +105,30 @@ impl<'cx> View<'cx, FieldNode> {
                 Some(quote! { #path::#ty })
             }
         }
+    }
+
+    pub fn path(&self) -> TokenStream {
+        let parents = self.parents().1.path();
+        let segment = self.path_segment();
+
+        quote! { #parents::#segment }
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, FieldGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_field_group(group.clone()))
     }
 
     pub fn validate(&self, context: &Context) -> Diagnostics {
@@ -147,9 +173,12 @@ impl<'cx> View<'cx, FieldNode> {
             }
         };
 
-        for access in [self.access.get_read(), self.access.get_write()]
-            .into_iter()
-            .flatten()
+        for access in [
+            self.access.access().get_read(),
+            self.access.access().get_write(),
+        ]
+        .into_iter()
+        .flatten()
         {
             validate_numericity(access, &mut diagnostics);
 
@@ -161,8 +190,8 @@ impl<'cx> View<'cx, FieldNode> {
         }
 
         // inert doesn't make sense for read-only
-        if let Some(read) = self.access.get_read()
-            && !self.access.is_write()
+        if let Some(read) = self.access.access().get_read()
+            && !self.access.access().is_write()
             && let Numericity::Enumerated(enumerated) = read
             && enumerated.variants(self.model).any(|variant| variant.inert)
         {
@@ -172,9 +201,10 @@ impl<'cx> View<'cx, FieldNode> {
         // TODO: these are old...
         let reserved = ["reset", "_new_state", "_old_state"];
 
-        if reserved.contains(&self.module_name().to_string().as_str()) {
+        // TODO: check module name
+        if reserved.contains(&self.ident().to_string().as_str()) {
             diagnostics.insert(Diagnostic::reserved(
-                &self.module_name(),
+                &self.ident(),
                 reserved.iter(),
                 new_context.clone(),
             ));
@@ -267,18 +297,12 @@ impl Field {
         }
     }
 
-    pub fn module_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_lowercase().as_str(),
-            Span::call_site(),
-        )
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
     }
 
     pub fn type_name(&self) -> Ident {
-        Ident::new(
-            self.ident.to_string().to_pascal_case().as_str(),
-            Span::call_site(),
-        )
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
     }
 
     /// The domain of the parent register in which the field occupies.
@@ -301,7 +325,20 @@ impl<'cx> View<'cx, FieldNode> {
             && let Numericity::Enumerated(enumerated) = &access
         {
             let variants = enumerated.variants(self.model);
-            variants.for_each(|variant| out.extend(variant.generate(self.clone())));
+
+            match &self.access {
+                access::Source::Inherent(..) => {
+                    variants.for_each(|variant| out.extend(variant.generate(self.clone())));
+                }
+                access::Source::Linked { parent, .. } => {
+                    let path = parent.clone().path(self.model);
+                    let states = variants.map(|variant| variant.type_name());
+
+                    out.extend(quote! {
+                        pub use #path::{#(#states,)*};
+                    });
+                }
+            }
         }
 
         out
@@ -377,7 +414,7 @@ impl<'cx> View<'cx, FieldNode> {
 
             let is_variant_idents = variants
                 .iter()
-                .map(|variant| format_ident!("is_{}", variant.module_name()));
+                .map(|variant| format_ident!("is_{}", variant.ident()));
 
             quote! {
                 #[derive(Clone, Copy)]
@@ -411,63 +448,79 @@ impl<'cx> View<'cx, FieldNode> {
             }
         };
 
-        match (self.access.get_read(), self.access.get_write()) {
-            (Some(Numericity::Enumerated(read)), None) => {
-                let variant_enum = variant_enum(
-                    read.variants(self.model).map(|view| &***view).collect(),
-                    format_ident!("ReadVariant"),
-                );
+        match &self.access {
+            access::Source::Inherent(access) => match (access.get_read(), access.get_write()) {
+                (Some(Numericity::Enumerated(read)), None) => {
+                    let variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("ReadVariant"),
+                    );
 
-                Some(quote! {
-                    pub use ReadVariant as Variant;
+                    Some(quote! {
+                        pub use ReadVariant as Variant;
 
-                    #variant_enum
-                })
+                        #variant_enum
+                    })
+                }
+                (None, Some(Numericity::Enumerated(write))) => {
+                    let variant_enum = variant_enum(
+                        write.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("WriteVariant"),
+                    );
+
+                    Some(quote! {
+                        pub use WriteVariant as Variant;
+
+                        #variant_enum
+                    })
+                }
+                (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write)))
+                    if read == write =>
+                {
+                    let variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("Variant"),
+                    );
+
+                    Some(quote! {
+                        pub use Variant as ReadVariant;
+                        pub use Variant as WriteVariant;
+
+                        #variant_enum
+                    })
+                }
+                (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write))) => {
+                    let read_variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("ReadVariant"),
+                    );
+
+                    let write_variant_enum = variant_enum(
+                        write.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("WriteVariant"),
+                    );
+
+                    Some(quote! {
+                        #read_variant_enum
+                        #write_variant_enum
+                    })
+                }
+                (..) => None,
+            },
+            access::Source::Linked { parent, access, .. } => {
+                let path = parent.clone().path(self.model);
+
+                match (access.get_read(), access.get_write()) {
+                    (Some(..), None) | (None, Some(..)) => Some(quote! {
+                        pub use crate::#path::Variant;
+                    }),
+                    (Some(..), Some(..)) => Some(quote! {
+                        pub use crate::#path::ReadVariant;
+                        pub use crate::#path::WriteVariant;
+                    }),
+                    (..) => None,
+                }
             }
-            (None, Some(Numericity::Enumerated(write))) => {
-                let variant_enum = variant_enum(
-                    write.variants(self.model).map(|view| &***view).collect(),
-                    format_ident!("WriteVariant"),
-                );
-
-                Some(quote! {
-                    pub use WriteVariant as Variant;
-
-                    #variant_enum
-                })
-            }
-            (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write)))
-                if read == write =>
-            {
-                let variant_enum = variant_enum(
-                    read.variants(self.model).map(|view| &***view).collect(),
-                    format_ident!("Variant"),
-                );
-
-                Some(quote! {
-                    pub use Variant as ReadVariant;
-                    pub use Variant as WriteVariant;
-
-                    #variant_enum
-                })
-            }
-            (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write))) => {
-                let read_variant_enum = variant_enum(
-                    read.variants(self.model).map(|view| &***view).collect(),
-                    format_ident!("ReadVariant"),
-                );
-
-                let write_variant_enum = variant_enum(
-                    write.variants(self.model).map(|view| &***view).collect(),
-                    format_ident!("WriteVariant"),
-                );
-
-                Some(quote! {
-                    #read_variant_enum
-                    #write_variant_enum
-                })
-            }
-            (..) => None,
         }
     }
 
