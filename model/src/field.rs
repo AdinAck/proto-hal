@@ -84,10 +84,12 @@ impl<'cx> View<'cx, FieldNode> {
             return Some(quote! { ::proto_hal::stasis::Dynamic });
         }
 
-        let register_reset =
-            register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
-
-        let reset = self.get_reset(register_reset);
+        let reset = match self.reset {
+            Some(reset) => reset,
+            None => self.get_reset(register_reset.expect(
+                "fields which are all of: [readable, resolvable, unentitled] must have a reset value specified",
+            )),
+        };
 
         match &read {
             Numericity::Numeric(numeric) => {
@@ -165,8 +167,9 @@ impl<'cx> View<'cx, FieldNode> {
                                 &lhs.type_name(),
                                 &rhs.type_name(),
                                 &lhs.bits,
-                                new_context.clone(),
-                            ));
+                                new_context.clone().and(lhs.ident().to_string()),
+                            )
+                            .related(new_context.clone().and(rhs.ident().to_string())));
                         }
                     }
                 }
@@ -219,6 +222,10 @@ pub struct Field {
     pub ident: Ident,
     pub offset: u8,
     pub width: u8,
+    /// The field's reset value, in its own bit-space. Where the parent
+    /// register also specifies one, they must agree: redundancy is permitted;
+    /// contradiction never is.
+    pub reset: Option<u32>,
     pub docs: Vec<String>,
 
     pub leaky: bool,
@@ -230,9 +237,16 @@ impl Field {
             ident: Ident::new(ident.as_ref(), Span::call_site()),
             offset,
             width,
+            reset: None,
             docs: Vec::new(),
             leaky: false,
         }
+    }
+
+    pub fn reset(mut self, reset: u32) -> Self {
+        self.reset = Some(reset);
+
+        self
     }
 
     /// Create a new field positioned at the provided index. The offset is the field width multiplied by the index.
@@ -335,7 +349,7 @@ impl<'cx> View<'cx, FieldNode> {
                     let states = variants.map(|variant| variant.type_name());
 
                     out.extend(quote! {
-                        pub use #path::{#(#states,)*};
+                        pub use crate::#path::{#(#states,)*};
                     });
                 }
             }
@@ -510,13 +524,41 @@ impl<'cx> View<'cx, FieldNode> {
             access::Source::Linked { parent, access, .. } => {
                 let path = parent.clone().path(self.model);
 
+                // the field's access is its own modality shaped with the
+                // schema's variants — re-export the enums the schema module
+                // has, and alias `Variant` when the field's surface is
+                // single-sided (the schema module only defines it when no
+                // variant is sided)
                 match (access.get_read(), access.get_write()) {
-                    (Some(..), None) | (None, Some(..)) => Some(quote! {
-                        pub use crate::#path::Variant;
-                    }),
-                    (Some(..), Some(..)) => Some(quote! {
+                    (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write)))
+                        if read == write =>
+                    {
+                        Some(quote! {
+                            pub use crate::#path::{ReadVariant, Variant, WriteVariant};
+                        })
+                    }
+                    (Some(Numericity::Enumerated(..)), Some(Numericity::Enumerated(..))) => {
+                        Some(quote! {
+                            pub use crate::#path::{ReadVariant, WriteVariant};
+                        })
+                    }
+                    (Some(Numericity::Enumerated(..)), Some(Numericity::Numeric(..))) => {
+                        Some(quote! {
+                            pub use crate::#path::ReadVariant;
+                        })
+                    }
+                    (Some(Numericity::Numeric(..)), Some(Numericity::Enumerated(..))) => {
+                        Some(quote! {
+                            pub use crate::#path::WriteVariant;
+                        })
+                    }
+                    (Some(Numericity::Enumerated(..)), None) => Some(quote! {
                         pub use crate::#path::ReadVariant;
+                        pub use crate::#path::ReadVariant as Variant;
+                    }),
+                    (None, Some(Numericity::Enumerated(..))) => Some(quote! {
                         pub use crate::#path::WriteVariant;
+                        pub use crate::#path::WriteVariant as Variant;
                     }),
                     (..) => None,
                 }
@@ -562,18 +604,34 @@ impl<'cx> View<'cx, FieldNode> {
                 })
             }
             Numericity::Enumerated(enumerated) => {
-                let variant_values = enumerated.variants(self.model).map(|variant| variant.bits);
+                let variant_values = enumerated
+                    .variants(self.model)
+                    .map(|variant| variant.bits)
+                    .collect::<Vec<_>>();
                 let variants = enumerated
                     .variants(self.model)
-                    .map(|variant| variant.type_name());
-                Some(quote! {
-                    #(
-                        impl ::proto_hal::stasis::Conjure for #variants {
-                            unsafe fn conjure() -> Self {
-                                #variants
-                            }
-                        }
+                    .map(|variant| variant.type_name())
+                    .collect::<Vec<_>>();
 
+                // linked fields re-export their schema's types, which carry
+                // their `Conjure` implementations — implementing here as well
+                // would collide across fields assuming the same schema
+                let conjures = matches!(&self.access, access::Source::Inherent(..)).then(|| {
+                    quote! {
+                        #(
+                            impl ::proto_hal::stasis::Conjure for #variants {
+                                unsafe fn conjure() -> Self {
+                                    #variants
+                                }
+                            }
+                        )*
+                    }
+                });
+
+                Some(quote! {
+                    #conjures
+
+                    #(
                         unsafe impl ::proto_hal::stasis::State<Field> for #variants {}
                         unsafe impl ::proto_hal::stasis::Physical<Field> for #variants {
                             const VALUE: u32 = #variant_values;

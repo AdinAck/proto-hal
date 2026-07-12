@@ -3,9 +3,14 @@
 #[cfg(feature = "macros")]
 pub mod macros;
 
+#[cfg(feature = "phm")]
+pub mod model;
+
+#[cfg(feature = "integrated")]
 use std::{collections::HashMap, env, fs, path::Path};
 
-use model::{Model, diagnostic};
+#[cfg(feature = "integrated")]
+use ::model::{Model, diagnostic};
 
 #[cfg(feature = "integrated")]
 /// Generate and emit HAL code for use.

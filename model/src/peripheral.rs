@@ -150,8 +150,9 @@ impl<'cx> View<'cx, PeripheralNode> {
                     &lhs.ident(),
                     &rhs.ident(),
                     &format!("0x{:x}...0x{:x}", rhs.offset, lhs.offset + 3),
-                    new_context.clone(),
-                ));
+                    new_context.clone().and(lhs.ident().to_string()),
+                )
+                .related(new_context.clone().and(rhs.ident().to_string())));
             }
         }
 
@@ -178,6 +179,7 @@ impl<'cx> View<'cx, PeripheralNode> {
         let grouped = self
             .model
             .register_groups()
+            .filter(|group| group.parent == self.index)
             .fold(quote! {}, |mut acc, group| {
                 acc.extend(group.generate());
 
@@ -284,6 +286,15 @@ impl<'cx> View<'cx, PeripheralNode> {
         let module = self.ident();
 
         let ontological_entitlements = self.ontological_entitlements();
+
+        for schema in self
+            .model
+            .schemas_placed_at(Some(&crate::variant::ParentIndex::Peripheral(
+                self.index.clone(),
+            )))
+        {
+            body.extend(schema.generate());
+        }
 
         body.extend(self.generate_registers());
         body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));

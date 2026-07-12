@@ -27,6 +27,14 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
+    /// Create an entitlement from a field and one of its variants.
+    ///
+    /// The indices are only obtainable from model lookups, so an entitlement
+    /// always refers to items that exist.
+    pub fn new(field: FieldIndex, variant: VariantIndex) -> Self {
+        Self { field, variant }
+    }
+
     pub fn variant<'cx>(&self, model: &'cx Model) -> View<'cx, VariantNode> {
         model.get_variant(self.variant)
     }

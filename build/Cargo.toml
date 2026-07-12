@@ -12,6 +12,8 @@ model = { package = "proto-hal-model", path = "../model", default-features = fal
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
+strsim = { version = "0.11", optional = true }
+syntax = { package = "proto-hal-syntax", path = "../syntax", optional = true }
 ters = { workspace = true }
 
 [features]
@@ -19,3 +21,9 @@ default = ["integrated"]
 macros = []
 integrated = []
 interrupts = []
+phm = ["dep:syntax", "dep:strsim"]
+
+[[bin]]
+name = "phm"
+path = "src/bin/cli.rs"
+required-features = ["phm"]

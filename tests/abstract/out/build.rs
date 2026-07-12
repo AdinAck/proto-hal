@@ -1,5 +1,3 @@
-use model::compose;
-
 fn main() {
-    proto_hal_build::render(&compose());
+    proto_hal_build::model::render("../model/src/device.phm");
 }

@@ -1,0 +1,29 @@
+// A model component description: general-purpose IO, reusable by any device
+// that imports it.
+
+/// The mode of a GPIO pin.
+schema pin_mode {
+    variant Input ~ 0
+    variant Output ~ 1
+    variant Alternate ~ 2
+    variant Analog ~ 3
+}
+
+/// GPIO port mode register.
+register moder @ 0x0 reset 0xffff_ffff
+
+/// GPIO port output speed register.
+register ospeedr @ 0x8 reset 0x0
+
+/// A generic GPIO port.
+peripheral gpio_port {
+    register #moder {
+        /// The mode of the corresponding pin.
+        read write field array mode[0..=15] @ [0..=1, ...] assumes pin_mode
+    }
+
+    register #ospeedr
+
+    /// Alternate function registers.
+    register array afr[l, h] @ [0x20, ...] reset 0x0
+}

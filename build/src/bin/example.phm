@@ -1,44 +1,18 @@
-// The model description language, by example.
+// The proto-hal modeling language, by example.
 //
-// Top-level items are noncorporeal *definitions*: nothing here occupies the
-// device until it is elaborated inside the `device` structure. In practice,
-// definitions like these would live in other files and be imported — they are
-// inlined here so this file exercises the whole grammar. Paths (in `requires`
-// clauses and imports) are not resolved yet; some are illustrative.
+// Top-level items are noncorporeal *definitions*: nothing occupies the
+// device until it is elaborated inside the `device` structure. Reusable
+// definitions live in imported model component descriptions — `gpio.phm`
+// and `rcc.phm` beside this file — and are referenced as `gpio.<name>`
+// and `rcc.<name>`.
 
+import gpio
 import rcc
 
-/// The mode of a GPIO pin.
-read write schema pin_mode {
-    variant Input ~ 0
-    variant Output ~ 1
-    variant Alternate ~ 2
-    variant Analog ~ 3
-}
-
 /// A basic enable switch.
-store schema enable {
+schema enable {
     variant Disabled ~ 0
     variant Enabled ~ 1
-}
-
-/// GPIO port mode register.
-register moder @ 0x0 reset 0xffff_ffff
-
-/// GPIO port output speed register.
-register ospeedr @ 0x8 reset 0x0
-
-/// A generic GPIO port.
-peripheral gpio_port {
-    register #moder {
-        /// The mode of the corresponding pin.
-        field array mode[0..=15] @ [0..=1, ...] assumes pin_mode
-    }
-
-    register #ospeedr
-
-    /// Alternate function registers.
-    register array afr[l, h] @ [0x20, ...] reset 0x0
 }
 
 device example {
@@ -47,23 +21,40 @@ device example {
     schema #enable
 
     peripheral group gpio {
-        schema #pin_mode
+        schema #gpio.pin_mode
 
-        peripheral array #gpio_port as gpio[a, b, c] @ [0x4800_0000, 0x4800_0400, 0x4800_0800]
+        peripheral array #gpio.gpio_port as gpio[a, b, c] @ [0x4800_0000, 0x4800_0400, 0x4800_0800]
     }
+
+    /// Reset and clock control.
+    peripheral #rcc.rcc
 
     /// CORDIC co-processor.
     // this peripheral only exists while its clock is enabled
     peripheral cordic @ 0x4002_0c00
-        requires rcc.ahb1enr.cordicen.enabled
+        requires rcc.ahb1enr.cordicen.Enabled
     {
-        register csr @ 0x0 reset 0x0 {
+        register csr @ 0x0 reset 0x40400 {
+            /// Scaling factor.
+            store field scale @ 5 {
+                variant N0 ~ 0
+                variant N1 ~ 1
+            }
+
+            /// Argument format.
+            store field arg1 @ 6 {
+                variant Q31 ~ 0
+                variant Q15 ~ 1
+            }
+
             /// Function select.
             store field func @ 0..=3 {
                 variant Cos ~ 0
                 variant Sin ~ 1
                 /// Only valid for certain argument formats.
-                variant Sqrt ~ 9 requires (scale.n0 & arg1.q31) | (scale.n1 & arg1.q31)
+                variant Sqrt ~ 9
+                    requires (cordic.csr.scale.N0 & cordic.csr.arg1.Q31)
+                        | (cordic.csr.scale.N1 & cordic.csr.arg1.Q31)
             }
 
             /// Result ready flag.
@@ -73,7 +64,7 @@ device example {
             store field ien @ 16
                 assumes enable
                 reset Disabled
-                write requires csr.rrdy.no_data
+                write requires rcc.ahb1enr.cordicen.Enabled
 
             /// DMA read enable, with a burst mode.
             store field dmaren @ 17..=18 extends enable {
@@ -86,8 +77,8 @@ device example {
                 variant Start ~ 1
             }
 
-            /// Number of algorithm iterations, as multiples of 4.
-            store field precision @ 8..=11 {
+            /// Number of algorithm iterations.
+            store field precision @ 8..=13 {
                 variant array P[1..=15] ~ [4, ...+4]
             }
         }
@@ -100,8 +91,12 @@ device example {
             store field t @ 0..=6 reset 0x7f
 
             /// Activation bit — set by software, cleared by hardware.
-            volatile store field wdga @ 7 assumes enable
-                hardware write requires cr.t.zero
+            volatile store field wdga @ 7
+                hardware write requires wwdg.cr.wdga.Enabled
+            {
+                variant Disabled ~ 0
+                variant Enabled ~ 1
+            }
         }
     }
 

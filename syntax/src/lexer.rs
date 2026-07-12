@@ -4,122 +4,24 @@
 //! keywords are atomic, numbers are parsed (with radix prefixes) in exactly one
 //! place, plain comments vanish here, and doc comments survive as tokens so the
 //! parser can attach them to items.
+//!
+//! The lexer **cannot fail**: characters no token recognizes — and number
+//! literals that fail to parse — are lexed as [`Token::Unrecognized`], leaving
+//! the report to the parser, which knows what was expected *in context*.
 
-use std::fmt;
+use chumsky::{input::WithContext, prelude::*};
 
-use chumsky::prelude::*;
+use crate::{ast::Span, token::Token};
 
-use crate::ast::Span;
+/// The token type paired with the byte span it occupies in the source text.
+pub type Spanned<'src> = (Token<'src>, Span);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Token<'src> {
-    Num(u32),
-    Ident(&'src str),
-    /// `/// ...`
-    Doc(&'src str),
-
-    // keywords
-    Device,
-    Import,
-    Peripheral,
-    Register,
-    Field,
-    Schema,
-    Variant,
-    Group,
-    Array,
-    Interrupts,
-    Reserved,
-    Requires,
-    Read,
-    Write,
-    Store,
-    Volatile,
-    Hardware,
-    Leaky,
-    Inert,
-    As,
-    Extends,
-    Assumes,
-    Reset,
-
-    // punctuation
-    Hash,
-    Pipe,
-    Tilde,
-    At,
-    Comma,
-    Amp,
-    Plus,
-    Minus,
-    Dot,
-    DotDot,
-    DotDotEq,
-    Ellipsis,
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    LBracket,
-    RBracket,
-
-    Unrecognized(&'src str),
-}
-
-impl fmt::Display for Token<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Num(n) => write!(f, "{n}"),
-            Self::Ident(s) => write!(f, "{s}"),
-            Self::Doc(..) => write!(f, "doc comment"),
-            Self::Device => write!(f, "device"),
-            Self::Import => write!(f, "import"),
-            Self::Peripheral => write!(f, "peripheral"),
-            Self::Register => write!(f, "register"),
-            Self::Field => write!(f, "field"),
-            Self::Schema => write!(f, "schema"),
-            Self::Variant => write!(f, "variant"),
-            Self::Group => write!(f, "group"),
-            Self::Array => write!(f, "array"),
-            Self::Interrupts => write!(f, "interrupts"),
-            Self::Reserved => write!(f, "reserved"),
-            Self::Requires => write!(f, "requires"),
-            Self::Read => write!(f, "read"),
-            Self::Write => write!(f, "write"),
-            Self::Store => write!(f, "store"),
-            Self::Volatile => write!(f, "volatile"),
-            Self::Hardware => write!(f, "hardware"),
-            Self::Leaky => write!(f, "leaky"),
-            Self::Inert => write!(f, "inert"),
-            Self::As => write!(f, "as"),
-            Self::Extends => write!(f, "extends"),
-            Self::Assumes => write!(f, "assumes"),
-            Self::Reset => write!(f, "reset"),
-            Self::Hash => write!(f, "#"),
-            Self::Pipe => write!(f, "|"),
-            Self::Tilde => write!(f, "~"),
-            Self::At => write!(f, "@"),
-            Self::Comma => write!(f, ","),
-            Self::Amp => write!(f, "&"),
-            Self::Plus => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Dot => write!(f, "."),
-            Self::DotDot => write!(f, ".."),
-            Self::DotDotEq => write!(f, "..="),
-            Self::Ellipsis => write!(f, "..."),
-            Self::LParen => write!(f, "("),
-            Self::RParen => write!(f, ")"),
-            Self::LBrace => write!(f, "{{"),
-            Self::RBrace => write!(f, "}}"),
-            Self::LBracket => write!(f, "["),
-            Self::RBracket => write!(f, "]"),
-            Self::Unrecognized(s) => write!(f, "{s}"),
-        }
-    }
-}
+/// The lexer's input: source text whose spans carry the file's
+/// [`SourceId`](crate::ast::SourceId).
+pub type Input<'src> = WithContext<Span, &'src str>;
 
 pub fn lexer<'src>()
--> impl Parser<'src, &'src str, Vec<(Token<'src>, Span)>, extra::Err<Rich<'src, char, Span>>> {
+-> impl Parser<'src, Input<'src>, Vec<Spanned<'src>>, extra::Err<Rich<'src, char, Span>>> {
     // digits of the given radix, potentially with `_` separators
     let prefixed_digits = |radix: u32| {
         any()
@@ -223,8 +125,8 @@ pub fn lexer<'src>()
 
     // any character no other token begins with — lexed successfully so the
     // *parser* reports it, with expectations appropriate to its context.
-    // digits are excluded so that invalid numbers remain (specific) lexical
-    // errors rather than falling through to garbage tokens
+    // digits are excluded so that invalid numbers remain whole-literal
+    // `Unrecognized` tokens rather than falling apart into char-splatter
     let unrecognized = any()
         .filter(|c: &char| !c.is_ascii_digit())
         .to_slice()

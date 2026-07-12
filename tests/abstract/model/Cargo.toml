@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 phm = { package = "proto-hal-model", path = "../../../model" }
+proto-hal-build = { path = "../../../build", features = ["phm"] }
+syntax = { package = "proto-hal-syntax", path = "../../../syntax" }

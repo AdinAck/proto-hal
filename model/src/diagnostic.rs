@@ -27,8 +27,15 @@ pub struct Diagnostic {
     notes: Vec<String>,
     #[get]
     context: Context,
+    /// The other parties of the judgement, for anchoring.
+    related: Vec<Context>,
 }
 
+/// The unified diagnostic code space of model evaluation, grouped by range.
+///
+/// Every phase draws its codes from this one catalog — the model's own
+/// judgements (0–3999) and the language's (4000+) — so ranges are kept in
+/// exactly one place. Codes render as `error[Exxxx]`/`warning[Wxxxx]`.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Kind {
     // structural
@@ -40,6 +47,7 @@ pub enum Kind {
     ExceedsDomain,
     ExpectedReset,
     InvalidReset,
+    ContradictoryReset,
 
     // stasis
     Unresolvable = 2000,
@@ -49,6 +57,64 @@ pub enum Kind {
 
     // lexical
     Reserved = 3000,
+
+    // syntax: the source doesn't form the language
+    Lexical = 4000,
+    Syntax,
+
+    // semantic: sources
+    UnreadableImport = 5000,
+    ConflictingImport,
+
+    // semantic: structure
+    NoDevice,
+    ManyDevices,
+    DeviceNotElaborated,
+    EmptyDevice,
+    Unnamed,
+    ExpectedPosition,
+    ExpectedModality,
+    InvalidModality,
+    DoesNotFit,
+    NonNumericRegisterReset,
+    UnknownVariant,
+
+    // semantic: templates
+    UnknownTemplate,
+    UnknownImport,
+    TemplateDepthExceeded,
+    InvalidTemplateReference,
+
+    // semantic: arrays
+    EmptyRange,
+    ExpectedArray,
+    ExpectedElements,
+    ExpectedPositions,
+    ExpectedValue,
+    ExpectedScalar,
+    UnsupportedRest,
+    DanglingRest,
+    OutOfRange,
+    CountMismatch,
+
+    // semantic: schemas
+    UnplacedSchema,
+    ContradictorySide,
+    InvalidSide,
+    AssumedVariants,
+    AssumesAndExtends,
+    TemplatedEntitlements,
+
+    // semantic: entitlements
+    RepeatedField,
+    EntitlementModality,
+    UnknownPath,
+    UnlocatedEntitlement,
+    EntitlementCycle,
+    InvalidCorrespondence,
+
+    // semantic: not yet expressible in the model
+    Unsupported,
 
     // custom
     Custom = 9000,
@@ -68,10 +134,21 @@ impl Diagnostic {
             message: message.into(),
             notes: Default::default(),
             context,
+            related: Vec::new(),
         }
     }
 
-    /// {level} [foo] already exists and was overridden
+    /// Name another party of the judgement, for anchoring.
+    pub fn related(mut self, context: Context) -> Self {
+        self.related.push(context);
+        self
+    }
+
+    pub fn get_related(&self) -> &[Context] {
+        &self.related
+    }
+
+    /// {level} `foo` already exists and was overridden
     pub fn exists(offending: &impl Display, context: Context) -> Self {
         let level = context.level();
         let offending = format!("{offending}").bold();
@@ -79,7 +156,7 @@ impl Diagnostic {
         Self::new(
             Rank::Warning,
             Kind::Exists,
-            format!("{level} [{offending}] already exists and was overridden"),
+            format!("{level} `{offending}` already exists and was overridden"),
             context,
         )
     }
@@ -102,14 +179,17 @@ impl Diagnostic {
         )])
     }
 
-    /// [lhs] and [rhs] overlap, occupying {occupied}
+    /// `lhs` and `rhs` overlap, occupying {occupied}
+    ///
+    /// The context names the first party, so the report anchors at its
+    /// definition.
     pub fn overlap(
         lhs: &impl Display,
         rhs: &impl Display,
         occupied: &impl Display,
         context: Context,
     ) -> Self {
-        let level = context.child_level();
+        let level = context.level();
         let lhs = format!("{lhs}").bold();
         let rhs = format!("{rhs}").bold();
         let occupied = format!("{occupied}").bold();
@@ -117,12 +197,12 @@ impl Diagnostic {
         Self::new(
             Rank::Error,
             Kind::Overlap,
-            format!("{level}s [{lhs}] and [{rhs}] overlap, occupying {occupied}"),
+            format!("{level}s `{lhs}` and `{rhs}` overlap, occupying {occupied}"),
             context,
         )
     }
 
-    /// [foo] with domain {offending_domain} exceeds parent [bar] with domain {parent_domain}
+    /// `foo` with domain {offending_domain} exceeds parent `bar` with domain {parent_domain}
     pub fn exceeds_domain(
         offending: &impl Display,
         offending_domain: &impl Display,
@@ -131,6 +211,7 @@ impl Diagnostic {
     ) -> Self {
         let level = context.level();
         let child_level = context.child_level();
+        let offending = format!("{offending}").bold();
         let offending_domain = format!("{offending_domain}").bold();
         let parent_domain = format!("{parent_domain}").bold();
 
@@ -138,7 +219,7 @@ impl Diagnostic {
             Rank::Error,
             Kind::ExceedsDomain,
             format!(
-                "{child_level} [{offending}] with domain {offending_domain} exceeds parent {level} with domain {parent_domain}"
+                "{child_level} `{offending}` with domain {offending_domain} exceeds parent {level} with domain {parent_domain}"
             ),
             context,
         )
@@ -151,7 +232,8 @@ impl Diagnostic {
         let resolvable_fields = register
             .fields()
             .filter(|field| field.is_resolvable())
-            .map(|field| field.ident().to_string().bold().to_string())
+            .filter(|field| field.reset.is_none())
+            .map(|field| format!("`{}`", field.ident().to_string().bold()))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -162,23 +244,23 @@ impl Diagnostic {
             context,
         )
         .notes([
-            "reset values must be specified for registers containing resolvable fields".to_string(),
-            format!("resolvable fields in this register: [{resolvable_fields}]"),
+            "every resolvable field needs a reset value — its own, or its register's".to_string(),
+            format!("resolvable fields missing one: {resolvable_fields}"),
         ])
     }
 
-    /// no variants of field [{field}] correspond to reset value {field_reset}
+    /// no variants of field `{field}` correspond to reset value {field_reset}
     pub fn invalid_reset<'cx>(
         field: &View<'cx, FieldNode>,
         variants: impl Iterator<Item = View<'cx, VariantNode>>,
         field_reset: u32,
-        register_reset: u32,
+        register_reset: Option<u32>,
         context: Context,
     ) -> Self {
         let variants = variants
             .map(|variant| {
                 format!(
-                    "{}: {}",
+                    "`{}`: {}",
                     variant.type_name().to_string().bold(),
                     format!("0x{:x}", variant.bits).bold()
                 )
@@ -190,22 +272,51 @@ impl Diagnostic {
             Rank::Error,
             Kind::InvalidReset,
             format!(
-                "no variants of field [{}] correspond to reset value {}",
+                "no variants of field `{}` correspond to reset value {}",
                 field.ident().to_string().bold(),
                 field_reset.to_string().bold(),
             ),
             context,
         )
         .notes([
-            format!(
-                "register reset value: {}",
-                format!("0x{:x}", register_reset).bold(),
-            ),
-            format!("field variants: [{variants}]"),
+            match register_reset {
+                Some(register_reset) => format!(
+                    "register reset value: {}",
+                    format!("0x{:x}", register_reset).bold(),
+                ),
+                None => "the reset value is specified by the field".to_string(),
+            },
+            format!("field variants: {variants}"),
         ])
     }
 
-    /// entitlement [foo] targets field [bar] which is unresolvable and as such cannot be entitled to
+    /// field `{field}` specifies a reset value contradicting its register's
+    pub fn contradictory_reset<'cx>(
+        field: &View<'cx, FieldNode>,
+        own: u32,
+        register: u32,
+        context: Context,
+    ) -> Self {
+        Self::new(
+            Rank::Error,
+            Kind::ContradictoryReset,
+            format!(
+                "field `{}` specifies a reset value contradicting its register's",
+                field.ident().to_string().bold(),
+            ),
+            context,
+        )
+        .notes([
+            format!(
+                "the field specifies {}, the register implies {}",
+                format!("0x{own:x}").bold(),
+                format!("0x{register:x}").bold(),
+            ),
+            "redundancy is permitted; contradiction never is".to_string(),
+        ])
+    }
+
+    /// entitlement `foo` targets field `bar` which is unresolvable and as such cannot be entitled to
     pub fn unresolvable(
         model: &Model,
         entitlement: &Entitlement,
@@ -216,7 +327,7 @@ impl Diagnostic {
             Rank::Error,
             Kind::Unresolvable,
             format!(
-                "entitlement [{}] targets field [{}] which is unresolvable and as such cannot be entitled to",
+                "entitlement `{}` targets field `{}` which is unresolvable and as such cannot be entitled to",
                 entitlement.to_string(model).bold(),
                 field.ident().to_string().bold()
             ),
@@ -285,7 +396,7 @@ impl Diagnostic {
         this pattern was likely created accidentally and should be removed"])
     }
 
-    /// "foo" is a reserved keyword for {level}s
+    /// `foo` is a reserved keyword for {level}s
     ///
     /// note: reserved keywords: [...]
     pub fn reserved<R: AsRef<str>>(
@@ -297,17 +408,21 @@ impl Diagnostic {
         let offending = format!("{offending}").bold();
 
         let reserved = bank
-            .map(|r| r.as_ref().bold().to_string())
+            .map(|r| format!("`{}`", r.as_ref().bold()))
             .collect::<Vec<_>>()
             .join(", ");
 
         Self::new(
             Rank::Error,
             Kind::Reserved,
-            format!("\"{offending}\" is a reserved keyword for {level}s"),
+            format!("`{offending}` is a reserved keyword for {level}s"),
             context,
         )
-        .notes([format!("reserved {level} keywords: [{reserved}]")])
+        .notes([format!("reserved {level} keywords: {reserved}")])
+    }
+
+    pub fn get_notes(&self) -> &[String] {
+        &self.notes
     }
 
     pub fn notes<I>(mut self, notes: I) -> Self
@@ -411,19 +526,20 @@ impl Context {
 
     fn level(&self) -> &str {
         match self.path.len() {
+            0 => "device",
             1 => "peripheral",
             2 => "register",
             3 => "field",
-            4 => "variant",
-            _ => "",
+            _ => "variant",
         }
     }
+
     fn child_level(&self) -> &str {
         match self.path.len() {
+            0 => "peripheral",
             1 => "register",
             2 => "field",
-            3 => "variant",
-            _ => "",
+            _ => "variant",
         }
     }
 }

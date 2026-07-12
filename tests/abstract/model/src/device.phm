@@ -1,0 +1,77 @@
+// The abstract test device: a minimal model exercising groups at every level,
+// variant arrays, resets (register- and field-level), schemas (assumed and
+// extended), and write entitlements.
+//
+// This file is the single source of truth for the abstract test — both HAL
+// codegen (out/build.rs) and the gate macros (via `compose()`) evaluate it.
+
+device abstract {
+    peripheral group p_group {
+        peripheral foo @ 0x0 {
+            register group r_group {
+                register foo0 @ 0x0 reset 3 {
+                    field group f_group {
+                        /// The primary test field.
+                        store field a @ 0..=3 {
+                            /// One of six numbered states.
+                            variant array V[0..=5] ~ [0, ...]
+                        }
+                    }
+                }
+            }
+
+            register foo1 @ 0x4 {
+                /// A schema of exactly one inert-flavored state.
+                schema noop {
+                    /// Does nothing.
+                    variant Noop ~ 0
+                }
+
+                write field write_requires_v5 @ 0
+                    assumes noop
+                    write requires p_group.foo.r_group.foo0.f_group.a.V5
+
+                /// Extends a schema, copying its variants.
+                write field extended @ 1 extends noop {
+                    /// An appended state.
+                    variant Extra ~ 1
+                }
+            }
+
+            /// No register-level reset — the field carries its own.
+            register foo2 @ 0x8 {
+                /// Resolvable purely by its own reset, given by variant name.
+                store field c @ 0..=1 reset On {
+                    variant Off ~ 0
+                    variant On ~ 1
+                }
+
+                /// Sided variants: the read and write numericities differ.
+                read write field d @ 2..=3 {
+                    read variant Busy ~ 1
+                    variant Idle ~ 0
+                }
+
+                /// Read-only states.
+                schema flags {
+                    read variant Ok ~ 0
+                    read variant Fault ~ 1
+                }
+
+                /// Write-only commands.
+                schema commands {
+                    write variant Halt ~ 1
+                }
+
+                /// Extends two vocabularies — each variant lands on the side
+                /// it names.
+                read write field e @ 4..=5 extends flags, commands
+            }
+        }
+    }
+
+    peripheral bar @ 0x100 {
+        register bar0 @ 0x0
+        register bar1 @ 0x4
+    }
+}

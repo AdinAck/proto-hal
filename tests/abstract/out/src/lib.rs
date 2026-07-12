@@ -130,6 +130,7 @@ mod tests {
                 foo {
                     r_group::foo0::f_group::a(p.foo.foo0.a) => _,
                     foo1::write_requires_v5(&mut p.foo.foo1.write_requires_v5) => Noop,
+                    foo1::extended(&mut p.foo.foo1.extended) => Extra,
                 },
                 @base_addr(foo, addr_of_foo())
             };
