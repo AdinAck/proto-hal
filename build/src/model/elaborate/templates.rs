@@ -11,10 +11,23 @@ use super::{
 };
 
 impl<'ast, 'src> Context<'ast, 'src> {
+    /// Warn when an invocation's `as` name repeats its template's final
+    /// segment — the name it would take anyway.
+    pub(super) fn redundant_as(&mut self, head: &syntax::ast::Head<'src>) {
+        if let (Some(template), Some(name)) = (&head.template, &head.name)
+            && template.inner.segments.last().map(|segment| segment.inner) == Some(name.inner)
+        {
+            self.diagnostics
+                .push(Diagnostic::redundant_as(name.span, name.inner));
+        }
+    }
+
     pub(super) fn resolve_device(&mut self, device: &Device<'src>) -> Option<Device<'src>> {
         let Some(template_ref) = device.head.template.clone() else {
             return Some(device.clone());
         };
+
+        self.redundant_as(&device.head);
 
         let template = self.resolve_template(
             &template_ref,
@@ -60,6 +73,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
             return Some(peripheral.clone());
         };
 
+        self.redundant_as(&peripheral.head);
+
         let template = self.resolve_template(
             &template_ref,
             "peripheral",
@@ -101,6 +116,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
         let Some(template_ref) = register.head.template.clone() else {
             return Some(register.clone());
         };
+
+        self.redundant_as(&register.head);
 
         let template = self.resolve_template(
             &template_ref,

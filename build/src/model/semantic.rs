@@ -652,6 +652,17 @@ impl Diagnostic {
         ))
     }
 
+    /// the name `foo` repeats its template's
+    pub fn redundant_as(span: Span, name: &str) -> Self {
+        Self::warning(
+            Kind::RedundantAs,
+            span,
+            format!("the name `{name}` repeats its template's"),
+            "`as` is redundant here",
+        )
+        .note("an invocation without `as` takes its template's final segment as its name")
+    }
+
     /// an array correspondence outside any array
     pub fn correspondence_outside_array(span: Span) -> Self {
         Self::error(

@@ -778,6 +778,31 @@ mod entitlements {
     }
 }
 
+mod style {
+    use super::*;
+
+    /// `#template as template` — the name it would take anyway.
+    #[test]
+    fn redundant_as_warns() {
+        assert!(
+            kinds(
+                "peripheral port { register r @ 0x0 }
+                device d { peripheral #port as port @ 0x0 }"
+            )
+            .contains(&Kind::RedundantAs)
+        );
+
+        // a renaming `as` is quiet
+        assert!(
+            !kinds(
+                "peripheral port { register r @ 0x0 }
+                device d { peripheral #port as gpioa @ 0x0 }"
+            )
+            .contains(&Kind::RedundantAs)
+        );
+    }
+}
+
 mod correspondence {
     use super::*;
 
@@ -1083,12 +1108,12 @@ mod imports {
             model.join("devices/d.phm"),
             "import peripherals.lib
 
-            device d { peripheral #lib.p as p @ 0x0 }",
+            device d { peripheral #lib.port as p @ 0x0 }",
         )
         .unwrap();
         std::fs::write(
             components.join("lib.phm"),
-            "peripheral p { register r @ 0x0 }",
+            "peripheral port { register r @ 0x0 }",
         )
         .unwrap();
 

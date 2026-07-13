@@ -116,6 +116,9 @@ pub enum Kind {
     // semantic: not yet expressible in the model
     Unsupported,
 
+    // semantic: style
+    RedundantAs,
+
     // custom
     Custom = 9000,
 }

@@ -450,6 +450,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
         let field = match field.head.template.clone() {
             None => field.clone(),
             Some(template_ref) => {
+                self.redundant_as(&field.head);
+
                 let Some(template) = self.resolve_template(
                     &template_ref,
                     "field",
@@ -771,6 +773,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
             let variant = match variant.head.template.clone() {
                 None => variant.clone(),
                 Some(template_ref) => {
+                    self.redundant_as(&variant.head);
+
                     let Some(template) = self.resolve_template(
                         &template_ref,
                         "variant",
