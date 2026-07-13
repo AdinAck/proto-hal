@@ -2,13 +2,18 @@
 //! import — report every diagnostic from every phase, and summarize or
 //! render the results.
 
-use std::process::ExitCode;
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
-use proto_hal_build::model::{evaluate_sources, load, report, report::rendered};
+use proto_hal_build::model::{evaluate_sources, load, report, report::rendered, root};
 
 const USAGE: &str = "\
 usage:
-  phm check <entries...>         evaluate each device description and report
+  phm check [entries...]         evaluate device descriptions and report — a
+                                 directory, or nothing, discovers the entries
+                                 in devices/ beside the nearest phm.toml
   phm render <entry> [-o FILE]   emit the generated HAL code
   phm <entries...>               same as `check`";
 
@@ -19,7 +24,7 @@ fn main() -> ExitCode {
         .split_first()
         .map(|(first, rest)| (first.as_str(), rest))
     {
-        Some(("check", entries)) if !entries.is_empty() => check(entries),
+        Some(("check", entries)) => check(entries),
         Some(("render", arguments)) => render(arguments),
         Some((first, ..)) if !first.starts_with('-') => check(&arguments),
         _ => {
@@ -30,8 +35,39 @@ fn main() -> ExitCode {
 }
 
 /// Evaluate each entry, report its diagnostics, and summarize its model.
-fn check(entries: &[String]) -> ExitCode {
+///
+/// A directory argument — or none, standing for the working directory —
+/// names a model by its `phm.toml`: every `.phm` beside the manifest is an
+/// entry.
+fn check(arguments: &[String]) -> ExitCode {
+    let mut entries = Vec::new();
     let mut failed = false;
+
+    if arguments.is_empty() {
+        match discovered(Path::new(".")) {
+            Ok(found) => entries.extend(found),
+            Err(message) => {
+                eprintln!("{message}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    for argument in arguments {
+        let path = Path::new(argument);
+
+        if path.is_dir() {
+            match discovered(path) {
+                Ok(found) => entries.extend(found),
+                Err(message) => {
+                    eprintln!("{message}");
+                    failed = true;
+                }
+            }
+        } else {
+            entries.push(path.to_path_buf());
+        }
+    }
 
     for (index, entry) in entries.iter().enumerate() {
         if entries.len() > 1 {
@@ -39,7 +75,7 @@ fn check(entries: &[String]) -> ExitCode {
                 println!();
             }
 
-            println!("== {entry}");
+            println!("== {}", entry.display());
         }
 
         let sources = match load(entry) {
@@ -75,6 +111,37 @@ fn check(entries: &[String]) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// The device entries of the model governing `from`: the `.phm` files in
+/// `devices/` beside the nearest `phm.toml`.
+fn discovered(from: &Path) -> Result<Vec<PathBuf>, String> {
+    let root = root(from).ok_or_else(|| {
+        format!(
+            "no `phm.toml` marks a model at or above `{}`",
+            from.display(),
+        )
+    })?;
+
+    let devices = root.join("devices");
+
+    let mut entries = std::fs::read_dir(&devices)
+        .map_err(|e| format!("cannot read `{}`: {e}", devices.display()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "phm"))
+        .collect::<Vec<_>>();
+
+    entries.sort();
+
+    if entries.is_empty() {
+        return Err(format!(
+            "the model at `{}` has no device descriptions",
+            root.display(),
+        ));
+    }
+
+    Ok(entries)
 }
 
 /// Evaluate one entry and emit its generated HAL code — to stdout, or to

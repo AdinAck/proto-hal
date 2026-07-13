@@ -89,7 +89,18 @@ impl Diagnostic {
 // sources
 impl Diagnostic {
     /// the import `st.gpio` resolves to `st/gpio.phm`, which cannot be read
-    pub fn unreadable_import(span: Span, written: &str, target: &str, cause: String) -> Self {
+    pub fn unreadable_import(
+        span: Span,
+        written: &str,
+        target: &str,
+        cause: String,
+        device: bool,
+    ) -> Self {
+        let rule = match device {
+            true => "a device's imports resolve within the model's `components`",
+            false => "import paths are relative to the importing file",
+        };
+
         Self::error(
             Kind::UnreadableImport,
             span,
@@ -97,7 +108,7 @@ impl Diagnostic {
             "imported here",
         )
         .note(cause)
-        .note("import paths are relative to the importing file")
+        .note(rule)
     }
 
     /// an import named `gpio` already exists in this file

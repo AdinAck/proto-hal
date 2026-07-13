@@ -18,7 +18,7 @@ pub mod source;
 mod tests;
 
 pub use report::{Diagnostic, Kind, Rank, report};
-pub use source::{Sources, load, load_with};
+pub use source::{Sources, load, load_with, root};
 
 use std::collections::HashMap;
 

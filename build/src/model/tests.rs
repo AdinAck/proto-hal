@@ -1068,6 +1068,46 @@ mod imports {
             "an imported device nothing references still warns",
         );
     }
+
+    /// Within a `phm.toml`-rooted model, the device's imports resolve
+    /// within `components/`.
+    #[test]
+    fn components_satisfy_device_imports() {
+        let model = std::env::temp_dir().join(format!("phm-components-{}", std::process::id()));
+        let components = model.join("components/peripherals");
+
+        std::fs::create_dir_all(&components).unwrap();
+        std::fs::create_dir_all(model.join("devices")).unwrap();
+        std::fs::write(model.join("phm.toml"), "").unwrap();
+        std::fs::write(
+            model.join("devices/d.phm"),
+            "import peripherals.lib
+
+            device d { peripheral #lib.p as p @ 0x0 }",
+        )
+        .unwrap();
+        std::fs::write(
+            components.join("lib.phm"),
+            "peripheral p { register r @ 0x0 }",
+        )
+        .unwrap();
+
+        let sources = crate::model::load(model.join("devices/d.phm")).unwrap();
+        let evaluation = evaluate_sources(&sources);
+        let messages = evaluation
+            .diagnostics
+            .iter()
+            .map(|diagnostic| match diagnostic {
+                Diagnostic::Semantic(semantic) => semantic.message.clone(),
+                Diagnostic::Syntax(error) => format!("{error:?}"),
+            })
+            .collect::<Vec<_>>();
+
+        std::fs::remove_dir_all(&model).unwrap();
+
+        assert_eq!(messages, Vec::<String>::new());
+        assert_eq!(sources.files.len(), 2, "the component was loaded");
+    }
 }
 
 mod provided {

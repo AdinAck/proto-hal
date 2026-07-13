@@ -6,6 +6,14 @@
 //! imports are named by their final path segment. Files are loaded once no
 //! matter how many routes import them, so import cycles are harmless.
 //!
+//! # Model roots
+//!
+//! A `phm.toml` manifest marks the [root](root) of a model, binding the
+//! layout conventions: `devices/` holds the entry files — exactly one
+//! device each — and `components/` holds the importable descriptions.
+//! A device's imports resolve within `components/`; a component's resolve
+//! beside the importing file, so a component tree stays self-contained.
+//!
 //! # Provided sources
 //!
 //! A dependency may *provide* model component descriptions instead of
@@ -71,7 +79,7 @@ impl Sources {
             issues: Vec::new(),
         };
 
-        resolve_imports(&mut sources, provided);
+        resolve_imports(&mut sources, provided, None);
         sources
     }
 
@@ -84,6 +92,24 @@ impl Sources {
     pub fn paths(&self) -> impl Iterator<Item = &Path> {
         self.files.iter().filter_map(|file| file.path.as_deref())
     }
+}
+
+/// The model root governing `from`: the nearest ancestor directory —
+/// `from` included, when it is one — holding a `phm.toml` manifest.
+pub fn root(from: impl AsRef<Path>) -> Option<PathBuf> {
+    // parents are lexical — `.` has none — so ancestry needs the real path
+    let start = from.as_ref().canonicalize().ok()?;
+    let mut current = Some(start.as_path());
+
+    while let Some(directory) = current {
+        if directory.join("phm.toml").is_file() {
+            return Some(directory.to_path_buf());
+        }
+
+        current = directory.parent();
+    }
+
+    None
 }
 
 /// Load a model description: the entry file at `path` and, transitively,
@@ -123,13 +149,21 @@ pub fn load_with(
         issues: Vec::new(),
     };
 
-    resolve_imports(&mut sources, provided);
+    // within a phm.toml-rooted model, the device's imports resolve within
+    // the root's components
+    let components = path
+        .parent()
+        .and_then(root)
+        .map(|root| root.join("components"));
+
+    resolve_imports(&mut sources, provided, components.as_deref());
     Ok(sources)
 }
 
 /// Discover and load every import, breadth-first: provided sources first,
-/// then the filesystem.
-fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)]) {
+/// then the filesystem — the device's within the model's `components`,
+/// a component's beside the importing file.
+fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)], components: Option<&Path>) {
     let mut loaded: HashMap<PathBuf, SourceId> = HashMap::new();
 
     if let Some(path) = &sources.files[0].path
@@ -155,18 +189,25 @@ fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)]) {
             continue;
         };
 
-        let base = sources.files[source]
-            .path
-            .as_ref()
-            .and_then(|path| path.parent())
-            .map(Path::to_path_buf)
-            // a provided file's imports resolve against its logical directory
-            .or_else(|| {
-                PathBuf::from(&sources.files[source].name)
-                    .parent()
-                    .map(Path::to_path_buf)
-            })
-            .unwrap_or_default();
+        // the device — the entry — imports from the model's components
+        let anchored = source == 0 && components.is_some();
+
+        let base = match (anchored, components) {
+            (true, Some(components)) => components.to_path_buf(),
+            _ => sources.files[source]
+                .path
+                .as_ref()
+                .and_then(|path| path.parent())
+                .map(Path::to_path_buf)
+                // a provided file's imports resolve against its logical
+                // directory
+                .or_else(|| {
+                    PathBuf::from(&sources.files[source].name)
+                        .parent()
+                        .map(Path::to_path_buf)
+                })
+                .unwrap_or_default(),
+        };
 
         for item in &file.items {
             let FileItem::Import(import) = &item.inner else {
@@ -230,6 +271,7 @@ fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)]) {
                                     &segments.join("."),
                                     &target.display().to_string(),
                                     format!("{e}"),
+                                    anchored,
                                 ));
                                 continue;
                             }
