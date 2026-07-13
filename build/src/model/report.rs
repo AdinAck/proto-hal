@@ -27,10 +27,12 @@ use syntax::{Rich, ast::Span};
 pub use ::model::diagnostic::{Kind, Rank};
 
 use crate::model::{
-    report::render::{Rendering, render},
+    report::render::render,
     semantic,
     source::Sources,
 };
+
+pub(crate) use render::Rendering;
 
 /// A diagnostic from any phase of model evaluation.
 #[derive(Debug)]
@@ -75,30 +77,30 @@ pub fn report(sources: &Sources, diagnostics: &[Diagnostic]) {
 
 /// One diagnostic, rendered to a string.
 pub fn rendered(sources: &Sources, diagnostic: &Diagnostic) -> String {
+    render(sources, &rendering(diagnostic))
+}
+
+/// One diagnostic, shaped for presentation: message, labels — the primary
+/// first — and notes. The terminal renderer and the language server both
+/// present this.
+pub(crate) fn rendering<'a>(diagnostic: &'a Diagnostic) -> Rendering<'a> {
     match diagnostic {
-        Diagnostic::Syntax(syntax::Error::Lex(error)) => {
-            render(sources, &rich(Kind::Lexical, error))
-        }
-        Diagnostic::Syntax(syntax::Error::Parse(error)) => {
-            render(sources, &rich(Kind::Syntax, error))
-        }
-        Diagnostic::Semantic(semantic) => render(
-            sources,
-            &Rendering {
-                kind: semantic.kind,
-                rank: semantic.rank.clone(),
-                message: semantic.message.clone(),
-                labels: std::iter::once((semantic.span, semantic.label.clone(), true))
-                    .chain(
-                        semantic
-                            .labels
-                            .iter()
-                            .map(|(span, message)| (*span, message.clone(), false)),
-                    )
-                    .collect(),
-                notes: &semantic.notes,
-            },
-        ),
+        Diagnostic::Syntax(syntax::Error::Lex(error)) => rich(Kind::Lexical, error),
+        Diagnostic::Syntax(syntax::Error::Parse(error)) => rich(Kind::Syntax, error),
+        Diagnostic::Semantic(semantic) => Rendering {
+            kind: semantic.kind,
+            rank: semantic.rank.clone(),
+            message: semantic.message.clone(),
+            labels: std::iter::once((semantic.span, semantic.label.clone(), true))
+                .chain(
+                    semantic
+                        .labels
+                        .iter()
+                        .map(|(span, message)| (*span, message.clone(), false)),
+                )
+                .collect(),
+            notes: &semantic.notes,
+        },
     }
 }
 

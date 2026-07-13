@@ -43,7 +43,7 @@ const MERGE_DISTANCE: usize = 2;
 const WRAP_WIDTH: usize = 100;
 
 /// A report, independent of which phase produced it.
-pub(super) struct Rendering<'a> {
+pub(crate) struct Rendering<'a> {
     pub kind: Kind,
     pub rank: Rank,
     pub message: String,

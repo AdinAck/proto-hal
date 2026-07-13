@@ -10,6 +10,8 @@
 //! included); [`render`] is the cargo-flavored wrapper for build scripts.
 
 pub mod elaborate;
+#[cfg(feature = "lsp")]
+pub mod lsp;
 pub mod report;
 pub mod semantic;
 pub mod source;
@@ -18,7 +20,7 @@ pub mod source;
 mod tests;
 
 pub use report::{Diagnostic, Kind, Rank, report};
-pub use source::{Sources, load, load_with, root};
+pub use source::{Sources, devices, load, load_overlaid, load_with, root};
 
 use std::collections::HashMap;
 
@@ -26,10 +28,12 @@ use ::model::Model;
 use syntax::ast::File;
 
 /// The outcome of evaluating a model description: the model — whenever one could be
-/// built, even alongside errors — and every diagnostic from every phase.
+/// built, even alongside errors — every diagnostic from every phase, and
+/// the [`Analysis`] tools answer from.
 pub struct Evaluation<'src> {
     pub model: Option<Model>,
     pub diagnostics: Vec<Diagnostic<'src>>,
+    pub analysis: elaborate::Analysis,
 }
 
 impl Evaluation<'_> {
@@ -54,6 +58,7 @@ pub fn evaluate(src: &str) -> Evaluation<'_> {
         return Evaluation {
             model: None,
             diagnostics,
+            analysis: elaborate::Analysis::default(),
         };
     };
 
@@ -95,6 +100,7 @@ pub fn evaluate_sources(sources: &Sources) -> Evaluation<'_> {
         return Evaluation {
             model: None,
             diagnostics,
+            analysis: elaborate::Analysis::default(),
         };
     }
 
@@ -158,17 +164,18 @@ fn conclude<'src>(
     units: Vec<elaborate::Unit<'src>>,
     mut diagnostics: Vec<Diagnostic<'src>>,
 ) -> Evaluation<'src> {
-    let (composition, semantics, locations) = elaborate::elaborate(&units);
+    let (composition, semantics, analysis) = elaborate::elaborate(&units);
     diagnostics.extend(semantics.into_iter().map(Diagnostic::Semantic));
 
     let (model, model_diagnostics) = composition.finish();
     diagnostics.extend(model_diagnostics.iter().map(|diagnostic| {
-        Diagnostic::Semantic(semantic::Diagnostic::model(diagnostic, &locations))
+        Diagnostic::Semantic(semantic::Diagnostic::model(diagnostic, &analysis.locations))
     }));
 
     Evaluation {
         model: Some(model),
         diagnostics,
+        analysis,
     }
 }
 

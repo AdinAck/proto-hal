@@ -100,12 +100,38 @@ pub struct Location {
 /// this table anchors those judgements back to the source text.
 pub type Locations = HashMap<Vec<String>, Location>;
 
+/// What elaboration learned about the text, for tools: where everything is
+/// defined, what every written reference names, and what may be written
+/// where. The language server answers from this.
+#[derive(Default)]
+pub struct Analysis {
+    /// Definition sites, by model context path.
+    pub locations: Locations,
+    /// Resolved references: a written span, and the context path it names.
+    /// Array correspondence makes one span name many elements — the first
+    /// element's binding is recorded.
+    pub mentions: Vec<(Span, Vec<String>)>,
+    /// Every valid entitlement-path prefix, mapped to the names that may
+    /// follow it.
+    pub tree: HashMap<Vec<String>, Vec<String>>,
+    /// Direct reference sites: a written reference — template, schema, or
+    /// import — and the definition it names.
+    pub definitions: Vec<(Span, Span)>,
+    /// Interrupt entries — reserved positions included — and their vector
+    /// positions.
+    pub vectors: Vec<(Span, usize)>,
+    /// Placed schema names, with their placement sites.
+    pub placements: Vec<(String, Span)>,
+    /// Template names, across every loaded file.
+    pub templates: Vec<String>,
+}
+
 /// Elaborate parsed files — the entry first, then its imports — into a model
 /// composition.
 ///
 /// The composition is returned even when diagnostics contain errors: it holds
 /// whatever could be built, and the caller decides whether to proceed.
-pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, Locations) {
+pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, Analysis) {
     let mut diagnostics = Vec::new();
 
     let mut devices = units[0].file.items.iter().filter_map(|item| match &item.inner {
@@ -120,12 +146,12 @@ pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, L
                 end: 0,
                 context: 0,
             }));
-            return (Composition::new(), diagnostics, Locations::new());
+            return (Composition::new(), diagnostics, Analysis::default());
         }
         (Some(device), None) => device,
         (Some((.., first)), Some((.., span))) => {
             diagnostics.push(Diagnostic::many_devices(span, first));
-            return (Composition::new(), diagnostics, Locations::new());
+            return (Composition::new(), diagnostics, Analysis::default());
         }
     };
 
@@ -138,6 +164,9 @@ pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, L
         variants: HashMap::new(),
         schemas: HashMap::new(),
         locations: Locations::new(),
+        mentions: Vec::new(),
+        definitions: Vec::new(),
+        vectors: Vec::new(),
         used_devices: std::collections::HashSet::new(),
         placements: Vec::new(),
         links: Vec::new(),
@@ -148,6 +177,32 @@ pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, L
     };
 
     let mut composition = Composition::new();
+
+    // a template's own name hovers itself
+    for templates in &context.templates {
+        for site in templates.sites() {
+            context.definitions.push((site, site));
+        }
+    }
+
+    // every import names its file — hover and go-to-definition targets
+    for unit in units {
+        for item in &unit.file.items {
+            if let FileItem::Import(import) = &item.inner
+                && let Some(alias) = import.path.inner.segments.last()
+                && let Some(&target) = unit.imports.get(alias.inner)
+            {
+                context.definitions.push((
+                    import.path.span,
+                    Span {
+                        start: 0,
+                        end: 0,
+                        context: target,
+                    },
+                ));
+            }
+        }
+    }
 
     // phase one: structure
     if let Some(device) = context.resolve_device(device) {
@@ -189,18 +244,67 @@ pub fn elaborate<'src>(units: &[Unit<'src>]) -> (Composition, Vec<Diagnostic>, L
         }
     }
 
-    (composition, context.diagnostics, context.locations)
+    let analysis = Analysis {
+        tree: context.path_tree(),
+        mentions: std::mem::take(&mut context.mentions),
+        definitions: std::mem::take(&mut context.definitions),
+        vectors: std::mem::take(&mut context.vectors),
+        placements: context
+            .schemas
+            .iter()
+            .map(|((.., name), placed)| (name.clone(), placed.span))
+            .collect(),
+        templates: {
+            let mut names = std::collections::BTreeSet::new();
+
+            for templates in &context.templates {
+                names.extend(templates.names());
+            }
+
+            names.into_iter().collect()
+        },
+        locations: std::mem::take(&mut context.locations),
+    };
+
+    (composition, context.diagnostics, analysis)
 }
 
-/// The top-level definitions of the model description, usable as templates.
+/// The top-level definitions of the model description, usable as templates
+/// — each with its name's span, the go-to-definition site.
 #[derive(Default)]
 struct Templates<'ast, 'src> {
-    devices: HashMap<&'src str, &'ast Device<'src>>,
-    peripherals: HashMap<&'src str, &'ast Peripheral<'src>>,
-    registers: HashMap<&'src str, &'ast Register<'src>>,
-    fields: HashMap<&'src str, &'ast Field<'src>>,
-    schemas: HashMap<&'src str, &'ast Schema<'src>>,
-    variants: HashMap<&'src str, &'ast Variant<'src>>,
+    devices: HashMap<&'src str, (&'ast Device<'src>, Span)>,
+    peripherals: HashMap<&'src str, (&'ast Peripheral<'src>, Span)>,
+    registers: HashMap<&'src str, (&'ast Register<'src>, Span)>,
+    fields: HashMap<&'src str, (&'ast Field<'src>, Span)>,
+    schemas: HashMap<&'src str, (&'ast Schema<'src>, Span)>,
+    variants: HashMap<&'src str, (&'ast Variant<'src>, Span)>,
+}
+
+impl Templates<'_, '_> {
+    /// Every template name this file offers, any kind.
+    fn names(&self) -> impl Iterator<Item = String> + '_ {
+        self.devices
+            .keys()
+            .chain(self.peripherals.keys())
+            .chain(self.registers.keys())
+            .chain(self.fields.keys())
+            .chain(self.schemas.keys())
+            .chain(self.variants.keys())
+            .map(|name| name.to_string())
+    }
+
+    /// Where every template's name is written.
+    fn sites(&self) -> impl Iterator<Item = Span> + '_ {
+        self.devices
+            .values()
+            .map(|(.., site)| *site)
+            .chain(self.peripherals.values().map(|(.., site)| *site))
+            .chain(self.registers.values().map(|(.., site)| *site))
+            .chain(self.fields.values().map(|(.., site)| *site))
+            .chain(self.schemas.values().map(|(.., site)| *site))
+            .chain(self.variants.values().map(|(.., site)| *site))
+    }
 }
 
 impl<'ast, 'src> Templates<'ast, 'src> {
@@ -211,32 +315,32 @@ impl<'ast, 'src> Templates<'ast, 'src> {
             match &item.inner {
                 FileItem::Device(device) => {
                     if let Some(name) = &device.head.name {
-                        templates.devices.insert(name.inner, device);
+                        templates.devices.insert(name.inner, (device, name.span));
                     }
                 }
                 FileItem::Peripheral(peripheral) => {
                     if let Some(name) = &peripheral.head.name {
-                        templates.peripherals.insert(name.inner, peripheral);
+                        templates.peripherals.insert(name.inner, (peripheral, name.span));
                     }
                 }
                 FileItem::Register(register) => {
                     if let Some(name) = &register.head.name {
-                        templates.registers.insert(name.inner, register);
+                        templates.registers.insert(name.inner, (register, name.span));
                     }
                 }
                 FileItem::Field(field) => {
                     if let Some(name) = &field.head.name {
-                        templates.fields.insert(name.inner, field);
+                        templates.fields.insert(name.inner, (field, name.span));
                     }
                 }
                 FileItem::Schema(schema) => {
                     if let Some(name) = &schema.head.name {
-                        templates.schemas.insert(name.inner, schema);
+                        templates.schemas.insert(name.inner, (schema, name.span));
                     }
                 }
                 FileItem::Variant(variant) => {
                     if let Some(name) = &variant.head.name {
-                        templates.variants.insert(name.inner, variant);
+                        templates.variants.insert(name.inner, (variant, name.span));
                     }
                 }
                 _ => {}
@@ -377,12 +481,15 @@ struct DeclaredVariant<'src> {
     requires: Option<Spanned<Space<'src>>>,
 }
 
+/// A placed schema's variant: its name as written, the side with its
+/// token's span for sided ones, and the declaration site.
+type PlacedVariant = (String, Option<(Side, Span)>, Span);
+
 /// What elaboration knows about a placed schema.
 #[derive(Clone)]
 struct PlacedSchema {
-    /// Declared variants: name (as written), and — for sided ones — the side
-    /// with its token's span.
-    variants: Vec<(String, Option<(Side, Span)>)>,
+    /// Declared variants.
+    variants: Vec<PlacedVariant>,
     /// The model index, once inserted.
     index: Option<SchemaIndex>,
     /// The definition site — the schema's name at its placement.
@@ -433,6 +540,12 @@ struct Context<'ast, 'src> {
     /// Model context path → definition span, for anchoring the model's own
     /// judgements to the source text.
     locations: Locations,
+    /// Resolved references: written span → the context path it names.
+    mentions: Vec<(Span, Vec<String>)>,
+    /// Direct reference sites: written reference → its definition.
+    definitions: Vec<(Span, Span)>,
+    /// Interrupt entries and their vector positions.
+    vectors: Vec<(Span, usize)>,
     /// Imported devices that served as templates (by address) — they earn no
     /// not-elaborated warning.
     used_devices: std::collections::HashSet<usize>,

@@ -149,7 +149,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
         &mut self,
         reference: &Spanned<syntax::ast::Path<'src>>,
         what: &str,
-        get: impl FnOnce(&Templates<'ast, 'src>, &str) -> Option<T>,
+        get: impl FnOnce(&Templates<'ast, 'src>, &str) -> Option<(T, syntax::ast::Span)>,
         names: impl FnOnce(&Templates<'ast, 'src>) -> Vec<String>,
     ) -> Option<T> {
         let file = reference.span.context;
@@ -158,17 +158,18 @@ impl<'ast, 'src> Context<'ast, 'src> {
             [name] => {
                 let found = get(&self.templates[file], name.inner);
 
-                if found.is_none() {
-                    self.diagnostics.push(Diagnostic::unknown_template(
+                match &found {
+                    Some((.., site)) => self.definitions.push((reference.span, *site)),
+                    None => self.diagnostics.push(Diagnostic::unknown_template(
                         reference.span,
                         what,
                         name.inner,
                         None,
                         did_you_mean(name.inner, names(&self.templates[file])),
-                    ));
+                    )),
                 }
 
-                found
+                found.map(|(template, ..)| template)
             }
             [alias, name] => {
                 let Some(&target) = self.units[file].imports.get(alias.inner) else {
@@ -185,17 +186,18 @@ impl<'ast, 'src> Context<'ast, 'src> {
 
                 let found = get(&self.templates[target], name.inner);
 
-                if found.is_none() {
-                    self.diagnostics.push(Diagnostic::unknown_template(
+                match &found {
+                    Some((.., site)) => self.definitions.push((reference.span, *site)),
+                    None => self.diagnostics.push(Diagnostic::unknown_template(
                         name.span,
                         what,
                         name.inner,
                         Some(alias.inner),
                         did_you_mean(name.inner, names(&self.templates[target])),
-                    ));
+                    )),
                 }
 
-                found
+                found.map(|(template, ..)| template)
             }
             _ => {
                 self.diagnostics

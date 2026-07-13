@@ -3,10 +3,11 @@
 
 use ::model::{
     Composition, Entitlement,
-    decl::{Side, VariantDecl},
+    decl::VariantDecl,
     entitlement::EntitlementIndex,
     field::FieldIndex,
 };
+use heck::ToSnakeCase as _;
 use std::collections::HashMap;
 use syntax::ast::{Space, Span, Spanned};
 
@@ -87,6 +88,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
             return;
         };
 
+        self.definitions.push((schema.span, placed.span));
+
         if !self.compatible(schema.span, "assumed", name, &placed.variants, link) {
             return;
         }
@@ -101,13 +104,27 @@ impl<'ast, 'src> Context<'ast, 'src> {
 
         composition.link_field(field, index);
 
-        // the schema's variants become referenceable through the field
-        for (variant, ..) in &placed.variants {
+        // the schema's variants become referenceable through the field —
+        // and their declarations become its variants' definition sites
+        for (variant, .., declaration) in &placed.variants {
             let mut path = link.path.clone();
             path.push(variant.clone());
 
             self.variants
                 .insert(path, (link.chain.clone(), variant.clone()));
+
+            self.locations.insert(
+                vec![
+                    link.chain.0.to_snake_case(),
+                    link.chain.1.to_snake_case(),
+                    link.chain.2.to_snake_case(),
+                    variant.to_snake_case(),
+                ],
+                super::Location {
+                    head: *declaration,
+                    domain: None,
+                },
+            );
         }
     }
 
@@ -138,6 +155,23 @@ impl<'ast, 'src> Context<'ast, 'src> {
 
             match placed {
                 Some((name, placed)) => {
+                    self.definitions.push((schema.span, placed.span));
+
+                    for (variant, .., declaration) in &placed.variants {
+                        self.locations.insert(
+                            vec![
+                                link.chain.0.to_snake_case(),
+                                link.chain.1.to_snake_case(),
+                                link.chain.2.to_snake_case(),
+                                variant.to_snake_case(),
+                            ],
+                            super::Location {
+                                head: *declaration,
+                                domain: None,
+                            },
+                        );
+                    }
+
                     if !self.compatible(schema.span, "extended", name, &placed.variants, link) {
                         continue;
                     }
@@ -177,9 +211,25 @@ impl<'ast, 'src> Context<'ast, 'src> {
                                     .side
                                     .as_ref()
                                     .map(|side| (side_decl(side), side.span)),
+                                declared.span,
                             )
                         })
                         .collect::<Vec<_>>();
+
+                    for (variant, .., declaration) in &variants {
+                        self.locations.insert(
+                            vec![
+                                link.chain.0.to_snake_case(),
+                                link.chain.1.to_snake_case(),
+                                link.chain.2.to_snake_case(),
+                                variant.to_snake_case(),
+                            ],
+                            super::Location {
+                                head: *declaration,
+                                domain: None,
+                            },
+                        );
+                    }
 
                     if !self.compatible(schema.span, "extended", name, &variants, link) {
                         continue;
@@ -209,12 +259,12 @@ impl<'ast, 'src> Context<'ast, 'src> {
         reference: Span,
         relation: &str,
         schema_name: &str,
-        variants: &[(String, Option<(Side, Span)>)],
+        variants: &[super::PlacedVariant],
         link: &Link<'src>,
     ) -> bool {
         let mut compatible = true;
 
-        for (name, side) in variants {
+        for (name, side, ..) in variants {
             let Some((side, side_span)) = side else {
                 continue;
             };
@@ -250,6 +300,18 @@ impl<'ast, 'src> Context<'ast, 'src> {
         let resets = std::mem::take(&mut self.resets);
 
         for (chain, variant, span) in resets {
+            // a reset naming a variant mentions it — hover, definition,
+            // and rename reach it
+            self.mentions.push((
+                span,
+                vec![
+                    chain.0.to_snake_case(),
+                    chain.1.to_snake_case(),
+                    chain.2.to_snake_case(),
+                    variant.to_snake_case(),
+                ],
+            ));
+
             let Some((field, index)) = find_variant(composition, &chain, &variant) else {
                 self.diagnostics.push(Diagnostic::unknown_variant(
                     span,
@@ -465,6 +527,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
                     };
 
                 let mut entitled_field = None;
+                let mut recorded = false;
 
                 for (key, member) in members {
                     let span = member.map(|(.., span)| span).unwrap_or(entitled.span);
@@ -473,6 +536,51 @@ impl<'ast, 'src> Context<'ast, 'src> {
                         self.missing_path(entitled.span, &segments, member, tree);
                         return None;
                     };
+
+                    // hover and go-to-definition: the written tail names
+                    // peripheral, register, field — aligned from the end,
+                    // group segments falling off the front
+                    let snaked = [
+                        chain.0.to_snake_case(),
+                        chain.1.to_snake_case(),
+                        chain.2.to_snake_case(),
+                    ];
+
+                    if !recorded {
+                        recorded = true;
+
+                        let field_position = match &entitled.inner.set {
+                            Some(..) => segments.len().checked_sub(1),
+                            None => segments.len().checked_sub(2),
+                        };
+
+                        for back in 0..3 {
+                            let Some(position) =
+                                field_position.and_then(|field| field.checked_sub(back))
+                            else {
+                                break;
+                            };
+
+                            self.mentions.push((
+                                segments[position].1,
+                                snaked[..3 - back].to_vec(),
+                            ));
+                        }
+                    }
+
+                    let variant_span = member
+                        .map(|(.., span)| span)
+                        .or_else(|| {
+                            entitled.inner.set.is_none().then(|| {
+                                segments.last().map(|(.., span)| *span).unwrap_or(entitled.span)
+                            })
+                        });
+
+                    if let Some(variant_span) = variant_span {
+                        let mut named = snaked.to_vec();
+                        named.push(variant.to_snake_case());
+                        self.mentions.push((variant_span, named));
+                    }
 
                     let Some((field, variant)) = find_variant(composition, &chain, &variant)
                     else {

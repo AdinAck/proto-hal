@@ -1343,3 +1343,114 @@ device t { peripheral p @ 0x0 { register r @ 0x0 {
         assert!(report.contains("no such template"), "{report}");
     }
 }
+
+mod analysis {
+    use super::*;
+
+    /// Every segment of a resolved entitlement path names its element, for
+    /// hover and go-to-definition.
+    #[test]
+    fn mentions_name_every_level() {
+        let evaluation = clean(
+            "device d { peripheral p @ 0x0 { register r @ 0x0 reset 0 {
+                store field a @ 0 requires p.r.b.On { variant A ~ 0 }
+                store field b @ 1 { variant Off ~ 0 variant On ~ 1 }
+            } } }",
+        );
+
+        let named = |path: &[&str]| {
+            evaluation
+                .analysis
+                .mentions
+                .iter()
+                .any(|(.., target)| target == path)
+        };
+
+        assert!(named(&["p"]));
+        assert!(named(&["p", "r"]));
+        assert!(named(&["p", "r", "b"]));
+        assert!(named(&["p", "r", "b", "on"]));
+
+        // every mention's target is a known definition
+        for (.., target) in &evaluation.analysis.mentions {
+            assert!(
+                evaluation.analysis.locations.contains_key(target),
+                "unlocated mention target: {target:?}",
+            );
+        }
+    }
+
+    /// Template and schema references record their definition sites.
+    #[test]
+    fn references_record_definition_sites() {
+        let evaluation = clean(
+            "schema enable { variant Off ~ 0 variant On ~ 1 }
+            register template_r @ 0x0 reset 0 {
+                store field f @ 0 assumes enable
+            }
+
+            device d {
+                schema #enable
+                peripheral p @ 0x0 { register #template_r as r }
+            }",
+        );
+
+        // `#enable`, `#template_r`, and `assumes enable` all resolved
+        assert!(
+            evaluation.analysis.definitions.len() >= 3,
+            "sites: {:?}",
+            evaluation.analysis.definitions,
+        );
+
+        // and every template's own name is its own site
+        assert!(
+            evaluation
+                .analysis
+                .definitions
+                .iter()
+                .any(|(reference, site)| reference == site),
+            "template names hover themselves",
+        );
+    }
+
+    /// Interrupt entries carry their vector positions — reserved slots
+    /// included.
+    #[test]
+    fn interrupt_entries_carry_their_positions() {
+        let evaluation = clean(
+            "device d {
+                peripheral p @ 0x0
+                interrupts { a reserved b }
+            }",
+        );
+
+        let positions = evaluation
+            .analysis
+            .vectors
+            .iter()
+            .map(|(.., position)| *position)
+            .collect::<Vec<_>>();
+
+        assert_eq!(positions, vec![0, 1, 2]);
+    }
+
+    /// The completion tree offers every valid continuation.
+    #[test]
+    fn tree_offers_continuations() {
+        let evaluation = clean(
+            "device d { peripheral p @ 0x0 { register r @ 0x0 reset 0 {
+                store field a @ 0 { variant A ~ 0 }
+                store field b @ 1 { variant Off ~ 0 variant On ~ 1 }
+            } } }",
+        );
+
+        let children = evaluation
+            .analysis
+            .tree
+            .get(&vec!["p".to_string(), "r".to_string()])
+            .expect("the register prefix is a valid continuation point");
+
+        assert!(children.contains(&"a".to_string()));
+        assert!(children.contains(&"b".to_string()));
+    }
+}

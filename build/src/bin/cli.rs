@@ -15,6 +15,7 @@ usage:
                                  directory, or nothing, discovers the entries
                                  in devices/ beside the nearest phm.toml
   phm render <entry> [-o FILE]   emit the generated HAL code
+  phm lsp                        serve the language protocol over stdio
   phm <entries...>               same as `check`";
 
 fn main() -> ExitCode {
@@ -26,6 +27,7 @@ fn main() -> ExitCode {
     {
         Some(("check", entries)) => check(entries),
         Some(("render", arguments)) => render(arguments),
+        Some(("lsp", [])) => lsp(),
         Some((first, ..)) if !first.starts_with('-') => check(&arguments),
         _ => {
             eprintln!("{USAGE}");
@@ -201,4 +203,22 @@ fn render(arguments: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+/// Run the language server over stdio.
+#[cfg(feature = "lsp")]
+fn lsp() -> ExitCode {
+    match proto_hal_build::model::lsp::serve() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(feature = "lsp"))]
+fn lsp() -> ExitCode {
+    eprintln!("this `phm` was built without the language server — rebuild with `--features lsp`");
+    ExitCode::FAILURE
 }

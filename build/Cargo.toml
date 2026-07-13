@@ -13,6 +13,10 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
 strsim = { version = "0.11", optional = true }
+lsp-server = { version = "0.9", optional = true }
+lsp-types = { version = "0.97", optional = true }
+serde_json = { version = "1", optional = true }
+url = { version = "2", optional = true }
 syntax = { package = "proto-hal-syntax", path = "../syntax", optional = true }
 ters = { workspace = true }
 
@@ -22,6 +26,7 @@ macros = []
 integrated = []
 interrupts = []
 phm = ["dep:syntax", "dep:strsim"]
+lsp = ["phm", "dep:lsp-server", "dep:lsp-types", "dep:serde_json", "dep:url"]
 
 [[bin]]
 name = "phm"

@@ -1010,6 +1010,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
                         (
                             declared.name.clone(),
                             declared.side.as_ref().map(|side| (side_decl(side), side.span)),
+                            declared.span,
                         )
                     })
                     .collect(),
@@ -1084,6 +1085,18 @@ impl<'ast, 'src> Context<'ast, 'src> {
     }
 
     pub(super) fn interrupts(&mut self, composition: &mut Composition, interrupts: &Interrupts<'src>) {
+        // hover and inlay hints show each entry's vector position
+        let base = self.vectors.len();
+
+        for (offset, entry) in interrupts.entries.iter().enumerate() {
+            let span = match &entry.inner.kind {
+                InterruptKind::Reserved => entry.span,
+                InterruptKind::Handler(name) => name.span,
+            };
+
+            self.vectors.push((span, base + offset));
+        }
+
         composition.add_interrupts(interrupts.entries.iter().map(|entry| {
             match &entry.inner.kind {
                 InterruptKind::Reserved => ::model::Interrupt::reserved(),

@@ -79,7 +79,7 @@ impl Sources {
             issues: Vec::new(),
         };
 
-        resolve_imports(&mut sources, provided, None);
+        resolve_imports(&mut sources, provided, None, &HashMap::new());
         sources
     }
 
@@ -122,6 +122,32 @@ pub fn load(path: impl AsRef<Path>) -> Result<Sources, String> {
     load_with(path, &[])
 }
 
+/// [`load`], reading through `overlays` — unsaved editor buffers, keyed by
+/// canonical path — before the filesystem: the language-server path.
+pub fn load_overlaid(
+    path: impl AsRef<Path>,
+    overlays: &HashMap<PathBuf, String>,
+) -> Result<Sources, String> {
+    load_via(path.as_ref(), &[], overlays)
+}
+
+/// The device descriptions of the model at `root`: the `.phm` files in its
+/// `devices` directory, sorted.
+pub fn devices(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root.join("devices")) else {
+        return Vec::new();
+    };
+
+    let mut devices = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "phm"))
+        .collect::<Vec<_>>();
+
+    devices.sort();
+    devices
+}
+
 /// [`load`], with provided sources: `(import path, content)` pairs an import
 /// may resolve to before the filesystem — `("cortex_m/nvic.phm", ...)`
 /// satisfies `import cortex_m.nvic` from any file.
@@ -129,10 +155,16 @@ pub fn load_with(
     path: impl AsRef<Path>,
     provided: &[(&str, &str)],
 ) -> Result<Sources, String> {
-    let path = path.as_ref();
+    load_via(path.as_ref(), provided, &HashMap::new())
+}
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
+fn load_via(
+    path: &Path,
+    provided: &[(&str, &str)],
+    overlays: &HashMap<PathBuf, String>,
+) -> Result<Sources, String> {
+    let content =
+        read(path, overlays).map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
 
     let name = path
         .file_name()
@@ -156,14 +188,33 @@ pub fn load_with(
         .and_then(root)
         .map(|root| root.join("components"));
 
-    resolve_imports(&mut sources, provided, components.as_deref());
+    resolve_imports(&mut sources, provided, components.as_deref(), overlays);
     Ok(sources)
+}
+
+/// Read a file — from its overlay when an editor holds it, else the disk.
+fn read(path: &Path, overlays: &HashMap<PathBuf, String>) -> std::io::Result<String> {
+    let overlaid = overlays.get(path).or_else(|| {
+        path.canonicalize()
+            .ok()
+            .and_then(|canonical| overlays.get(&canonical))
+    });
+
+    match overlaid {
+        Some(content) => Ok(content.clone()),
+        None => std::fs::read_to_string(path),
+    }
 }
 
 /// Discover and load every import, breadth-first: provided sources first,
 /// then the filesystem — the device's within the model's `components`,
 /// a component's beside the importing file.
-fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)], components: Option<&Path>) {
+fn resolve_imports(
+    sources: &mut Sources,
+    provided: &[(&str, &str)],
+    components: Option<&Path>,
+    overlays: &HashMap<PathBuf, String>,
+) {
     let mut loaded: HashMap<PathBuf, SourceId> = HashMap::new();
 
     if let Some(path) = &sources.files[0].path
@@ -263,7 +314,7 @@ fn resolve_imports(sources: &mut Sources, provided: &[(&str, &str)], components:
                 match target.canonicalize().ok().and_then(|c| loaded.get(&c).copied()) {
                     Some(id) => id,
                     None => {
-                        let content = match std::fs::read_to_string(&target) {
+                        let content = match read(&target, overlays) {
                             Ok(content) => content,
                             Err(e) => {
                                 sources.issues.push(Diagnostic::unreadable_import(
