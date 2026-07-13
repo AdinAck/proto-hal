@@ -21,6 +21,10 @@ pub use gates::{
 };
 pub use scaffolding::scaffolding;
 
+/// Generate the gate proc-macro entry points. `args` is the expression
+/// producing the device [`Model`](::model::Model) — typically
+/// [`model::compose`](crate::model::compose) over a `cfg_select!`-chosen
+/// description path.
 pub fn reexports(args: TokenStream) -> TokenStream {
     let idents_raw = vec![
         "modify",
@@ -45,7 +49,7 @@ pub fn reexports(args: TokenStream) -> TokenStream {
         #(
             #[proc_macro]
             pub fn #idents(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-                ::proto_hal_build::macros::#idents(::model::compose(#args).release(), tokens.into()).into()
+                ::proto_hal_build::macros::#idents(#args, tokens.into()).into()
             }
         )*
 

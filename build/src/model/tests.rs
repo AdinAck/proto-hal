@@ -1173,13 +1173,12 @@ mod model_judgements {
 }
 
 mod rendering {
-    use super::*;
-    use crate::model::{report::rendered, source::Sources};
+    use crate::model::{evaluate_sources, report::rendered, source::Sources};
 
     /// Render every diagnostic of a source, colors stripped.
     fn plain(src: &str) -> String {
         let sources = Sources::single("test.phm", src);
-        let evaluation = super::super::evaluate_sources(&sources);
+        let evaluation = evaluate_sources(&sources);
 
         let mut out = String::new();
 

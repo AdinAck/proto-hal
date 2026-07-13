@@ -136,6 +136,24 @@ pub fn elaborate_sources<'src>(
     (composition, diagnostics)
 }
 
+/// Evaluate the model description at `path` — and everything it imports —
+/// into the *unvalidated* model: the gate-macro path.
+///
+/// The gates only need the model's shape, so nothing is validated or
+/// reported here — a device's build script ([`render`]) fails the build
+/// with full reports before any gate expands. An unreadable path panics,
+/// which a proc macro surfaces as a compile error at the invocation.
+pub fn compose(path: impl AsRef<std::path::Path>) -> Model {
+    let sources = match load(path) {
+        Ok(sources) => sources,
+        Err(e) => panic!("{e}"),
+    };
+
+    let (composition, ..) = elaborate_sources(&sources);
+
+    composition.release()
+}
+
 fn conclude<'src>(
     units: Vec<elaborate::Unit<'src>>,
     mut diagnostics: Vec<Diagnostic<'src>>,
@@ -170,6 +188,16 @@ pub fn render(path: impl AsRef<std::path::Path>) {
 /// filesystem.
 #[cfg(feature = "integrated")]
 pub fn render_with(path: impl AsRef<std::path::Path>, provided: &[(&str, &str)]) {
+    // cargo pipes build-script output, which reads as "not a terminal" and
+    // strips the reports' painting — but the human watching a failed build
+    // does have one, and cargo passes escape codes through verbatim
+    let plain = std::env::var_os("NO_COLOR").is_some()
+        || std::env::var("CARGO_TERM_COLOR").is_ok_and(|choice| choice == "never");
+
+    if !plain {
+        colored::control::set_override(true);
+    }
+
     let sources = match load_with(path, provided) {
         Ok(sources) => sources,
         Err(e) => {
@@ -189,9 +217,30 @@ pub fn render_with(path: impl AsRef<std::path::Path>, provided: &[(&str, &str)])
         std::process::exit(1);
     }
 
+    // cargo hides a passing build script's output — `cargo::warning`
+    // directives are the one surviving channel, one line each, so each
+    // warning flattens to its code, message, and location
     for diagnostic in &evaluation.diagnostics {
         if let Diagnostic::Semantic(semantic) = diagnostic {
-            println!("cargo::warning={}", semantic.message);
+            let file = &sources.files[semantic.span.context];
+
+            let place = file
+                .path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| file.name.clone());
+
+            let line = file.content[..semantic.span.start.min(file.content.len())]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+
+            println!(
+                "cargo::warning=[W{:04}] {} — {place}:{line}",
+                semantic.kind as u32,
+                semantic.message,
+            );
         }
     }
 
