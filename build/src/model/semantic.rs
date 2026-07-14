@@ -162,7 +162,9 @@ impl Diagnostic {
             "this device is not elaborated",
             "defined outside the entry file",
         )
-        .note("only the entry file's device is elaborated — named devices remain usable as templates")
+        .note(
+            "only the entry file's device is elaborated — named devices remain usable as templates",
+        )
     }
 
     /// the device has no body
@@ -259,6 +261,16 @@ impl Diagnostic {
             format!("a similarly named variant `{suggestion}` exists in field `{field}`")
         }))
     }
+
+    /// domain ranges must be contiguous
+    pub fn non_contiguous_domain(span: Span) -> Self {
+        Self::error(
+            Kind::NonContiguousDomain,
+            span,
+            "domain ranges must be contiguous",
+            "remove step specified here",
+        )
+    }
 }
 
 // templates
@@ -299,8 +311,7 @@ impl Diagnostic {
         )
         .note("imports are referenced by their final path segment")
         .note_if(
-            suggestion
-                .map(|suggestion| format!("a similarly named import `{suggestion}` exists")),
+            suggestion.map(|suggestion| format!("a similarly named import `{suggestion}` exists")),
         )
     }
 
@@ -712,12 +723,7 @@ impl Diagnostic {
     }
 
     /// the correspondence names {targets} targets across {elements} elements
-    pub fn correspondence_length(
-        span: Span,
-        targets: usize,
-        elements: usize,
-        array: Span,
-    ) -> Self {
+    pub fn correspondence_length(span: Span, targets: usize, elements: usize, array: Span) -> Self {
         let plural = |count: usize| if count == 1 { "" } else { "s" };
 
         Self::error(
@@ -732,7 +738,10 @@ impl Diagnostic {
         )
         .label(
             array,
-            format!("the enclosing array has {elements} element{}", plural(elements)),
+            format!(
+                "the enclosing array has {elements} element{}",
+                plural(elements)
+            ),
         )
         .note(
             "a correspondence zips by ordinal: it must name exactly one \
@@ -919,8 +928,7 @@ impl Diagnostic {
 const MODALITIES: &str =
     "the access modalities: `read`, `write`, `read write`, `store`, `volatile store`";
 
-const PATH_ANATOMY: &str =
-    "entitlement paths are anchored at the device root and name every module \
+const PATH_ANATOMY: &str = "entitlement paths are anchored at the device root and name every module \
      level — groups included — ending at a variant";
 
 /// The rule a side violation breaks, as a note.

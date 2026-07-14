@@ -54,7 +54,7 @@ where
         .labelled("path")
 }
 
-/// `0..2` or `0..=1`.
+/// `0..2`, `0..=1`, `0..=4 by 2`.
 pub(crate) fn range<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, NumRange, Extra<'tokens, 'src>> + Clone
 where
@@ -66,10 +66,12 @@ where
             select! { Token::DotDot => false, Token::DotDotEq => true }.labelled("range operator"),
         )
         .then(number().spanned())
-        .map(|((start, inclusive), end)| NumRange {
+        .then(just(Token::By).ignore_then(number().spanned()).or_not())
+        .map(|(((start, inclusive), end), step)| NumRange {
             start,
             end,
             inclusive,
+            step,
         })
         .labelled("range")
 }

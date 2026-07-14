@@ -78,6 +78,7 @@ pub enum Kind {
     DoesNotFit,
     NonNumericRegisterReset,
     UnknownVariant,
+    NonContiguousDomain,
 
     // semantic: templates
     UnknownTemplate,

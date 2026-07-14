@@ -1,14 +1,10 @@
 //! Shared elaboration machinery: element expansion and head properties.
 
-use syntax::ast::{
-    Access, Domain, Field, Indices, Span, Spanned,
-};
+use syntax::ast::{Access, Domain, Field, Indices, Span, Spanned};
 
 use crate::model::semantic::Diagnostic;
 
-use super::{
-    Context, Modality, expand, side_decl, side_name, side_verdict,
-};
+use super::{Context, Modality, expand, side_decl, side_name, side_verdict};
 
 impl<'ast, 'src> Context<'ast, 'src> {
     /// The `(name, position)` of every element this definition describes:
@@ -56,7 +52,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 let domain = self.domain_of(domain, what, span)?;
 
                 let Domain::List(entries) = &domain.inner else {
-                    self.diagnostics.push(Diagnostic::expected_positions(domain.span));
+                    self.diagnostics
+                        .push(Diagnostic::expected_positions(domain.span));
                     return None;
                 };
 
@@ -115,7 +112,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 let domain = self.domain_of(&field.domain, "field", span)?;
 
                 let Domain::List(entries) = &domain.inner else {
-                    self.diagnostics.push(Diagnostic::expected_positions(domain.span));
+                    self.diagnostics
+                        .push(Diagnostic::expected_positions(domain.span));
                     return None;
                 };
 
@@ -155,7 +153,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
         let domain = domain.as_ref();
 
         if domain.is_none() {
-            self.diagnostics.push(Diagnostic::expected_position(span, what));
+            self.diagnostics
+                .push(Diagnostic::expected_position(span, what));
         }
 
         domain
@@ -186,7 +185,12 @@ impl<'ast, 'src> Context<'ast, 'src> {
         ));
     }
 
-    pub(super) fn modality(&mut self, access: &[Spanned<Access>], what: &str, span: Span) -> Option<Modality> {
+    pub(super) fn modality(
+        &mut self,
+        access: &[Spanned<Access>],
+        what: &str,
+        span: Span,
+    ) -> Option<Modality> {
         let mut read = false;
         let mut write = false;
         let mut store = false;
@@ -208,7 +212,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
             (false, false, true, false) => Some(Modality::Store),
             (false, false, false, true) => Some(Modality::VolatileStore),
             (false, false, false, false) => {
-                self.diagnostics.push(Diagnostic::expected_modality(span, what));
+                self.diagnostics
+                    .push(Diagnostic::expected_modality(span, what));
                 None
             }
             _ => {

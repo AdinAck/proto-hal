@@ -9,20 +9,26 @@ use heck::ToSnakeCase as _;
 use proc_macro2::Span as IdentSpan;
 use syn::Ident;
 use syntax::ast::{
-    Device, DeviceItem, Field, FieldItem, GroupItem, InterruptKind,
-    Interrupts, ListEntry, Peripheral, PeripheralItem, Register, RegisterItem, ResetValue, Schema, Span, Spanned, ValueEntry, VariantValue,
+    Device, DeviceItem, Field, FieldItem, GroupItem, InterruptKind, Interrupts, ListEntry,
+    Peripheral, PeripheralItem, Register, RegisterItem, ResetValue, Schema, Span, Spanned,
+    ValueEntry, VariantValue,
 };
 
 use crate::model::semantic::Diagnostic;
 
 use super::{
-    Context, DeclaredVariant, Enclosing, Link, Locator, Modality, Pending, Placement, PlacedSchema,
-    Reference, Target, VariantPath, corresponding, expand, head_span,
-    ident, merge, modality_access, side_decl, Location,
+    Context, DeclaredVariant, Enclosing, Link, Location, Locator, Modality, Pending, PlacedSchema,
+    Placement, Reference, Target, VariantPath, corresponding, expand, head_span, ident, merge,
+    modality_access, side_decl,
 };
 
 impl<'ast, 'src> Context<'ast, 'src> {
-    pub(super) fn device(&mut self, composition: &mut Composition, device: &Device<'src>, span: Span) {
+    pub(super) fn device(
+        &mut self,
+        composition: &mut Composition,
+        device: &Device<'src>,
+        span: Span,
+    ) {
         let Some(body) = &device.body else {
             self.diagnostics.push(Diagnostic::empty_device(span));
             return;
@@ -197,7 +203,9 @@ impl<'ast, 'src> Context<'ast, 'src> {
         for item in items {
             match &item.inner {
                 PeripheralItem::Register(register) => {
-                    registers.extend(self.register_decls(register, item.span, path, peripheral, enclosing));
+                    registers.extend(
+                        self.register_decls(register, item.span, path, peripheral, enclosing),
+                    );
                 }
                 PeripheralItem::RegisterGroup(group) => {
                     let Some(name) = &group.name else {
@@ -323,8 +331,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 },
             );
 
-            let mut composed =
-                ::model::Register::new(&name, offset).docs(register.docs.iter().map(|doc| doc.inner));
+            let mut composed = ::model::Register::new(&name, offset)
+                .docs(register.docs.iter().map(|doc| doc.inner));
 
             if let Some(reset) = reset {
                 composed = composed.reset(reset);
@@ -377,7 +385,9 @@ impl<'ast, 'src> Context<'ast, 'src> {
         for item in items {
             match &item.inner {
                 RegisterItem::Field(field) => {
-                    fields.extend(self.field_decls(field, item.span, path, peripheral, register, enclosing));
+                    fields.extend(
+                        self.field_decls(field, item.span, path, peripheral, register, enclosing),
+                    );
                 }
                 RegisterItem::FieldGroup(group) => {
                     let Some(name) = &group.name else {
@@ -456,7 +466,13 @@ impl<'ast, 'src> Context<'ast, 'src> {
                     &template_ref,
                     "field",
                     |templates, name| templates.fields.get(name).copied(),
-                    |templates| templates.fields.keys().map(|name| name.to_string()).collect(),
+                    |templates| {
+                        templates
+                            .fields
+                            .keys()
+                            .map(|name| name.to_string())
+                            .collect()
+                    },
                 ) else {
                     return Vec::new();
                 };
@@ -465,7 +481,12 @@ impl<'ast, 'src> Context<'ast, 'src> {
             }
         };
 
-        let field_name = field.head.name.as_ref().map(|name| name.inner).unwrap_or("_");
+        let field_name = field
+            .head
+            .name
+            .as_ref()
+            .map(|name| name.inner)
+            .unwrap_or("_");
 
         if let (Some(assumes), [extends, ..]) = (&field.assumes, field.extends.as_slice()) {
             self.diagnostics.push(Diagnostic::assumes_and_extends(
@@ -508,8 +529,10 @@ impl<'ast, 'src> Context<'ast, 'src> {
         if let Some(requires) = &field.requires.write
             && matches!(modality, Modality::Read)
         {
-            self.diagnostics
-                .push(Diagnostic::write_requires_readonly(requires.span, field_name));
+            self.diagnostics.push(Diagnostic::write_requires_readonly(
+                requires.span,
+                field_name,
+            ));
         }
 
         if let Some(requires) = &field.requires.hardware_write
@@ -580,11 +603,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 composed = composed.leaky();
             }
 
-            let chain = (
-                peripheral.to_string(),
-                register.to_string(),
-                name.clone(),
-            );
+            let chain = (peripheral.to_string(), register.to_string(), name.clone());
 
             self.locations.insert(
                 vec![
@@ -716,11 +735,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
                                         for member in set {
                                             let mut target = prefix.clone();
                                             target.push(member.inner.to_string());
-                                            self.edges.push((
-                                                path.clone(),
-                                                target,
-                                                requires.span,
-                                            ));
+                                            self.edges.push((path.clone(), target, requires.span));
                                         }
                                     }
                                     None => {
@@ -780,7 +795,11 @@ impl<'ast, 'src> Context<'ast, 'src> {
                         "variant",
                         |templates, name| templates.variants.get(name).copied(),
                         |templates| {
-                            templates.variants.keys().map(|name| name.to_string()).collect()
+                            templates
+                                .variants
+                                .keys()
+                                .map(|name| name.to_string())
+                                .collect()
                         },
                     ) else {
                         continue;
@@ -796,13 +815,14 @@ impl<'ast, 'src> Context<'ast, 'src> {
             }
 
             let Some(name) = &variant.head.name else {
-                self.diagnostics.push(Diagnostic::unnamed(item.span, "variant"));
+                self.diagnostics
+                    .push(Diagnostic::unnamed(item.span, "variant"));
                 continue;
             };
 
             let compose = |name: &str, bits: u32| {
-                let mut composed =
-                    ::model::Variant::new(name, bits).docs(variant.docs.iter().map(|doc| doc.inner));
+                let mut composed = ::model::Variant::new(name, bits)
+                    .docs(variant.docs.iter().map(|doc| doc.inner));
 
                 if variant.inert.is_some() {
                     composed = composed.inert();
@@ -811,15 +831,14 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 composed
             };
 
-            match variant.array.or(variant
-                .head
-                .indices
-                .as_ref()
-                .map(|indices| indices.span))
+            match variant
+                .array
+                .or(variant.head.indices.as_ref().map(|indices| indices.span))
             {
                 Some(..) => {
                     let Some(indices) = &variant.head.indices else {
-                        self.diagnostics.push(Diagnostic::expected_elements(item.span));
+                        self.diagnostics
+                            .push(Diagnostic::expected_elements(item.span));
                         continue;
                     };
 
@@ -852,7 +871,8 @@ impl<'ast, 'src> Context<'ast, 'src> {
                                 )
                             }
                             VariantValue::Value(..) => {
-                                self.diagnostics.push(Diagnostic::expected_value_list(value.span));
+                                self.diagnostics
+                                    .push(Diagnostic::expected_value_list(value.span));
                                 None
                             }
                         },
@@ -876,13 +896,18 @@ impl<'ast, 'src> Context<'ast, 'src> {
                         ],
                     );
 
-                    out.extend(names.iter().zip(values).map(|(name, value)| DeclaredVariant {
-                        name: name.clone(),
-                        variant: compose(name, value),
-                        span: head,
-                        side: variant.side,
-                        requires: variant.requires.clone(),
-                    }));
+                    out.extend(
+                        names
+                            .iter()
+                            .zip(values)
+                            .map(|(name, value)| DeclaredVariant {
+                                name: name.clone(),
+                                variant: compose(name, value),
+                                span: head,
+                                side: variant.side,
+                                requires: variant.requires.clone(),
+                            }),
+                    );
                 }
                 None => {
                     let value = match &variant.value {
@@ -944,7 +969,13 @@ impl<'ast, 'src> Context<'ast, 'src> {
                     &template_ref,
                     "schema",
                     |templates, name| templates.schemas.get(name).copied(),
-                    |templates| templates.schemas.keys().map(|name| name.to_string()).collect(),
+                    |templates| {
+                        templates
+                            .schemas
+                            .keys()
+                            .map(|name| name.to_string())
+                            .collect()
+                    },
                 )?;
 
                 merge::schema(template.clone(), schema)
@@ -976,7 +1007,13 @@ impl<'ast, 'src> Context<'ast, 'src> {
 
     /// Place a schema: build its declaration (resolving its template), record
     /// it for scoped reference resolution, and queue its insertion.
-    pub(super) fn place(&mut self, schema: &Schema<'src>, span: Span, scope: VariantPath, locator: Locator) {
+    pub(super) fn place(
+        &mut self,
+        schema: &Schema<'src>,
+        span: Span,
+        scope: VariantPath,
+        locator: Locator,
+    ) {
         let Some((variants, schema)) = self.schema_shape(schema, span) else {
             return;
         };
@@ -1013,7 +1050,10 @@ impl<'ast, 'src> Context<'ast, 'src> {
                     .map(|declared| {
                         (
                             declared.name.clone(),
-                            declared.side.as_ref().map(|side| (side_decl(side), side.span)),
+                            declared
+                                .side
+                                .as_ref()
+                                .map(|side| (side_decl(side), side.span)),
                             declared.span,
                         )
                     })
@@ -1035,7 +1075,11 @@ impl<'ast, 'src> Context<'ast, 'src> {
                         side: declared.side.as_ref().map(side_decl),
                     })
                     .collect(),
-                docs: schema.docs.iter().map(|doc| doc.inner.to_string()).collect(),
+                docs: schema
+                    .docs
+                    .iter()
+                    .map(|doc| doc.inner.to_string())
+                    .collect(),
             },
         });
     }
@@ -1088,7 +1132,11 @@ impl<'ast, 'src> Context<'ast, 'src> {
         }
     }
 
-    pub(super) fn interrupts(&mut self, composition: &mut Composition, interrupts: &Interrupts<'src>) {
+    pub(super) fn interrupts(
+        &mut self,
+        composition: &mut Composition,
+        interrupts: &Interrupts<'src>,
+    ) {
         // hover and inlay hints show each entry's vector position
         let base = self.vectors.len();
 
@@ -1109,5 +1157,4 @@ impl<'ast, 'src> Context<'ast, 'src> {
             .docs(entry.inner.docs.iter().map(|doc| doc.inner))
         }));
     }
-
 }

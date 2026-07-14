@@ -85,6 +85,7 @@ pub fn lexer<'src>()
             "leaky" => Token::Leaky,
             "inert" => Token::Inert,
             "as" => Token::As,
+            "by" => Token::By,
             "extends" => Token::Extends,
             "assumes" => Token::Assumes,
             "reset" => Token::Reset,

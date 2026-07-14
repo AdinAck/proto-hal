@@ -28,15 +28,22 @@ pub(super) fn element_names(
             let start = range.start.inner;
             let end = bound(range, indices.span, diagnostics)?;
 
-            Some((start..=end).map(|i| format!("{base}{i}")).collect())
+            Some(
+                (start..=end)
+                    .step_by(range.step.as_deref().copied().unwrap_or(1) as _)
+                    .map(|i| format!("{base}{i}"))
+                    .collect(),
+            )
         }
         Indices::Series(range) => {
             let start = range.start.inner;
             let end = bound(range, indices.span, diagnostics)?;
-            let shift = (end - start + 1) * series as u32;
+            let step = range.step.as_deref().copied().unwrap_or(1);
+            let shift = (end - start + step) * series as u32;
 
             Some(
                 (start + shift..=end + shift)
+                    .step_by(step as _)
                     .map(|i| format!("{base}{i}"))
                     .collect(),
             )
@@ -89,7 +96,12 @@ pub(super) fn scalar_series(
     }
 
     if out.len() != count {
-        diagnostics.push(Diagnostic::count_mismatch(list_span, "positions", count, out.len()));
+        diagnostics.push(Diagnostic::count_mismatch(
+            list_span,
+            "positions",
+            count,
+            out.len(),
+        ));
         return None;
     }
 
@@ -135,7 +147,12 @@ pub(super) fn span_series(
     }
 
     if out.len() != count {
-        diagnostics.push(Diagnostic::count_mismatch(list_span, "bit domains", count, out.len()));
+        diagnostics.push(Diagnostic::count_mismatch(
+            list_span,
+            "bit domains",
+            count,
+            out.len(),
+        ));
         return None;
     }
 
@@ -151,6 +168,11 @@ pub(super) fn bit_domain(
     let start = range.start.inner;
     let end = bound(range, span, diagnostics)?;
 
+    if let Some(step) = range.step {
+        diagnostics.push(Diagnostic::non_contiguous_domain(step.span));
+        return None;
+    }
+
     Some((start, end - start + 1))
 }
 
@@ -160,7 +182,11 @@ fn bound(range: &NumRange, span: Span, diagnostics: &mut Vec<Diagnostic>) -> Opt
     let end = if range.inclusive {
         range.end.inner
     } else {
-        let Some(end) = range.end.inner.checked_sub(1) else {
+        let Some(end) = range
+            .end
+            .inner
+            .checked_sub(range.step.as_deref().copied().unwrap_or(1))
+        else {
             diagnostics.push(Diagnostic::empty_range(span));
             return None;
         };

@@ -61,6 +61,8 @@ pub struct NumRange {
     pub end: Spanned<u32>,
     /// `..=` rather than `..`.
     pub inclusive: bool,
+    /// The optional step size for the range (default 1).
+    pub step: Option<Spanned<u32>>,
 }
 
 /// `@ ...` — the position a definition occupies within its parent.

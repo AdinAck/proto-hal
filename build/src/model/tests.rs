@@ -97,8 +97,7 @@ mod structure {
     #[test]
     fn unnamed_group() {
         assert!(
-            kinds("device d { peripheral group { peripheral p @ 0x0 } }")
-                .contains(&Kind::Unnamed)
+            kinds("device d { peripheral group { peripheral p @ 0x0 } }").contains(&Kind::Unnamed)
         );
     }
 
@@ -232,9 +231,7 @@ mod arrays {
 
     #[test]
     fn scalar_position_takes_no_bit_domain() {
-        assert!(
-            kinds("device d { peripheral p @ 0..=1 }").contains(&Kind::ExpectedScalar)
-        );
+        assert!(kinds("device d { peripheral p @ 0..=1 }").contains(&Kind::ExpectedScalar));
     }
 
     #[test]
@@ -282,6 +279,21 @@ mod arrays {
                 } }"
             )
             .contains(&Kind::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn step() {
+        clean(
+            "device d {
+                    peripheral p @ 0x0 {
+                        register r @ 0 {
+                            store field f @ 0..4 reset P0 {
+                                variant array P[4..=60 by 4] ~ [1..=15]
+                            }
+                        }
+                    }
+                }",
         );
     }
 }
@@ -513,9 +525,7 @@ mod schemas {
             .diagnostics
             .iter()
             .find_map(|diagnostic| match diagnostic {
-                Diagnostic::Semantic(semantic)
-                    if semantic.kind == Kind::ContradictorySide =>
-                {
+                Diagnostic::Semantic(semantic) if semantic.kind == Kind::ContradictorySide => {
                     Some(semantic)
                 }
                 _ => None,
@@ -826,8 +836,12 @@ mod correspondence {
 
         let cpar0 = generated.find("pub mod cpar0").expect("cpar0 renders");
         let cpar1 = generated.find("pub mod cpar1").expect("cpar1 renders");
-        let to_ccr0 = generated.find("ccr0 :: en :: En").expect("an entitlement to ccr0");
-        let to_ccr1 = generated.find("ccr1 :: en :: En").expect("an entitlement to ccr1");
+        let to_ccr0 = generated
+            .find("ccr0 :: en :: En")
+            .expect("an entitlement to ccr0");
+        let to_ccr1 = generated
+            .find("ccr1 :: en :: En")
+            .expect("an entitlement to ccr1");
 
         assert!(
             cpar0 < to_ccr0 && to_ccr0 < cpar1,
@@ -969,7 +983,11 @@ mod templates {
         );
 
         let model = evaluation.model.unwrap();
-        assert_eq!(model.field_count(), 2, "template's field plus the appended one");
+        assert_eq!(
+            model.field_count(),
+            2,
+            "template's field plus the appended one"
+        );
     }
 
     #[test]
@@ -997,13 +1015,11 @@ mod templates {
             device d { peripheral #gpio_prot as p @ 0x0 }",
         );
 
-        assert!(
-            evaluation.diagnostics.iter().any(|diagnostic| matches!(
-                diagnostic,
-                Diagnostic::Semantic(semantic)
-                    if semantic.notes.iter().any(|note| note.contains("similarly named"))
-            )),
-        );
+        assert!(evaluation.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            Diagnostic::Semantic(semantic)
+                if semantic.notes.iter().any(|note| note.contains("similarly named"))
+        )),);
     }
 
     #[test]
@@ -1063,7 +1079,11 @@ mod imports {
         let evaluation = evaluate_sources(&sources);
         let model = evaluation.model.unwrap();
 
-        assert_eq!(model.peripheral_count(), 2, "template's peripheral plus the appended one");
+        assert_eq!(
+            model.peripheral_count(),
+            2,
+            "template's peripheral plus the appended one"
+        );
         assert!(
             !evaluation.diagnostics.iter().any(|diagnostic| matches!(
                 diagnostic,
@@ -1218,9 +1238,7 @@ mod model_judgements {
             .diagnostics
             .iter()
             .find_map(|diagnostic| match diagnostic {
-                Diagnostic::Semantic(semantic) if semantic.kind == Kind::Overlap => {
-                    Some(semantic)
-                }
+                Diagnostic::Semantic(semantic) if semantic.kind == Kind::Overlap => Some(semantic),
                 _ => None,
             })
             .expect("an overlap");
@@ -1285,7 +1303,10 @@ device t { peripheral p @ 0x0 { register r @ 0x0 {
             .filter(|line| line.contains("write field f @ 0 extends status"))
             .count();
 
-        assert_eq!(occurrences, 1, "one line, every arrow beneath it:\n{report}");
+        assert_eq!(
+            occurrences, 1,
+            "one line, every arrow beneath it:\n{report}"
+        );
     }
 
     /// Only labeled lines render — but nearby ones merge, the lines between
@@ -1327,7 +1348,10 @@ device t { peripheral p @ 0x0 { register r @ 0x0 {
 } } }",
         );
 
-        assert!(report.contains("┆"), "a gap between distant ranges:\n{report}");
+        assert!(
+            report.contains("┆"),
+            "a gap between distant ranges:\n{report}"
+        );
     }
 
     /// Notes are lowercase and unnumbered.
