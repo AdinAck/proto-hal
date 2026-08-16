@@ -9,7 +9,7 @@
 use chumsky::prelude::*;
 
 use super::{Extra, TokenInput};
-use crate::token::Token;
+use crate::token::{Token, keyword, token};
 
 /// A brace-balanced block of arbitrary tokens.
 pub(crate) fn block<'tokens, 'src: 'tokens, I>()
@@ -19,12 +19,12 @@ where
 {
     recursive(|block| {
         let not_brace = any()
-            .and_is(one_of([Token::LBrace, Token::RBrace]).not())
+            .and_is(one_of([token![LBrace], token![RBrace]]).not())
             .ignored();
 
-        just(Token::LBrace)
+        just(token![LBrace])
             .ignore_then(choice((block, not_brace)).repeated())
-            .then_ignore(just(Token::RBrace))
+            .then_ignore(just(token![RBrace]))
             .ignored()
     })
 }
@@ -46,26 +46,26 @@ where
     // tokens that plausibly begin an item
     let item_start = select! {
         Token::Doc(..) => (),
-        Token::Device => (),
-        Token::Peripheral => (),
-        Token::Register => (),
-        Token::Field => (),
-        Token::Schema => (),
-        Token::Variant => (),
-        Token::Import => (),
-        Token::Interrupts => (),
-        Token::Read => (),
-        Token::Write => (),
-        Token::Store => (),
-        Token::Volatile => (),
-        Token::Leaky => (),
-        Token::Inert => (),
+        keyword![Device] => (),
+        keyword![Peripheral] => (),
+        keyword![Register] => (),
+        keyword![Field] => (),
+        keyword![Schema] => (),
+        keyword![Variant] => (),
+        keyword![Import] => (),
+        keyword![Interrupts] => (),
+        keyword![Read] => (),
+        keyword![Write] => (),
+        keyword![Store] => (),
+        keyword![Volatile] => (),
+        keyword![Leaky] => (),
+        keyword![Inert] => (),
     };
 
-    let sync = item_start.or(one_of([Token::LBrace, Token::RBrace]).ignored());
+    let sync = item_start.or(one_of([token![LBrace], token![RBrace]]).ignored());
 
     // never consume a closing brace: it belongs to the enclosing body
-    let first = choice((block(), any().and_is(just(Token::RBrace).not()).ignored()));
+    let first = choice((block(), any().and_is(just(token![RBrace]).not()).ignored()));
 
     let rest = choice((block(), any().and_is(sync.not()).ignored()));
 

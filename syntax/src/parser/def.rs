@@ -18,7 +18,7 @@ use crate::{
         Register, RegisterGroup, RegisterItem, Schema, Variant,
     },
     parser::atom::path,
-    token::Token,
+    token::token,
 };
 
 /// `variant Name ~ value requires ...`
@@ -28,11 +28,11 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then(marker(Token::Leaky))
-        .then(marker(Token::Inert))
+        .then(marker(token![Leaky]))
+        .then(marker(token![Inert]))
         .then(side())
-        .then_ignore(just(Token::Variant))
-        .then(marker(Token::Array))
+        .then_ignore(just(token![Variant]))
+        .then(marker(token![Array]))
         .then(indexed_head())
         .then(value())
         .then(requires())
@@ -53,8 +53,7 @@ where
 }
 
 /// A field or schema body: variants.
-fn variant_body<'tokens, 'src: 'tokens, I>()
--> impl Parser<
+fn variant_body<'tokens, 'src: 'tokens, I>() -> impl Parser<
     'tokens,
     I,
     crate::ast::Spanned<Vec<crate::ast::Spanned<FieldItem<'src>>>>,
@@ -77,8 +76,8 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then(marker(Token::Leaky))
-        .then_ignore(just(Token::Schema))
+        .then(marker(token![Leaky]))
+        .then_ignore(just(token![Schema]))
         .then(plain_head())
         .then(variant_body().or_not())
         .map(|(((docs, leaky), head), body)| Schema {
@@ -98,10 +97,10 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then(marker(Token::Leaky))
+        .then(marker(token![Leaky]))
         .then(access())
-        .then_ignore(just(Token::Field))
-        .then(marker(Token::Array))
+        .then_ignore(just(token![Field]))
+        .then(marker(token![Array]))
         .then(indexed_head())
         .then(domain())
         .then(assumes())
@@ -116,9 +115,13 @@ where
                 (
                     (
                         (
-                            ((((((((docs, leaky), access), array), head), domain), assumes),
-                                extends),
-                                reset),
+                            (
+                                (
+                                    ((((((docs, leaky), access), array), head), domain), assumes),
+                                    extends,
+                                ),
+                                reset,
+                            ),
                             plain,
                         ),
                         write,
@@ -155,8 +158,8 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then_ignore(just(Token::Field))
-        .then_ignore(just(Token::Group))
+        .then_ignore(just(token![Field]))
+        .then_ignore(just(token![Group]))
         .then(ident().spanned().or_not())
         .then(body(
             choice((
@@ -177,9 +180,9 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then(marker(Token::Leaky))
-        .then_ignore(just(Token::Register))
-        .then(marker(Token::Array))
+        .then(marker(token![Leaky]))
+        .then_ignore(just(token![Register]))
+        .then(marker(token![Array]))
         .then(indexed_head())
         .then(domain())
         .then(reset())
@@ -216,8 +219,8 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then_ignore(just(Token::Register))
-        .then_ignore(just(Token::Group))
+        .then_ignore(just(token![Register]))
+        .then_ignore(just(token![Group]))
         .then(ident().spanned().or_not())
         .then(body(
             choice((
@@ -238,9 +241,9 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then(marker(Token::Leaky))
-        .then_ignore(just(Token::Peripheral))
-        .then(marker(Token::Array))
+        .then(marker(token![Leaky]))
+        .then_ignore(just(token![Peripheral]))
+        .then(marker(token![Array]))
         .then(indexed_head())
         .then(domain())
         .then(requires())
@@ -277,8 +280,8 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then_ignore(just(Token::Peripheral))
-        .then_ignore(just(Token::Group))
+        .then_ignore(just(token![Peripheral]))
+        .then_ignore(just(token![Group]))
         .then(ident().spanned().or_not())
         .then(body(
             choice((
@@ -300,18 +303,18 @@ where
 {
     let entry = docs()
         .then(choice((
-            just(Token::Reserved).to(InterruptKind::Reserved),
+            just(token![Reserved]).to(InterruptKind::Reserved),
             ident().spanned().map(InterruptKind::Handler),
         )))
         .map(|(docs, kind)| InterruptEntry { docs, kind })
         .spanned();
 
-    just(Token::Interrupts)
+    just(token![Interrupts])
         .ignore_then(
             entry
                 .repeated()
                 .collect()
-                .delimited_by(just(Token::LBrace), just(Token::RBrace)),
+                .delimited_by(just(token![LBrace]), just(token![RBrace])),
         )
         .map(|entries| Interrupts { entries })
         .labelled("interrupts")
@@ -324,7 +327,7 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     docs()
-        .then_ignore(just(Token::Device))
+        .then_ignore(just(token![Device]))
         .then(plain_head())
         .then(
             body(
@@ -349,7 +352,7 @@ pub(crate) fn import<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Import)
+    just(token![Import])
         .ignore_then(path().spanned())
         .map(|path| Import { path })
         .labelled("import")

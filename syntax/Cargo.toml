@@ -5,3 +5,7 @@ edition = "2024"
 
 [dependencies]
 chumsky = "0.13.0"
+derive_more = { workspace = true, features = ["from"] }
+
+[dev-dependencies]
+itertools = "0.15.0"

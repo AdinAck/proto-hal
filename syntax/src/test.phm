@@ -5,7 +5,7 @@ peripheral group gpio {
     peripheral array gpio[a, b, c, d, e, f, g] @ [0400_0000, ...] {
         /// add some more docs in addition to the template docs
         register #moder { // template includes offset (shouldn't but does for the sake of demonstration)
-            /// a docstring which each field will have
+            /// a doc comment which each field will have
             field array #mode|mode[0..=15] @ [0..1, ...] // trailing elipsis means auto increment such that fields are adjacent
         }
         register #ospeedr (0100_0000) { ... } // override template's reset

@@ -9,10 +9,10 @@ use super::{
 };
 use crate::{
     ast::{
-        Domain, Entitled, ListEntry, Pattern, ResetValue, Segment, Rest, Space, Spanned, Stride, ValueEntry,
-        VariantValue,
+        Domain, Entitled, ListEntry, Pattern, ResetValue, Rest, Segment, Space, Spanned, Stride,
+        ValueEntry, VariantValue,
     },
-    token::Token,
+    token::token,
 };
 
 /// `...`, `...+0x4`, or `...-0x4` — continue the pattern, optionally with an
@@ -22,9 +22,9 @@ pub(crate) fn rest<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Ellipsis)
+    just(token![...])
         .ignore_then(
-            choice((just(Token::Plus).to(false), just(Token::Minus).to(true)))
+            choice((just(token![+]).to(false), just(token![-]).to(true)))
                 .then(number())
                 .map(|(negative, magnitude)| Stride {
                     negative,
@@ -48,7 +48,7 @@ where
         number().map(ListEntry::Value),
     ));
 
-    just(Token::At)
+    just(token![@])
         .ignore_then(
             choice((
                 bracketed_list(entry).map(Domain::List),
@@ -67,7 +67,7 @@ pub(crate) fn assumes<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Assumes).ignore_then(path().spanned()).or_not()
+    just(token![Assumes]).ignore_then(path().spanned()).or_not()
 }
 
 /// `extends a, b` clauses — the schemas a field copies its variants from.
@@ -77,11 +77,11 @@ pub(crate) fn extends<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Extends)
+    just(token![Extends])
         .ignore_then(
             path()
                 .spanned()
-                .separated_by(just(Token::Comma))
+                .separated_by(just(token![,]))
                 .at_least(1)
                 .collect::<Vec<_>>(),
         )
@@ -96,7 +96,7 @@ pub(crate) fn reset<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Reset)
+    just(token![Reset])
         .ignore_then(
             choice((
                 number().map(ResetValue::Value),
@@ -119,7 +119,7 @@ where
         number().map(ValueEntry::Value),
     ));
 
-    just(Token::Tilde)
+    just(token![~])
         .ignore_then(
             choice((
                 bracketed_list(entry).map(VariantValue::List),
@@ -142,18 +142,18 @@ where
     let segment = ident()
         .then(
             range()
-                .delimited_by(just(Token::LBracket), just(Token::RBracket))
+                .delimited_by(just(token![LBracket]), just(token![RBracket]))
                 .or_not(),
         )
         .map(|(name, elements)| Segment { name, elements })
         .spanned();
 
     let entitled = segment
-        .separated_by(just(Token::Dot))
+        .separated_by(just(token![.]))
         .at_least(1)
         .collect()
         .then(
-            just(Token::Dot)
+            just(token![.])
                 .ignore_then(braced_set(ident()).labelled("variant set"))
                 .or_not(),
         )
@@ -161,7 +161,7 @@ where
 
     let pattern = entitled
         .spanned()
-        .separated_by(just(Token::Amp))
+        .separated_by(just(token![&]))
         .at_least(1)
         .collect()
         .map(|entitlements| Pattern { entitlements });
@@ -169,11 +169,11 @@ where
     choice((
         pattern
             .clone()
-            .delimited_by(just(Token::LParen), just(Token::RParen)),
+            .delimited_by(just(token![LParen]), just(token![RParen])),
         pattern,
     ))
     .spanned()
-    .separated_by(just(Token::Pipe))
+    .separated_by(just(token![|]))
     .at_least(1)
     .collect()
     .map(|patterns| Space { patterns })
@@ -187,7 +187,7 @@ pub(crate) fn requires<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Requires)
+    just(token![Requires])
         .ignore_then(space().spanned())
         .or_not()
 }
@@ -198,8 +198,8 @@ pub(crate) fn write_requires<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Write)
-        .ignore_then(just(Token::Requires))
+    just(token![Write])
+        .ignore_then(just(token![Requires]))
         .ignore_then(space().spanned())
         .or_not()
 }
@@ -210,9 +210,9 @@ pub(crate) fn hardware_write_requires<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    just(Token::Hardware)
-        .ignore_then(just(Token::Write))
-        .ignore_then(just(Token::Requires))
+    just(token![Hardware])
+        .ignore_then(just(token![Write]))
+        .ignore_then(just(token![Requires]))
         .ignore_then(space().spanned())
         .or_not()
 }

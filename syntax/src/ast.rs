@@ -33,7 +33,7 @@ mod schema;
 mod variant;
 
 pub use common::{
-    Access, Domain, Head, Indices, ListEntry, NumRange, Path, Rest, ResetValue, Side, Stride,
+    Access, Domain, Head, Indices, ListEntry, NumRange, Path, ResetValue, Rest, Side, Stride,
 };
 pub use device::{Device, DeviceItem};
 pub use entitlement::{Entitled, Pattern, Segment, Space};

@@ -45,8 +45,7 @@ impl<'tokens, 'src: 'tokens, I> TokenInput<'tokens, 'src> for I where
 }
 
 /// The complete grammar: a sequence of top-level items.
-pub fn file<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, File<'src>, Extra<'tokens, 'src>>
+pub fn file<'tokens, 'src: 'tokens, I>() -> impl Parser<'tokens, I, File<'src>, Extra<'tokens, 'src>>
 where
     I: TokenInput<'tokens, 'src>,
 {

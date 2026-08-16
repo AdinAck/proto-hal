@@ -5,7 +5,7 @@ use chumsky::prelude::*;
 use super::{Extra, TokenInput};
 use crate::{
     ast::{Access, Head, Indices, NumRange, Path, Side, Span, Spanned},
-    token::Token,
+    token::{Token, token},
 };
 
 /// A name.
@@ -23,7 +23,7 @@ pub(crate) fn number<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    select! { Token::Num(n) => n }.labelled("number")
+    select! { Token::Literal(n) => n }.labelled("number")
 }
 
 /// The doc comments preceding an item.
@@ -47,7 +47,7 @@ where
 {
     ident()
         .spanned()
-        .separated_by(just(Token::Dot))
+        .separated_by(just(token![.]))
         .at_least(1)
         .collect()
         .map(|segments| Path { segments })
@@ -62,11 +62,9 @@ where
 {
     number()
         .spanned()
-        .then(
-            select! { Token::DotDot => false, Token::DotDotEq => true }.labelled("range operator"),
-        )
+        .then(select! { token![..] => false, token![..=] => true }.labelled("range operator"))
         .then(number().spanned())
-        .then(just(Token::By).ignore_then(number().spanned()).or_not())
+        .then(just(token![By]).ignore_then(number().spanned()).or_not())
         .map(|(((start, inclusive), end), step)| NumRange {
             start,
             end,
@@ -101,16 +99,16 @@ pub(crate) fn access<'tokens, 'src: 'tokens, I>()
 where
     I: TokenInput<'tokens, 'src>,
 {
-    let read = just(Token::Read).to(Access::Read).spanned();
-    let write = just(Token::Write).to(Access::Write).spanned();
+    let read = just(token![Read]).to(Access::Read).spanned();
+    let write = just(token![Write]).to(Access::Write).spanned();
 
     choice((
-        just(Token::Volatile)
-            .then(just(Token::Store))
+        just(token![Volatile])
+            .then(just(token![Store]))
             .to(Access::VolatileStore)
             .spanned()
             .map(|a| vec![a]),
-        just(Token::Store)
+        just(token![Store])
             .to(Access::Store)
             .spanned()
             .map(|a| vec![a]),
@@ -134,8 +132,8 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     choice((
-        just(Token::Read).to(Side::Read),
-        just(Token::Write).to(Side::Write),
+        just(token![Read]).to(Side::Read),
+        just(token![Write]).to(Side::Write),
     ))
     .spanned()
     .labelled("variant side")
@@ -151,11 +149,11 @@ where
 {
     entry
         .spanned()
-        .separated_by(just(Token::Comma))
+        .separated_by(just(token![,]))
         .at_least(1)
         .allow_trailing()
         .collect()
-        .delimited_by(just(Token::LBracket), just(Token::RBracket))
+        .delimited_by(just(token![LBracket]), just(token![RBracket]))
 }
 
 /// A braced, comma-separated set, with each entry spanned.
@@ -170,11 +168,11 @@ where
 {
     entry
         .spanned()
-        .separated_by(just(Token::Comma))
+        .separated_by(just(token![,]))
         .at_least(1)
         .allow_trailing()
         .collect()
-        .delimited_by(just(Token::LBrace), just(Token::RBrace))
+        .delimited_by(just(token![LBrace]), just(token![RBrace]))
 }
 
 /// Array element designators: `[a, b, c]` or `[0..=15]`.
@@ -185,16 +183,12 @@ where
 {
     choice((
         range()
-            .then(
-                just(Token::Comma)
-                    .ignore_then(just(Token::Ellipsis))
-                    .or_not(),
-            )
+            .then(just(token![,]).ignore_then(just(token![...])).or_not())
             .map(|(range, series)| match series {
                 Some(..) => Indices::Series(range),
                 None => Indices::Range(range),
             })
-            .delimited_by(just(Token::LBracket), just(Token::RBracket)),
+            .delimited_by(just(token![LBracket]), just(token![RBracket])),
         bracketed_list(ident()).map(Indices::Names),
     ))
     .spanned()
@@ -208,9 +202,9 @@ where
     I: TokenInput<'tokens, 'src>,
 {
     choice((
-        just(Token::Hash)
+        just(token![#])
             .ignore_then(path().spanned())
-            .then(just(Token::As).ignore_then(ident().spanned()).or_not())
+            .then(just(token![As]).ignore_then(ident().spanned()).or_not())
             .map(|(template, name)| Head {
                 template: Some(template),
                 name,
@@ -235,9 +229,9 @@ where
     let name_part = ident().spanned().then(indices().or_not());
 
     choice((
-        just(Token::Hash)
+        just(token![#])
             .ignore_then(path().spanned())
-            .then(just(Token::As).ignore_then(name_part.clone()).or_not())
+            .then(just(token![As]).ignore_then(name_part.clone()).or_not())
             .map(|(template, name_part)| match name_part {
                 Some((name, indices)) => Head {
                     template: Some(template),
@@ -271,14 +265,14 @@ where
     item.spanned()
         .repeated()
         .collect()
-        .delimited_by(just(Token::LBrace), just(Token::RBrace))
+        .delimited_by(just(token![LBrace]), just(token![RBrace]))
         .spanned()
         .recover_with(via_parser(nested_delimiters(
-            Token::LBrace,
-            Token::RBrace,
+            token![LBrace],
+            token![RBrace],
             [
-                (Token::LParen, Token::RParen),
-                (Token::LBracket, Token::RBracket),
+                (token![LParen], token![RParen]),
+                (token![LBracket], token![RBracket]),
             ],
             |span| Spanned {
                 inner: Vec::new(),
