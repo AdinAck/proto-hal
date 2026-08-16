@@ -117,9 +117,14 @@ mod fields {
 
     #[test]
     fn extends_comma_lists_and_repeated_clauses_accumulate() {
-        assert_eq!(field("read write field f @ 0 extends a, b").extends.len(), 2);
         assert_eq!(
-            field("read write field f @ 0 extends a extends b, c").extends.len(),
+            field("read write field f @ 0 extends a, b").extends.len(),
+            2
+        );
+        assert_eq!(
+            field("read write field f @ 0 extends a extends b, c")
+                .extends
+                .len(),
             3,
         );
     }
@@ -295,7 +300,9 @@ mod registers {
 
     #[test]
     fn designator_series_parse() {
-        let file = file("register array r[0..=3] @ [0x0, ...] { read field array f[0..=7, ...] @ [0, ...] }");
+        let file = file(
+            "register array r[0..=3] @ [0x0, ...] { read field array f[0..=7, ...] @ [0, ...] }",
+        );
 
         match &file.items[0].inner {
             FileItem::Register(register) => {

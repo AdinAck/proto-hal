@@ -54,9 +54,12 @@ pub enum Error<'src> {
 /// Produces a [`File`](ast::File) whenever one can be recovered — even
 /// alongside errors — so downstream stages can still operate on the healthy
 /// parts of the tree.
-pub fn parse<'src>(src: &'src str, source: SourceId) -> (Option<ast::File<'src>>, Vec<Error<'src>>) {
+pub fn parse<'src>(
+    src: &'src str,
+    source: SourceId,
+) -> (Option<ast::File<'src>>, Vec<Error<'src>>) {
     let (tokens, lex_errors) = lexer::lexer()
-        .parse(src.with_context::<Span>(source))
+        .parse(src.with_context(source))
         .into_output_errors();
 
     let mut errors = lex_errors.into_iter().map(Error::Lex).collect::<Vec<_>>();
