@@ -37,12 +37,21 @@ pub struct Field<'src> {
 /// A field's entitlements, one space per kind.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FieldRequires<'src> {
-    /// `requires ...` — ontological: the field exists only when satisfied.
-    pub plain: Option<Spanned<Space<'src>>>,
-    /// `write requires ...` — the field is writable only when satisfied.
+    /// `requires ...`
+    ///
+    /// when the `requires` property is specified alone, it corresponds with the *ontological* entitlement space
+    /// of the item.
+    pub inherent: Option<Spanned<Space<'src>>>,
+
+    /// `write requires ...`
+    ///
+    /// when the `requires` property is specified after `write` (spelling *write requires*), it corresponds with the
+    /// *affordance* entitlement space of the item.
     pub write: Option<Spanned<Space<'src>>>,
-    /// `hardware write requires ...` — hardware writes to the field only
-    /// when satisfied.
+    /// `hardware write requires ...`
+    ///
+    /// when the `requires` property is specified after `hardware write` (spelling *hardware write requires*), it
+    /// corresponds with the *hardware affordance* entitlement space of the item.
     pub hardware_write: Option<Spanned<Space<'src>>>,
 }
 

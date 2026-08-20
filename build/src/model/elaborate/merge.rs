@@ -66,8 +66,16 @@ pub(super) fn field<'src>(template: Field<'src>, invocation: &Field<'src>) -> Fi
             .collect(),
         reset: invocation.reset.or(template.reset),
         requires: syntax::ast::FieldRequires {
-            plain: invocation.requires.plain.clone().or(template.requires.plain),
-            write: invocation.requires.write.clone().or(template.requires.write),
+            inherent: invocation
+                .requires
+                .inherent
+                .clone()
+                .or(template.requires.inherent),
+            write: invocation
+                .requires
+                .write
+                .clone()
+                .or(template.requires.write),
             hardware_write: invocation
                 .requires
                 .hardware_write
@@ -129,11 +137,7 @@ fn bodies<T: Clone>(
         (template, None) => template,
         (None, invocation) => invocation,
         (Some(template), Some(invocation)) => Some(Spanned {
-            inner: template
-                .inner
-                .into_iter()
-                .chain(invocation.inner)
-                .collect(),
+            inner: template.inner.into_iter().chain(invocation.inner).collect(),
             span: invocation.span,
         }),
     }

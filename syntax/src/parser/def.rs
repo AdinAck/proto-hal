@@ -140,7 +140,7 @@ where
                 extends,
                 reset,
                 requires: FieldRequires {
-                    plain,
+                    inherent: plain,
                     write,
                     hardware_write,
                 },
