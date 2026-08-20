@@ -103,7 +103,7 @@ mod fields {
             field.reset.unwrap().inner,
             ResetValue::Variant("Disabled"),
         ));
-        assert!(field.requires.plain.is_some());
+        assert!(field.requires.inherent.is_some());
         assert!(field.requires.write.is_some());
     }
 
@@ -151,7 +151,7 @@ mod fields {
     fn variant_sets_bind_to_the_path() {
         let field = field("store field f @ 0 requires a.b.c.{X, Y} & d.e.f.On");
 
-        let space = field.requires.plain.unwrap().inner;
+        let space = field.requires.inherent.unwrap().inner;
         assert_eq!(space.patterns.len(), 1);
 
         let pattern = &space.patterns[0].inner;
@@ -164,7 +164,7 @@ mod fields {
     fn correspondence_brackets_bind_to_segments() {
         let field = field("store field f @ 0 requires dma.ccr[0..8].en.Disabled");
 
-        let space = field.requires.plain.unwrap().inner;
+        let space = field.requires.inherent.unwrap().inner;
         let entitled = &space.patterns[0].inner.entitlements[0].inner;
 
         assert_eq!(entitled.segments.len(), 4);
@@ -177,7 +177,7 @@ mod fields {
     fn correspondences_and_sets_compose() {
         let field = field("store field f @ 0 requires dma.ccr[0..8].psize.{Bits8, Bits16}");
 
-        let space = field.requires.plain.unwrap().inner;
+        let space = field.requires.inherent.unwrap().inner;
         let entitled = &space.patterns[0].inner.entitlements[0].inner;
 
         assert_eq!(entitled.segments.len(), 3);
@@ -192,7 +192,7 @@ mod fields {
                 requires (a.b.c.On & d.e.f.On) | g.h.i.Off",
         );
 
-        let space = field.requires.plain.unwrap().inner;
+        let space = field.requires.inherent.unwrap().inner;
         assert_eq!(space.patterns.len(), 2);
         assert_eq!(space.patterns[0].inner.entitlements.len(), 2);
         assert_eq!(space.patterns[1].inner.entitlements.len(), 1);

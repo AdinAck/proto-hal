@@ -621,7 +621,11 @@ impl<'ast, 'src> Context<'ast, 'src> {
                             field.assumes.as_ref().map(|assumes| assumes.span),
                             field.extends.last().map(|extends| extends.span),
                             field.reset.as_ref().map(|reset| reset.span),
-                            field.requires.plain.as_ref().map(|requires| requires.span),
+                            field
+                                .requires
+                                .inherent
+                                .as_ref()
+                                .map(|requires| requires.span),
                             field.requires.write.as_ref().map(|requires| requires.span),
                             field
                                 .requires
@@ -645,7 +649,7 @@ impl<'ast, 'src> Context<'ast, 'src> {
                 },
             }
 
-            if let Some(requires) = &field.requires.plain {
+            if let Some(requires) = &field.requires.inherent {
                 self.pending.push(Pending {
                     target: Target::Field(chain.clone()),
                     space: requires.clone(),

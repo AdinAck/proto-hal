@@ -73,7 +73,8 @@ pub enum Domain {
     /// `@ 0..=1` — a bit domain.
     Range(NumRange),
     /// `@ [0x0, 0x4]` or `@ [0..=1, ...]` — one entry per array element.
-    List(Vec<Spanned<ListEntry>>),
+    List(Vec<Spanned<ListEntry>>), // TODO: why is this not inherent from lists in general? shouldn't domains be
+                                   //       optionally lists like other values?
 }
 
 /// One element of a [`Domain::List`].
