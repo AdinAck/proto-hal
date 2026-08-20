@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// A name.
-pub(crate) fn ident<'tokens, 'src: 'tokens, I>()
+pub fn ident<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, &'src str, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -17,17 +17,17 @@ where
     select! { Token::Ident(s) => s }.labelled("identifier")
 }
 
-/// A number literal of any radix.
-pub(crate) fn number<'tokens, 'src: 'tokens, I>()
+/// An integer literal.
+pub fn literal<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, u32, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
 {
-    select! { Token::Literal(n) => n }.labelled("number")
+    select! { Token::Literal(n) => n }.labelled("integer literal")
 }
 
 /// The doc comments preceding an item.
-pub(crate) fn docs<'tokens, 'src: 'tokens, I>()
+pub fn docs<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Vec<Spanned<&'src str>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -40,7 +40,7 @@ where
 }
 
 /// A `.`-separated reference.
-pub(crate) fn path<'tokens, 'src: 'tokens, I>()
+pub fn path<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Path<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -55,16 +55,16 @@ where
 }
 
 /// `0..2`, `0..=1`, `0..=4 by 2`.
-pub(crate) fn range<'tokens, 'src: 'tokens, I>()
+pub fn range<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, NumRange, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
 {
-    number()
+    literal()
         .spanned()
         .then(select! { token![..] => false, token![..=] => true }.labelled("range operator"))
-        .then(number().spanned())
-        .then(just(token![By]).ignore_then(number().spanned()).or_not())
+        .then(literal().spanned())
+        .then(just(token![By]).ignore_then(literal().spanned()).or_not())
         .map(|(((start, inclusive), end), step)| NumRange {
             start,
             end,
@@ -76,7 +76,7 @@ where
 
 /// An optional marker keyword (`leaky`, `inert`, `array`), captured as the
 /// span it occupies.
-pub(crate) fn marker<'tokens, 'src: 'tokens, I>(
+pub fn marker<'tokens, 'src: 'tokens, I>(
     token: Token<'src>,
 ) -> impl Parser<'tokens, I, Option<Span>, Extra<'tokens, 'src>> + Clone
 where
@@ -94,7 +94,7 @@ where
 /// Modalities compose as a set, so `read write` and `write read` are the same
 /// thing and each word may appear at most once — `read read` is a syntax
 /// error by construction.
-pub(crate) fn access<'tokens, 'src: 'tokens, I>()
+pub fn access<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Vec<Spanned<Access>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -126,7 +126,7 @@ where
 /// `read` or `write` — the numericity a variant occupies within a
 /// `read write` container. Only a single side may be named: a variant either
 /// belongs to one numericity or (unmarked) to all of them.
-pub(crate) fn side<'tokens, 'src: 'tokens, I>()
+pub fn side<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<Side>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -141,7 +141,7 @@ where
 }
 
 /// A bracketed, comma-separated list, with each entry spanned.
-pub(crate) fn bracketed_list<'tokens, 'src: 'tokens, I, T>(
+pub fn bracketed_list<'tokens, 'src: 'tokens, I, T>(
     entry: impl Parser<'tokens, I, T, Extra<'tokens, 'src>> + Clone,
 ) -> impl Parser<'tokens, I, Vec<Spanned<T>>, Extra<'tokens, 'src>> + Clone
 where
@@ -160,7 +160,7 @@ where
 ///
 /// Curly braces mark *membership*: unlike a bracketed list, the entries are
 /// unordered and never zip against a parallel list.
-pub(crate) fn braced_set<'tokens, 'src: 'tokens, I, T>(
+pub fn braced_set<'tokens, 'src: 'tokens, I, T>(
     entry: impl Parser<'tokens, I, T, Extra<'tokens, 'src>> + Clone,
 ) -> impl Parser<'tokens, I, Vec<Spanned<T>>, Extra<'tokens, 'src>> + Clone
 where
@@ -176,7 +176,7 @@ where
 }
 
 /// Array element designators: `[a, b, c]` or `[0..=15]`.
-pub(crate) fn indices<'tokens, 'src: 'tokens, I>()
+pub fn indices<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<Indices<'src>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -196,7 +196,7 @@ where
 }
 
 /// `#template`, `#template as name`, or `name`.
-pub(crate) fn plain_head<'tokens, 'src: 'tokens, I>()
+pub fn plain_head<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Head<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -221,7 +221,7 @@ where
 }
 
 /// As [`plain_head`], where names may carry array [`indices`].
-pub(crate) fn indexed_head<'tokens, 'src: 'tokens, I>()
+pub fn indexed_head<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Head<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -256,7 +256,7 @@ where
 
 /// A braced list of items, recovering from an unrecoverable inner error by
 /// discarding the whole (brace-balanced) body.
-pub(crate) fn body<'tokens, 'src: 'tokens, I, T>(
+pub fn body<'tokens, 'src: 'tokens, I, T>(
     item: impl Parser<'tokens, I, T, Extra<'tokens, 'src>> + Clone,
 ) -> impl Parser<'tokens, I, Spanned<Vec<Spanned<T>>>, Extra<'tokens, 'src>> + Clone
 where

@@ -5,7 +5,7 @@ use chumsky::prelude::*;
 
 use super::{
     Extra, TokenInput,
-    atom::{braced_set, bracketed_list, ident, number, path, range},
+    atom::{braced_set, bracketed_list, ident, literal, path, range},
 };
 use crate::{
     ast::{
@@ -17,7 +17,7 @@ use crate::{
 
 /// `...`, `...+0x4`, or `...-0x4` — continue the pattern, optionally with an
 /// explicit stride.
-pub(crate) fn rest<'tokens, 'src: 'tokens, I>()
+pub fn rest<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Rest, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -25,7 +25,7 @@ where
     just(token![...])
         .ignore_then(
             choice((just(token![+]).to(false), just(token![-]).to(true)))
-                .then(number())
+                .then(literal())
                 .map(|(negative, magnitude)| Stride {
                     negative,
                     magnitude,
@@ -37,7 +37,7 @@ where
 }
 
 /// `@ ...` — an address, offset, bit domain, or a list of them.
-pub(crate) fn domain<'tokens, 'src: 'tokens, I>()
+pub fn domain<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<Domain>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -45,7 +45,7 @@ where
     let entry = choice((
         rest().map(ListEntry::Rest),
         range().map(ListEntry::Range),
-        number().map(ListEntry::Value),
+        literal().map(ListEntry::Value),
     ));
 
     just(token![@])
@@ -53,7 +53,7 @@ where
             choice((
                 bracketed_list(entry).map(Domain::List),
                 range().map(Domain::Range),
-                number().map(Domain::Value),
+                literal().map(Domain::Value),
             ))
             .spanned()
             .labelled("domain"),
@@ -62,7 +62,7 @@ where
 }
 
 /// `assumes path` — the field exactly reflects the referenced schema.
-pub(crate) fn assumes<'tokens, 'src: 'tokens, I>()
+pub fn assumes<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<crate::ast::Path<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -72,7 +72,7 @@ where
 
 /// `extends a, b` clauses — the schemas a field copies its variants from.
 /// A field may extend many: comma lists and repeated clauses accumulate.
-pub(crate) fn extends<'tokens, 'src: 'tokens, I>()
+pub fn extends<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Vec<Spanned<crate::ast::Path<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -91,7 +91,7 @@ where
 }
 
 /// `reset 0x7f` or `reset Disabled`.
-pub(crate) fn reset<'tokens, 'src: 'tokens, I>()
+pub fn reset<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<ResetValue<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -99,7 +99,7 @@ where
     just(token![Reset])
         .ignore_then(
             choice((
-                number().map(ResetValue::Value),
+                literal().map(ResetValue::Value),
                 ident().map(ResetValue::Variant),
             ))
             .spanned()
@@ -109,21 +109,21 @@ where
 }
 
 /// `~ 0x3` or `~ [0x0, ...+0x4]` — the value(s) a variant occupies.
-pub(crate) fn value<'tokens, 'src: 'tokens, I>()
+pub fn value<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<VariantValue>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
 {
     let entry = choice((
         rest().map(ValueEntry::Rest),
-        number().map(ValueEntry::Value),
+        literal().map(ValueEntry::Value),
     ));
 
     just(token![~])
         .ignore_then(
             choice((
                 bracketed_list(entry).map(VariantValue::List),
-                number().map(VariantValue::Value),
+                literal().map(VariantValue::Value),
             ))
             .spanned()
             .labelled("value"),
@@ -134,7 +134,7 @@ where
 /// A requirement space in disjunctive form: patterns of `&`-joined
 /// entitlements, joined by `|`, with parentheses permitted (only) around each
 /// pattern.
-pub(crate) fn space<'tokens, 'src: 'tokens, I>()
+pub fn space<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Space<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -182,7 +182,7 @@ where
 
 /// `requires ...` — statewise entitlements on a variant; ontological
 /// entitlements elsewhere.
-pub(crate) fn requires<'tokens, 'src: 'tokens, I>()
+pub fn requires<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<Space<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -193,7 +193,7 @@ where
 }
 
 /// `write requires ...` — write access entitlements.
-pub(crate) fn write_requires<'tokens, 'src: 'tokens, I>()
+pub fn write_requires<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<Space<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -205,7 +205,7 @@ where
 }
 
 /// `hardware write requires ...` — hardware write access entitlements.
-pub(crate) fn hardware_write_requires<'tokens, 'src: 'tokens, I>()
+pub fn hardware_write_requires<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Option<Spanned<Space<'src>>>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,

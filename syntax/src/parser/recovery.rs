@@ -12,7 +12,7 @@ use super::{Extra, TokenInput};
 use crate::token::{Token, keyword, token};
 
 /// A brace-balanced block of arbitrary tokens.
-pub(crate) fn block<'tokens, 'src: 'tokens, I>()
+pub fn block<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, (), Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -36,7 +36,7 @@ where
 /// The original error (with its rich expectations) is preserved and reported;
 /// errors *within* a swallowed block are suppressed, since a region already
 /// known to be broken would only produce cascading noise.
-pub(crate) fn garbage<'tokens, 'src: 'tokens, I, T>(
+pub fn garbage<'tokens, 'src: 'tokens, I, T>(
     fallback: T,
 ) -> impl Parser<'tokens, I, T, Extra<'tokens, 'src>> + Clone
 where
