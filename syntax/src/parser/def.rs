@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// `variant Name ~ value requires ...`
-pub(crate) fn variant<'tokens, 'src: 'tokens, I>()
+pub fn variant<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Variant<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -70,7 +70,7 @@ where
 }
 
 /// `schema name { variants }`
-pub(crate) fn schema<'tokens, 'src: 'tokens, I>()
+pub fn schema<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Schema<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -91,7 +91,7 @@ where
 }
 
 /// `access field name @ domain { variants }`
-pub(crate) fn field<'tokens, 'src: 'tokens, I>()
+pub fn field<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Field<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -103,6 +103,7 @@ where
         .then(marker(token![Array]))
         .then(indexed_head())
         .then(domain())
+        // TODO: the order of these shouldn't matter, but the occurrences should be affine
         .then(assumes())
         .then(extends())
         .then(reset())
@@ -152,7 +153,7 @@ where
 }
 
 /// `field group name { fields and schemas }`
-pub(crate) fn field_group<'tokens, 'src: 'tokens, I>()
+pub fn field_group<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, FieldGroup<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -174,7 +175,7 @@ where
 }
 
 /// `register name @ offset reset value { fields }`
-pub(crate) fn register<'tokens, 'src: 'tokens, I>()
+pub fn register<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Register<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -213,7 +214,7 @@ where
 }
 
 /// `register group name { registers and schemas }`
-pub(crate) fn register_group<'tokens, 'src: 'tokens, I>()
+pub fn register_group<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, RegisterGroup<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -235,7 +236,7 @@ where
 }
 
 /// `peripheral name @ base requires ... { registers }`
-pub(crate) fn peripheral<'tokens, 'src: 'tokens, I>()
+pub fn peripheral<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Peripheral<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -274,7 +275,7 @@ where
 }
 
 /// `peripheral group name { peripherals and schemas }`
-pub(crate) fn peripheral_group<'tokens, 'src: 'tokens, I>()
+pub fn peripheral_group<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, PeripheralGroup<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -296,7 +297,7 @@ where
 }
 
 /// `interrupts { ... }` — the vector table, in order.
-pub(crate) fn interrupts<'tokens, 'src: 'tokens, I>()
+pub fn interrupts<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Interrupts<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -321,7 +322,7 @@ where
 }
 
 /// `device name { peripherals, schemas, interrupts }`
-pub(crate) fn device<'tokens, 'src: 'tokens, I>()
+pub fn device<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Device<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
@@ -347,7 +348,7 @@ where
 }
 
 /// `import path`
-pub(crate) fn import<'tokens, 'src: 'tokens, I>()
+pub fn import<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Import<'src>, Extra<'tokens, 'src>> + Clone
 where
     I: TokenInput<'tokens, 'src>,
