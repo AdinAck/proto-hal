@@ -1,0 +1,68 @@
+// The extended interrupt and event controller, after the STM32G4 (RM0440), simplified to sixteen
+// lines.
+
+/// Interrupt mask state.
+schema mask {
+    variant Masked ~ 0
+    variant Unmasked ~ 1
+}
+
+/// Edge trigger selection state.
+schema trigger {
+    variant Disabled ~ 0
+    variant Enabled ~ 1
+}
+
+/// A pending flag, read as its state and written to clear it.
+schema pending {
+    read variant Idle ~ 0
+    read variant Pending ~ 1
+    inert write variant Noop ~ 0
+    write variant Clear ~ 1
+}
+
+/// The extended interrupt and event controller.
+peripheral exti {
+    /// Interrupt mask register.
+    register imr1 @ 0x0
+        reset 0
+    {
+        store field im[0..16] @ [0, ...]
+            assumes mask
+    }
+
+    /// Event mask register.
+    register emr1 @ 0x4
+        reset 0
+    {
+        store field em[0..16] @ [0, ...]
+            assumes mask
+    }
+
+    /// Rising trigger selection register.
+    register rtsr1 @ 0x8
+        reset 0
+    {
+        store field rt[0..16] @ [0, ...]
+            assumes trigger
+    }
+
+    /// Falling trigger selection register.
+    register ftsr1 @ 0xc
+        reset 0
+    {
+        store field ft[0..16] @ [0, ...]
+            assumes trigger
+    }
+
+    /// Pending register.
+    register pr1 @ 0x14 {
+        read write field pif[0..16] @ [0, ...]
+            assumes pending
+    }
+}
+
+device g431 {
+    peripheral exti @ 0x4001_0400
+        refines exti
+}

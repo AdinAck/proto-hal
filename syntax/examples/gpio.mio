@@ -1,0 +1,123 @@
+// General-purpose IO, after the STM32G4 (RM0440).
+
+/// The mode of a GPIO pin.
+schema mode {
+    variant Input ~ 0
+    variant Output ~ 1
+    variant Alternate ~ 2
+    variant Analog ~ 3
+}
+
+/// The output driver type of a GPIO pin.
+schema ot {
+    variant PushPull ~ 0
+    variant OpenDrain ~ 1
+}
+
+/// The output slew rate of a GPIO pin.
+schema ospeed {
+    variant Low ~ 0
+    variant Medium ~ 1
+    variant High ~ 2
+    variant VeryHigh ~ 3
+}
+
+/// The pull direction of a GPIO pin.
+schema pupd {
+    variant Floating ~ 0
+    variant PullUp ~ 1
+    variant PullDown ~ 2
+}
+
+/// The digital level of a GPIO pin.
+schema level {
+    variant Low ~ 0
+    variant High ~ 1
+}
+
+/// The alternate function of a GPIO pin.
+schema afsel {
+    variant AF[0..16] ~ [0..16]
+}
+
+/// A peripheral clock enable.
+schema en {
+    variant Disabled ~ 0
+    variant Enabled ~ 1
+}
+
+/// A GPIO port. Resets differ between ports, so the registers that differ leave them open.
+peripheral gpio_port {
+    /// Port mode register.
+    register moder @ 0x0 {
+        store field mode[0..16] @ [1:0, ...]
+            assumes mode
+    }
+
+    /// Port output type register.
+    register otyper @ 0x4
+        reset 0
+    {
+        store field ot[0..16] @ [0, ...]
+            assumes ot
+    }
+
+    /// Port output speed register.
+    register ospeedr @ 0x8 {
+        store field ospeed[0..16] @ [1:0, ...]
+            assumes ospeed
+    }
+
+    /// Port pull-up/pull-down register.
+    register pupdr @ 0xc {
+        store field pupd[0..16] @ [1:0, ...]
+            assumes pupd
+    }
+
+    /// Port input data register.
+    register idr @ 0x10 {
+        read field id[0..16] @ [0, ...]
+            assumes level
+    }
+
+    /// Port output data register.
+    register odr @ 0x14
+        reset 0
+    {
+        store field od[0..16] @ [0, ...]
+            assumes level
+    }
+
+    /// Alternate function registers, low and high: afsel0–7, then afsel8–15.
+    register afr[l, h] @ [0x20, ...]
+        reset 0
+    {
+        store field afsel[0..8, ...] @ [3:0, ...]
+            assumes afsel
+    }
+}
+
+device g431 {
+    /// Reset and clock control (only what GPIO needs).
+    peripheral rcc @ 0x4002_1000 {
+        /// AHB2 peripheral clock enable register.
+        register ahb2enr @ 0x4c
+            reset 0
+        {
+            store field gpio[a, b, c, d, e, f, g]en @ [0, ...]
+                assumes en
+        }
+    }
+
+    peripheral gpio[a, b, c, d, e, f] as port @ [0x4800_0000, ... by 0x400]
+        refines gpio_port
+        requires rcc.ahb2enr.gpio[#port]en.Enabled
+    {
+        register moder
+            reset [0xabff_ffff, 0xffff_febf, 0xffff_ffff, ...]
+        register ospeedr
+            reset [0x0c00_0000, 0, ...]
+        register pupdr
+            reset [0x6400_0000, 0x0000_0100, 0, ...]
+    }
+}
