@@ -1,0 +1,12 @@
+[package]
+name = "proto-hal-syntax"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = "0.13.0"
+derive_more = { workspace = true, features = ["deref", "display", "from"] }
+source = { package = "proto-hal-source", path = "../source", features = ["chumsky"] }
+
+[dev-dependencies]
+itertools = "0.15.0"
