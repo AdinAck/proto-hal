@@ -7,8 +7,7 @@ edition = "2024"
 chumsky = "0.13.0"
 derive_more = { workspace = true, features = ["deref", "display", "from", "from_str"] }
 diagnostic = { package = "proto-hal-diagnostic", path = "../diagnostic" }
+indenter = "0.3.4"
 indexmap = { workspace = true }
-source = { package = "proto-hal-source", path = "../source", features = ["chumsky"] }
-
-[dev-dependencies]
 itertools = "0.15.0"
+source = { package = "proto-hal-source", path = "../source", features = ["chumsky"] }
