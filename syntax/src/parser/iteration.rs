@@ -1,0 +1,106 @@
+//! Parsing of [ranges](Range), [steps](Step), and iteration variables.
+
+use chumsky::prelude::*;
+
+use super::{Error, Input, ident, literal};
+use crate::{
+    ast::{Range, Step},
+    diagnostic::Expected,
+    token::{Ident, keyword, token},
+    util::Spanned,
+};
+
+/// A [`Range`].
+///
+/// ```text
+/// range ::= LITERAL (".." | "..=") LITERAL step?
+/// ```
+pub(super) fn range<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, Input<'tokens, 'src>, Range<'src>, Error<'src>> + Clone {
+    literal()
+        .then(choice((
+            just(token![..]).to(false),
+            just(token![..=]).to(true),
+        )))
+        .then(literal())
+        .then(step().or_not())
+        .map(|(((start, inclusive), end), step)| Range {
+            start,
+            end,
+            inclusive,
+            step,
+        })
+}
+
+/// A [`Step`].
+///
+/// ```text
+/// step ::= "by" "-"? LITERAL
+/// ```
+pub(super) fn step<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, Input<'tokens, 'src>, Step<'src>, Error<'src>> + Clone {
+    just(keyword![By])
+        .ignore_then(just(token![-]).or_not())
+        .then(literal())
+        .map(|(minus, distance)| Step {
+            negative: minus.is_some(),
+            distance,
+        })
+}
+
+/// An iteration variable, such as `#foo`.
+///
+/// ```text
+/// variable ::= "#" IDENT
+/// ```
+pub(super) fn variable<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, Input<'tokens, 'src>, Ident<'src>, Error<'src>> + Clone {
+    just(token![#]).ignore_then(ident().labelled(Expected::IterationVariable))
+}
+
+/// An iteration variable's binding, naming an iteration, such as `as foo`.
+///
+/// ```text
+/// binding ::= "as" IDENT
+/// ```
+pub(super) fn binding<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, Input<'tokens, 'src>, Spanned<Ident<'src>>, Error<'src>> + Clone {
+    just(keyword![As]).ignore_then(ident().labelled(Expected::IterationVariable).spanned())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        diagnostic::{Expected, Found},
+        parser::{
+            list::list,
+            tests::{expectations, parse},
+        },
+        token::{literal, token},
+    };
+
+    #[test]
+    fn variable_whitespace() {
+        let s = "[0, ... in # foo]";
+
+        similar_asserts::assert_eq!(
+            expected: "[0, ... in #foo]",
+            found: parse!(list(), s).unwrap().to_string(),
+            "expected display impl for the list parsed from `{s}` to omit the whitespace after `#`",
+        );
+    }
+
+    #[test]
+    fn variable_expected() {
+        for (s, found) in [
+            ("[0, ... in #0]", Found::Token(literal![0])),
+            ("[0, ... in #]", Found::Token(token![RBracket])),
+        ] {
+            similar_asserts::assert_eq!(
+                expected: vec![(found, vec![Expected::IterationVariable])],
+                found: expectations(parse!(list(), s).unwrap_err()),
+                "expected parsing `{s}` as a list to fail, expecting an iteration variable",
+            );
+        }
+    }
+}
