@@ -11,7 +11,7 @@ pub use Operator::*;
 pub use Punctuation::*;
 
 /// A token lexed from some slice of source text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, From)]
 pub enum Token<'src> {
     /// A [`Literal`].
     Literal(Literal),
@@ -37,7 +37,7 @@ pub enum Token<'src> {
 ///
 /// Written in decimal, or after a prefix in hexadecimal (`0x`), binary (`0b`), or octal (`0o`).
 /// Digits may be separated by underscores i.e. `0x0400_0000`. The value must fit in 32 bits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deref, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, Display)]
 pub struct Literal(pub(crate) u32);
 
 /// An identifier i.e. `foo`, `_foo`, `theFoo42`.
@@ -45,19 +45,19 @@ pub struct Literal(pub(crate) u32);
 /// An `XID_Start` character or `_`, followed by any number of `XID_Continue` characters, as defined
 /// by [Unicode Standard Annex #31](https://www.unicode.org/reports/tr31/). A [`Keyword`] is not an
 /// identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deref, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, Display)]
 #[deref(forward)]
 pub struct Ident<'src>(pub(crate) &'src str);
 
 /// The text of a doc comment i.e. `foo` in `/// foo`.
 ///
 /// Everything after `///` to the end of the line, with surrounding whitespace trimmed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deref, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, Display)]
 #[deref(forward)]
 pub struct Doc<'src>(pub(crate) &'src str);
 
 /// A keyword token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Keyword {
     /// The keyword "device".
     Device,
@@ -108,7 +108,7 @@ pub enum Keyword {
 }
 
 /// An operator token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Operator {
     /// The operator "|".
     Pipe,
@@ -135,7 +135,7 @@ pub enum Operator {
 }
 
 /// A punctuation token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Punctuation {
     /// The punctuation ",".
     Comma,

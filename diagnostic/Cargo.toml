@@ -1,0 +1,8 @@
+[package]
+name = "proto-hal-diagnostic"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+derive_more = { workspace = true, features = ["deref", "display"] }
+source = { package = "proto-hal-source", path = "../source" }
