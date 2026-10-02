@@ -1,5 +1,5 @@
 [workspace]
-members = ["proto-hal", "build", "model", "tests/g4", "tests/abstract/*", "macros", "model-macros", "source", "syntax"]
+members = ["proto-hal", "build", "model", "tests/g4", "tests/abstract/*", "macros", "model-macros", "source", "diagnostic", "syntax"]
 exclude = ["debug-bin"]
 resolver = "2"
 
