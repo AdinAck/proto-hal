@@ -15,7 +15,7 @@ pub use list::List;
 pub use set::Set;
 
 use crate::{
-    token::{Doc, Ident, Literal, Token, token},
+    token::{Doc, Ident, Literal, Token, keyword, token},
     util::{Parsed, Spanned},
 };
 
@@ -222,6 +222,27 @@ pub enum RequirementQualifiers {
     /// `hardware write`.
     #[display("hardware write")]
     HardwareWrite,
+}
+
+/// The kind of a [`Property`], such as `@` or `write requires`. Displays as the tokens introducing the property.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyKind {
+    /// `@`.
+    Placement,
+    /// `~`.
+    Discriminant,
+    /// `reset`.
+    Reset,
+    /// `wordsize`.
+    WordSize,
+    /// `access`.
+    Access,
+    /// `assumes`.
+    Assumes,
+    /// `refines`.
+    Refines,
+    /// `requires`, preceded by the provided qualifiers, if any.
+    Requires(Option<RequirementQualifiers>),
 }
 
 /// A declaration, such as `leaky store field foo[0..16] as bar @ [1:0, ...] assumes baz`. (*See [`Qualifier`],
@@ -438,26 +459,64 @@ impl Property<'_> {
     pub fn is_intrinsic(&self) -> bool {
         matches!(self, Self::Placement(..) | Self::Discriminant(..))
     }
+
+    /// The property kind.
+    pub fn kind(&self) -> PropertyKind {
+        match self {
+            Self::Placement(..) => PropertyKind::Placement,
+            Self::Discriminant(..) => PropertyKind::Discriminant,
+            Self::Reset(..) => PropertyKind::Reset,
+            Self::WordSize(..) => PropertyKind::WordSize,
+            Self::Access(..) => PropertyKind::Access,
+            Self::Assumes(..) => PropertyKind::Assumes,
+            Self::Refines(..) => PropertyKind::Refines,
+            Self::Requires { qualifiers, .. } => PropertyKind::Requires(*qualifiers),
+        }
+    }
 }
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Placement(argument) => write!(f, "@ {argument}"),
-            Self::Discriminant(argument) => write!(f, "~ {argument}"),
-            Self::Reset(argument) => write!(f, "reset {argument}"),
-            Self::WordSize(argument) => write!(f, "wordsize {argument}"),
-            Self::Access(widths) => write!(f, "access {widths}"),
-            Self::Assumes(definition) => write!(f, "assumes {definition}"),
-            Self::Refines(definitions) => write!(f, "refines {}", definitions.iter().format(", ")),
-            Self::Requires { qualifiers, space } => {
-                if let Some(qualifiers) = qualifiers {
-                    write!(f, "{qualifiers} ")?;
-                }
+        write!(f, "{} ", self.kind())?;
 
-                write!(f, "requires {space}")
+        match self {
+            Self::Placement(argument)
+            | Self::Discriminant(argument)
+            | Self::Reset(argument)
+            | Self::WordSize(argument) => write!(f, "{argument}"),
+            Self::Access(widths) => write!(f, "{widths}"),
+            Self::Assumes(definition) => write!(f, "{definition}"),
+            Self::Refines(definitions) => write!(f, "{}", definitions.iter().format(", ")),
+            Self::Requires { space, .. } => write!(f, "{space}"),
+        }
+    }
+}
+
+impl PropertyKind {
+    /// The tokens introducing a property of this kind, such as `write requires`.
+    fn tokens(self) -> &'static [Token<'static>] {
+        match self {
+            Self::Placement => &[token![@]],
+            Self::Discriminant => &[token![~]],
+            Self::Reset => &[keyword![Reset]],
+            Self::WordSize => &[keyword![WordSize]],
+            Self::Access => &[keyword![Access]],
+            Self::Assumes => &[keyword![Assumes]],
+            Self::Refines => &[keyword![Refines]],
+            Self::Requires(None) => &[keyword![Requires]],
+            Self::Requires(Some(RequirementQualifiers::Write)) => {
+                &[keyword![Write], keyword![Requires]]
+            }
+            Self::Requires(Some(RequirementQualifiers::HardwareWrite)) => {
+                &[keyword![Hardware], keyword![Write], keyword![Requires]]
             }
         }
+    }
+}
+
+impl fmt::Display for PropertyKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.tokens().iter().format(" "))
     }
 }
 

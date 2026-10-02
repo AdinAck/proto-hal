@@ -1,10 +1,11 @@
-//! Diagnostics emitted while lexing and parsing.
+//! Diagnostics emitted while lexing, parsing, and validating.
 
 use derive_more::Display;
 use diagnostic::{Class, Code, Label, closest, disjunction};
 use indexmap::IndexSet;
 
 use crate::{
+    ast::{Declaration, DeclarationKind, PropertyKind, Qualifier},
     token::{Keyword, Punctuation, Token},
     util::{Span, Spanned},
 };
@@ -20,6 +21,12 @@ pub enum Kind {
     Unexpected = 1,
     /// An opening delimiter has no closing delimiter.
     Unclosed,
+    /// A declaration has a qualifier the declaration kind does not permit.
+    UnpermittedQualifier,
+    /// A declaration has a property the declaration kind does not permit.
+    UnpermittedProperty,
+    /// A declaration or interrupt table is placed where the enclosing module or declaration cannot contain it.
+    Misplaced,
 }
 
 impl diagnostic::Kind for Kind {
@@ -75,6 +82,160 @@ pub fn unclosed(opener: Spanned<Punctuation>, closer: Spanned<Punctuation>) -> D
         Label::new(format!("expected `{}` here", *closer), closer.span),
     )
     .supporting_label(Label::new("unclosed delimiter", opener.span))
+}
+
+/// "unexpected qualifier `{qualifier}` on {kind} `{name}`".
+///
+/// note: "expected one of {permitted}", "expected {permitted}" when one is permitted, or "{kind}s have no qualifiers"
+/// when none are permitted.
+pub fn unpermitted_qualifier(
+    declaration: &Declaration,
+    qualifier: Spanned<Qualifier>,
+    permitted: impl IntoIterator<Item = Qualifier>,
+) -> Diagnostic {
+    Diagnostic::error(
+        Kind::UnpermittedQualifier,
+        format!(
+            "unexpected qualifier `{}` on {} `{}`",
+            *qualifier, *declaration.kind, *declaration.name
+        ),
+        Label::new("unexpected qualifier here", qualifier.span),
+    )
+    .note(expectation(
+        permitted
+            .into_iter()
+            .map(|qualifier| format!("`{qualifier}`")),
+        format!("{}s have no qualifiers", *declaration.kind),
+    ))
+}
+
+/// "unexpected property `{property}` on {kind} `{name}`".
+///
+/// note: "expected one of {permitted}", or "expected {permitted}" when one is permitted.
+///
+/// When the property is `requires` on a variant of a schema, note: "statewise entitlements may be imposed only by
+/// variants of fields".
+pub fn unpermitted_property(
+    declaration: &Declaration,
+    property: Spanned<PropertyKind>,
+    ancestor: Option<DeclarationKind>,
+    permitted: impl IntoIterator<Item = PropertyKind>,
+) -> Diagnostic {
+    let diagnostic = Diagnostic::error(
+        Kind::UnpermittedProperty,
+        format!(
+            "unexpected property `{}` on {} `{}`",
+            *property, *declaration.kind, *declaration.name
+        ),
+        Label::new("unexpected property here", property.span),
+    )
+    .note(expectation(
+        permitted.into_iter().map(|kind| format!("`{kind}`")),
+        format!("{}s have no properties", *declaration.kind),
+    ));
+
+    match (*declaration.kind, ancestor, *property) {
+        (DeclarationKind::Variant, Some(DeclarationKind::Schema), PropertyKind::Requires(None)) => {
+            diagnostic.note("statewise entitlements may be imposed only by variants of fields")
+        }
+        _ => diagnostic,
+    }
+}
+
+/// "unexpected {kind} `{name}` in {parent kind} `{parent}`", or at module level "unexpected {kind} `{name}`".
+///
+/// note: "children of {parent kind}s may be {permitted}", "{parent kind}s have no children" when none are permitted,
+/// or at module level "module items may be {permitted}", where the children permitted in a device include interrupt
+/// tables.
+pub fn misplaced_declaration(
+    declaration: &Declaration,
+    parent: Option<&Declaration>,
+    permitted: impl IntoIterator<Item = DeclarationKind>,
+) -> Diagnostic {
+    let message = match parent {
+        Some(parent) => format!(
+            "unexpected {} `{}` in {} `{}`",
+            *declaration.kind, *declaration.name, *parent.kind, *parent.name
+        ),
+        None => format!("unexpected {} `{}`", *declaration.kind, *declaration.name),
+    };
+
+    misplaced(
+        message,
+        Label::new("unexpected declaration here", declaration.kind.span),
+        parent,
+        permitted,
+    )
+}
+
+/// "unexpected interrupt table in {parent kind} `{parent}`".
+///
+/// note: "children of {parent kind}s may be {permitted}", or "{parent kind}s have no children" when none are permitted.
+pub fn misplaced_interrupts(
+    interrupts: Span,
+    parent: &Declaration,
+    permitted: impl IntoIterator<Item = DeclarationKind>,
+) -> Diagnostic {
+    misplaced(
+        format!(
+            "unexpected interrupt table in {} `{}`",
+            *parent.kind, *parent.name
+        ),
+        Label::new("unexpected interrupt table here", interrupts),
+        Some(parent),
+        permitted,
+    )
+}
+
+/// Create a misplacement diagnostic with the provided message and primary label, labelling the provided parent, if
+/// any, and noting which children the parent may contain.
+fn misplaced(
+    message: String,
+    primary_label: Label,
+    parent: Option<&Declaration>,
+    permitted: impl IntoIterator<Item = DeclarationKind>,
+) -> Diagnostic {
+    let interrupts = parent
+        .is_some_and(|parent| *parent.kind == DeclarationKind::Device)
+        .then_some("interrupt tables".to_string());
+
+    let children = permitted
+        .into_iter()
+        .map(|kind| format!("{kind}s"))
+        .chain(interrupts)
+        .collect::<Vec<_>>();
+
+    let note = match (parent, children.is_empty()) {
+        (None, ..) => format!("module items may be {}", disjunction(children)),
+        (Some(parent), true) => format!("{}s have no children", *parent.kind),
+        (Some(parent), false) => format!(
+            "children of {}s may be {}",
+            *parent.kind,
+            disjunction(children)
+        ),
+    };
+
+    let diagnostic = Diagnostic::error(Kind::Misplaced, message, primary_label).note(note);
+
+    match parent {
+        Some(parent) => diagnostic.supporting_label(Label::new(
+            format!("parent {}", *parent.kind),
+            parent.name.span,
+        )),
+        None => diagnostic,
+    }
+}
+
+/// The note stating which of the provided entries were expected, such as "expected one of `@` or `reset`", or the
+/// provided statement when no entries were expected.
+fn expectation(entries: impl IntoIterator<Item = String>, none: String) -> String {
+    let entries = entries.into_iter().collect::<Vec<_>>();
+
+    match entries.as_slice() {
+        [] => none,
+        [entry] => format!("expected {entry}"),
+        _ => format!("expected one of {}", disjunction(entries)),
+    }
 }
 
 /// The symbol erroneously encountered while parsing. Implements [`Display`](core::fmt::Display)
