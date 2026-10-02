@@ -41,16 +41,19 @@ pub enum Token<'src> {
 /// Written in decimal, or after a prefix in hexadecimal (`0x`), binary (`0b`), or octal (`0o`). Dereferences to the
 /// literal value, and implements [`Display`](fmt::Display) to reflect the source text.
 ///
-/// *Note: Literal values are limited to 32 bits.*
+/// *Note: Literal values are limited to 64 bits.*
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, Display)]
 #[display("{source}")]
 pub struct Literal<'src> {
     /// The value.
     #[deref]
-    pub(crate) value: u32,
+    pub(crate) value: Integer,
     /// The literal as written in the source text, such as `0x0400_0000`.
     pub(crate) source: &'src str,
 }
+
+/// An integer representing the value of a [`Literal`].
+pub type Integer = u64;
 
 /// An identifier, such as `foo`, `_foo`, or `theFoo42`.
 ///

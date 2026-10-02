@@ -5,7 +5,7 @@
 use chumsky::{input::WithContext, prelude::*};
 
 use crate::{
-    token::{Doc, Literal, Token, ident, token},
+    token::{Doc, Integer, Literal, Token, ident, token},
     util::{Span, Spanned},
 };
 
@@ -48,7 +48,7 @@ fn literal<'src>() -> impl Parser<'src, Input<'src>, Token<'src>, Error> {
                 _ => (s, 10),
             };
 
-            u32::from_str_radix(&digits.replace('_', ""), radix)
+            Integer::from_str_radix(&digits.replace('_', ""), radix)
                 .map(|value| Token::Literal(Literal { value, source: s }))
                 .unwrap_or(Token::Unrecognized(s))
         })
@@ -256,7 +256,10 @@ mod tests {
 
         use chumsky::prelude::*;
 
-        use crate::{lexer::literal, token::Token};
+        use crate::{
+            lexer::literal,
+            token::{Integer, Token},
+        };
 
         #[test]
         fn accept() {
@@ -266,6 +269,7 @@ mod tests {
                 ("0x_dead_beef", 0xdead_beef),
                 ("42__0_", 420),
                 ("0b1010", 0b1010),
+                ("0xffff_ffff_ffff_ffff", Integer::MAX),
             ];
 
             for (s, expected) in literals {
@@ -290,7 +294,14 @@ mod tests {
 
         #[test]
         fn unrecognized() {
-            for s in ["0x_", "0b102", "0x1g", "0x", "1foo", "0x1_0000_0000"] {
+            for s in [
+                "0x_",
+                "0b102",
+                "0x1g",
+                "0x",
+                "1foo",
+                "0x1_0000_0000_0000_0000",
+            ] {
                 assert_eq!(
                     literal().parse(s.with_context(0)).into_result(),
                     Ok(Token::Unrecognized(s)),
