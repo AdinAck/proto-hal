@@ -2,6 +2,7 @@
 
 #![deny(missing_docs)]
 
+pub mod ast;
 pub mod diagnostic;
 pub mod lexer;
 pub mod token;
