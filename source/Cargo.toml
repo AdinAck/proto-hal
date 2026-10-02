@@ -1,0 +1,12 @@
+[package]
+name = "proto-hal-source"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = { version = "0.13.0", optional = true }
+derive_more = { workspace = true, features = ["display"] }
+elsa = "1.11.2"
+
+[features]
+chumsky = ["dep:chumsky"]
