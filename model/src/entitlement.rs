@@ -1,566 +1,90 @@
-pub mod codegen;
-pub mod pattern;
-mod search;
-pub mod space;
+//! The model components related to [entitlements](Entitlement).
+//!
+//! # Entitlements
+//!
+//! An *entitlement* is a requirement for a particular field to inhabit a particular [state](crate::field#states). The
+//! field is *implicated* by the entitlement, as the field houses the state entitled to. An entitlement denotes the
+//! state entitled to by value, which identifies a variant if the implicated field is
+//! [enumerated](crate::field#numericity).
+//!
+//! # Entitlement spaces
+//!
+//! A *pattern* is a set of entitlements, grouped by field. A pattern lists fields and their respective *entitled
+//! states*, which are the states entitled to by the entitlements implicating the field. A pattern is *satisfied* when
+//! *each* implicated field inhabits *any* one of its entitled states.
+//!
+//! An *entitlement space* is a set of patterns. A space is *satisfied* when any one pattern of the space is satisfied.
+//!
+//! A *tautology* is a space that is invariably satisfied, and a *contradiction* is a space that cannot be satisfied. A
+//! space containing an empty pattern is the *trivial tautology*, and an empty space is the *trivial contradiction*.
+//!
+//! ## Contradiction
+//!
+//! A pattern *trivially contradicts* another when the patterns implicate a shared field with disjoint entitled states.
+//!
+//! Patterns *contradict* when the patterns cannot be satisfied simultaneously. A field inhabits a state only when the
+//! field [exists](#ontological) and the [statewise](#statewise) entitlement space of the state is satisfied, so
+//! patterns may contradict *without* trivially contradicting.
+//!
+//! ## Covering
+//!
+//! A pattern *covers* another when the set of fields the pattern implicates is a *subset* of the other's, and for each
+//! field, the set of entitled states is a *superset* of the set for the corresponding field in the other pattern. A
+//! pattern covered by another pattern of a space is *extraneous*, as removing the covered pattern does not affect the
+//! satisfying conditions of the space.
+//!
+//! # Imposing entitlements
+//!
+//! Peripherals, fields, and variants *impose* entitlements in the form of [spaces](#entitlement-spaces), each kind of
+//! space defining the requirements for a particular quality of the imposing item. An omitted space is considered a
+//! tautology.
+//!
+//! ## Ontological
+//!
+//! An *ontological* entitlement space defines the requirements for the imposing peripheral or field to exist. The
+//! item exists exactly when the space is satisfied.
+//!
+//! ## Affordance
+//!
+//! An *affordance* entitlement space defines the requirements for software to write to the imposing field.
+//!
+//! ## Hardware affordance
+//!
+//! A *hardware affordance* entitlement space defines the requirements for *hardware* to write to the imposing field.
+//! Only fields with modality [`VolatileStore`](crate::field::access_modality::VolatileStore) may impose hardware
+//! affordance entitlements, which determine whether such a field is [resolvable](crate::field#resolvability).
+//!
+//! ## Statewise
+//!
+//! A *statewise* entitlement space defines the requirements for a field to inhabit the imposing variant. Statewise
+//! entitlements are imposed per field, so variants shared by fields that assume the same [schema](crate::schema)
+//! may impose independent statewise entitlements.
 
-use std::hash::Hash;
+pub(crate) mod algebra;
 
-use crate::{
-    Node,
-    diagnostic::Context,
-    field::{FieldIndex, FieldNode},
-    model::{Model, View},
-    peripheral::PeripheralIndex,
-    variant::{VariantIndex, VariantNode},
-};
+use source::Spanned;
 
-pub use pattern::Pattern;
-pub use space::Space;
+use crate::{Word, field::FieldId};
 
-/// A requirement for a particular field to inhabit a particular state.
-///
-/// An entitlement is **satisfied** when a hardware state fulfills the requirement.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+/// A requirement for a particular field to inhabit a particular state. (*See [entitlements](self#entitlements)*)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Entitlement {
-    pub(crate) field: FieldIndex,
-    pub(crate) variant: VariantIndex,
+    /// The implicated field.
+    pub field: FieldId,
+    /// The [state](crate::field#states) the field is required to inhabit.
+    pub state: Word,
 }
 
-impl Entitlement {
-    pub fn variant<'cx>(&self, model: &'cx Model) -> View<'cx, VariantNode> {
-        model.get_variant(self.variant)
-    }
-
-    pub fn field<'cx>(&self, model: &'cx Model) -> View<'cx, FieldNode> {
-        model.get_field(self.field)
-    }
-
-    pub fn to_string(&self, model: &Model) -> String {
-        self.render_entirely(model)
-            .to_string()
-            .split_whitespace()
-            .collect()
-    }
+/// A [pattern](self#entitlement-spaces) in the form it was written, listing entitlements in the order they were added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pattern {
+    /// The entitlements, in the order they were added.
+    pub entitlements: Vec<Spanned<Entitlement>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Axis {
-    Statewise,
-    Affordance,
-    Ontological,
-}
-
-impl Node for Space {
-    type Index = EntitlementIndex;
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum EntitlementIndex {
-    Peripheral(PeripheralIndex),
-    Field(FieldIndex),
-    Write(FieldIndex),
-    HardwareWrite(FieldIndex),
-    Variant(FieldIndex, VariantIndex),
-}
-
-impl EntitlementIndex {
-    pub fn into_context(&self, model: &Model) -> Context {
-        Context::with_path(match self {
-            EntitlementIndex::Peripheral(peripheral_index) => {
-                vec![
-                    model
-                        .get_peripheral(peripheral_index.clone())
-                        .ident()
-                        .to_string(),
-                ]
-            }
-            EntitlementIndex::Field(field_index)
-            | EntitlementIndex::Write(field_index)
-            | EntitlementIndex::HardwareWrite(field_index) => {
-                let field = model.get_field(*field_index);
-                let register = model.get_register(field.parent);
-                let peripheral = model.get_peripheral(register.parent.clone());
-
-                vec![
-                    peripheral.ident().to_string(),
-                    register.ident().to_string(),
-                    field.ident().to_string(),
-                ]
-            }
-            EntitlementIndex::Variant(field_index, variant_index) => {
-                let variant = model.get_variant(*variant_index);
-                let field = model.get_field(*field_index);
-                let register = model.get_register(field.parent);
-                let peripheral = model.get_peripheral(register.parent.clone());
-
-                vec![
-                    peripheral.ident().to_string(),
-                    register.ident().to_string(),
-                    field.ident().to_string(),
-                    variant.ident().to_string(),
-                ]
-            }
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        Composition, Entitlement, Field, Model, Peripheral, Register, Variant,
-        entitlement::{Pattern, Space},
-        prelude::*,
-    };
-
-    mod patterns {
-        use super::*;
-
-        mod validation {
-            use super::*;
-
-            struct Setup {
-                model: Model,
-                f0_e0: Entitlement,
-                f0_e1: Entitlement,
-                f1_e0: Entitlement,
-                f1_e1: Entitlement,
-            }
-
-            fn setup() -> Setup {
-                let mut model = Composition::new();
-
-                let mut p = model.add_peripheral(Peripheral::new("p", 0));
-                let mut r = p.add_register(Register::new("r", 0));
-
-                let mut f0 = r.add_store_field(Field::new("f1", 0, 1));
-
-                let f0_e0 = f0.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f0_e1 = f0.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let mut f1 = r.add_store_field(Field::new("f2", 0, 1));
-
-                let mut f1_e0 = f1.add_variant(Variant::new("State0", 0));
-                f1_e0.statewise_entitlements([[f0_e0]]);
-                let f1_e0 = f1_e0.make_entitlement();
-                let f1_e1 = f1.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let model = model.release(); // this model doesn't need to be entirely valid
-
-                Setup {
-                    model,
-                    f0_e0,
-                    f0_e1,
-                    f1_e0,
-                    f1_e1,
-                }
-            }
-
-            #[test]
-            fn statewise_adherence() {
-                let setup = setup();
-
-                // none of these states have any requirements
-                assert!(Pattern::new(&setup.model, [setup.f0_e0, setup.f1_e1]).is_ok());
-                assert!(Pattern::new(&setup.model, [setup.f0_e1, setup.f1_e1]).is_ok());
-                // the requirement is satisfied exactly
-                assert!(Pattern::new(&setup.model, [setup.f0_e0, setup.f1_e0]).is_ok());
-                // since this pattern doesn't specify f0 at all, it *is* possible for f0 to inhabit f0_e0
-                assert!(Pattern::new(&setup.model, [setup.f1_e0]).is_ok());
-                // this pattern is identical to the previous since f0 is exhaustive
-                assert!(
-                    Pattern::new(&setup.model, [setup.f1_e0, setup.f0_e0, setup.f0_e1]).is_ok()
-                );
-            }
-
-            #[test]
-            fn statewise_violation() {
-                let setup = setup();
-
-                // this pattern is impossible because f1_e0 *requires* f0_e0, but this pattern requires f0 to inhabit
-                // f0_e1 which is !f0_e0, and since a field can only inhabit one state at a time, the pattern is
-                // impossible
-                assert!(Pattern::new(&setup.model, [setup.f0_e1, setup.f1_e0]).is_err());
-            }
-        }
-
-        mod contradiction {
-            use super::*;
-
-            struct Setup {
-                model: Model,
-                pat0: Pattern,
-                f0_e0: Entitlement,
-                f0_e1: Entitlement,
-                f1_e0: Entitlement,
-                f1_e1: Entitlement,
-                f1_e2: Entitlement,
-                f2_e1: Entitlement,
-            }
-
-            fn setup() -> Setup {
-                let mut model = Composition::new();
-
-                let mut p = model.add_peripheral(Peripheral::new("p", 0));
-                let mut r = p.add_register(Register::new("r", 0));
-
-                let mut f0 = r.add_store_field(Field::new("f1", 0, 1));
-
-                let f0_e0 = f0.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f0_e1 = f0.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let mut f1 = r.add_store_field(Field::new("f2", 0, 2));
-
-                let f1_e0 = f1.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f1_e1 = f1.add_variant(Variant::new("State1", 1)).make_entitlement();
-                let f1_e2 = f1.add_variant(Variant::new("State2", 2)).make_entitlement();
-
-                let mut f2 = r.add_store_field(Field::new("f2", 0, 2));
-
-                f2.add_variant(Variant::new("State0", 0));
-                let f2_e1 = f2.add_variant(Variant::new("State1", 1)).make_entitlement();
-                f2.add_variant(Variant::new("State1", 1));
-
-                let pat0 = Pattern::new(&model, [f0_e0, f1_e1, f1_e2])
-                    .expect("expected pattern to be valid");
-
-                let model = model.release(); // this model doesn't need to be entirely valid
-
-                Setup {
-                    model,
-                    pat0,
-                    f0_e0,
-                    f0_e1,
-                    f1_e0,
-                    f1_e1,
-                    f1_e2,
-                    f2_e1,
-                }
-            }
-
-            #[test]
-            fn single_field() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(&setup.model, [setup.f1_e0, setup.f0_e0])
-                    .expect("expected pattern to be valid");
-
-                assert!(setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn two_field() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(&setup.model, [setup.f1_e0, setup.f0_e1])
-                    .expect("expected pattern to be valid");
-
-                assert!(setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn subset() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(&setup.model, [setup.f1_e1, setup.f0_e0])
-                    .expect("expected pattern to be valid");
-
-                assert!(!setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn superset() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(
-                    &setup.model,
-                    [setup.f1_e1, setup.f1_e2, setup.f0_e1, setup.f0_e0],
-                )
-                .expect("expected pattern to be valid");
-
-                assert!(!setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn partial_overlap() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(
-                    &setup.model,
-                    [setup.f1_e0, setup.f1_e1, setup.f0_e1, setup.f0_e0],
-                )
-                .expect("expected pattern to be valid");
-
-                assert!(!setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn wildcard() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(&setup.model, [setup.f1_e1])
-                    .expect("expected pattern to be valid");
-
-                assert!(!setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-
-            #[test]
-            fn two_wildcard() {
-                let setup = setup();
-
-                let pat1 = Pattern::new(&setup.model, [setup.f1_e1, setup.f2_e1])
-                    .expect("expected pattern to be valid");
-
-                assert!(!setup.pat0.contradicts_pattern(&setup.model, &pat1));
-            }
-        }
-
-        mod complement {
-            use super::*;
-
-            struct Setup {
-                model: Model,
-                pat0: Pattern,
-                f0_e0: Entitlement,
-                f0_e1: Entitlement,
-                f1_e0: Entitlement,
-            }
-
-            fn setup() -> Setup {
-                let mut model = Composition::new();
-
-                let mut p = model.add_peripheral(Peripheral::new("p", 0));
-                let mut r = p.add_register(Register::new("r", 0));
-
-                let mut f0 = r.add_store_field(Field::new("f1", 0, 1));
-
-                let f0_e0 = f0.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f0_e1 = f0.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let mut f1 = r.add_store_field(Field::new("f2", 0, 2));
-
-                let f1_e0 = f1.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f1_e1 = f1.add_variant(Variant::new("State1", 1)).make_entitlement();
-                let f1_e2 = f1.add_variant(Variant::new("State2", 2)).make_entitlement();
-
-                let pat0 = Pattern::new(&model, [f0_e0, f1_e1, f1_e2])
-                    .expect("expected pattern to be valid");
-
-                let model = model.release(); // this model doesn't need to be entirely valid
-
-                Setup {
-                    model,
-                    pat0,
-                    f0_e0,
-                    f0_e1,
-                    f1_e0,
-                }
-            }
-
-            #[test]
-            fn simple() {
-                let setup = setup();
-
-                let complement = setup.pat0.complement(&setup.model);
-
-                assert!(
-                    complement
-                        .patterns
-                        .contains(&Pattern::new(&setup.model, [setup.f0_e1]).unwrap())
-                );
-                assert!(
-                    complement
-                        .patterns
-                        .contains(&Pattern::new(&setup.model, [setup.f1_e0]).unwrap())
-                );
-                assert_eq!(complement.count(), 2);
-            }
-
-            // an empty pattern is a tuatology (always satisfied), so the complement
-            // is an empty space which is a contradiction (never satisfied)
-            #[test]
-            fn empty() {
-                let setup = setup();
-
-                let complement = Pattern::new(&setup.model, [])
-                    .unwrap()
-                    .complement(&setup.model);
-
-                assert!(complement.patterns.is_empty());
-            }
-
-            // an exhaustive pattern is a tuatology (always satisfied), so the
-            // complement is an empty space which is a contradiction (never
-            // satisfied)
-            #[test]
-            fn exhaustive() {
-                let setup = setup();
-
-                let complement = Pattern::new(&setup.model, [setup.f0_e0, setup.f0_e1])
-                    .unwrap()
-                    .complement(&setup.model);
-
-                assert!(complement.patterns.is_empty());
-            }
-        }
-    }
-
-    mod spaces {
-        use super::*;
-
-        mod complement {
-            use super::*;
-
-            struct Setup {
-                model: Model,
-                pat0: Pattern,
-                f0_e0: Entitlement,
-                f0_e1: Entitlement,
-                f1_e0: Entitlement,
-                f1_e1: Entitlement,
-                f1_e2: Entitlement,
-                f2_e0: Entitlement,
-                f2_e1: Entitlement,
-                f2_e2: Entitlement,
-            }
-
-            fn setup() -> Setup {
-                let mut model = Composition::new();
-
-                let mut p = model.add_peripheral(Peripheral::new("p", 0));
-                let mut r = p.add_register(Register::new("r", 0));
-
-                let mut f0 = r.add_store_field(Field::new("f1", 0, 1));
-
-                let f0_e0 = f0.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f0_e1 = f0.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let mut f1 = r.add_store_field(Field::new("f2", 0, 2));
-
-                let f1_e0 = f1.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f1_e1 = f1.add_variant(Variant::new("State1", 1)).make_entitlement();
-                let f1_e2 = f1.add_variant(Variant::new("State2", 2)).make_entitlement();
-
-                let mut f2 = r.add_store_field(Field::new("f2", 0, 2));
-
-                let f2_e0 = f2.add_variant(Variant::new("State0", 0)).make_entitlement();
-                let f2_e1 = f2.add_variant(Variant::new("State1", 1)).make_entitlement();
-                let f2_e2 = f2.add_variant(Variant::new("State1", 1)).make_entitlement();
-
-                let pat0 = Pattern::new(&model, [f0_e0, f1_e1, f1_e2])
-                    .expect("expected pattern to be valid");
-
-                let model = model.release(); // this model doesn't need to be entirely valid
-
-                Setup {
-                    model,
-                    pat0,
-                    f0_e0,
-                    f0_e1,
-                    f1_e0,
-                    f1_e1,
-                    f1_e2,
-                    f2_e0,
-                    f2_e1,
-                    f2_e2,
-                }
-            }
-
-            #[test]
-            fn single() {
-                let setup = setup();
-
-                let space = Space::new([setup.pat0.clone()]);
-                let complement = space.complement(&setup.model);
-
-                assert_eq!(complement, setup.pat0.complement(&setup.model));
-            }
-
-            #[test]
-            fn multiple_nonoverlapping() {
-                let setup = setup();
-
-                let space = Space::new([
-                    setup.pat0,
-                    Pattern::new(&setup.model, [setup.f2_e1]).unwrap(),
-                ]);
-                let complement = space.complement(&setup.model);
-
-                assert!(complement.patterns.contains(
-                    &Pattern::new(&setup.model, [setup.f0_e1, setup.f2_e0, setup.f2_e2]).unwrap()
-                ));
-                assert!(complement.patterns.contains(
-                    &Pattern::new(&setup.model, [setup.f1_e0, setup.f2_e0, setup.f2_e2]).unwrap()
-                ));
-                assert_eq!(complement.count(), 2);
-            }
-
-            #[test]
-            fn multiple_overlapping() {
-                let setup = setup();
-
-                let space = Space::new([
-                    setup.pat0,
-                    Pattern::new(&setup.model, [setup.f0_e0, setup.f2_e1]).unwrap(),
-                ]);
-                let complement = space.complement(&setup.model);
-
-                assert!(
-                    complement
-                        .patterns
-                        .contains(&Pattern::new(&setup.model, [setup.f0_e1]).unwrap())
-                );
-                assert!(complement.patterns.contains(
-                    &Pattern::new(&setup.model, [setup.f1_e0, setup.f2_e0, setup.f2_e2]).unwrap()
-                ));
-                assert_eq!(complement.count(), 2);
-            }
-
-            #[test]
-            fn multiple_contradicting() {
-                let setup = setup();
-
-                let space = Space::new([
-                    setup.pat0,
-                    Pattern::new(&setup.model, [setup.f0_e1, setup.f1_e0]).unwrap(),
-                ]);
-                let complement = space.complement(&setup.model);
-
-                assert!(complement.patterns.contains(
-                    &Pattern::new(&setup.model, [setup.f0_e1, setup.f1_e1, setup.f1_e2]).unwrap()
-                ));
-                assert!(
-                    complement
-                        .patterns
-                        .contains(&Pattern::new(&setup.model, [setup.f0_e0, setup.f1_e0]).unwrap())
-                );
-                assert_eq!(complement.count(), 2);
-            }
-
-            #[test]
-            fn empty() {
-                let setup = setup();
-
-                let space = Space::contradiction();
-                let complement = space.complement(&setup.model);
-
-                assert!(complement.patterns.contains(&Pattern::tautology()));
-                assert_eq!(complement.count(), 1);
-            }
-
-            #[test]
-            fn exhaustive() {
-                let setup = setup();
-
-                for space in [
-                    Space::new([Pattern::tautology()]),
-                    Space::new([Pattern::new(&setup.model, [setup.f0_e0, setup.f0_e1]).unwrap()]),
-                ] {
-                    println!("{space:?}");
-                    let complement = space.complement(&setup.model);
-                    println!("{complement:?}");
-                    assert_eq!(complement.count(), 0);
-                }
-            }
-        }
-    }
+/// A set of [patterns](Pattern). (*See [entitlement spaces](self#entitlement-spaces)*)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Space {
+    /// The patterns, in the order they were added.
+    pub patterns: Vec<Spanned<Pattern>>,
 }

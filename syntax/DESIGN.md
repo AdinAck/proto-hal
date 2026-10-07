@@ -9,10 +9,13 @@ A description states what the hardware *is*. Nothing in it is computed or execut
 
 ## The device
 
-`device` is the root of elaboration, as a top module is in Verilog. Only what the device contains exists in the model.
+`device` is the root of elaboration, as a top module is in Verilog. The device defines the structure of the model: only
+the peripherals, registers, and fields it contains exist in the model, and schemas exist where the device's fields
+assume them.
 
 Everything outside the device is *non-corporeal*: definitions the device uses, or library components shared between
-devices. A definition occupies nothing until the device uses it.
+devices. A definition occupies nothing until the device uses it. Peripherals, registers, and fields declared outside the
+device are [templates](#templates), elaborated into the device where it refines them.
 
 Devices, peripherals, registers, and fields are *structures*: they hold values, and occupy space. Variants and
 interrupts are not; they are values that structures inhabit.
@@ -166,7 +169,22 @@ i.e. `leaky volatile store field`.
 
 There is no `array` qualifier: a [name expansion](#arrays) makes an item an array.
 
-`leaky` applies to the item and everything within it.
+`leaky` applies to the item and everything within it. Devices and groups cannot be `leaky`: groups only namespace their
+members, and a leaky device is beyond what the model can encapsulate.
+
+Each kind permits these qualifiers and properties; any other fails validation, after parsing:
+
+| kind | qualifiers | properties |
+|---|---|---|
+| device | | `wordsize` |
+| peripheral | `leaky` | `@`, `access`, `refines`, `requires` |
+| register | `leaky` | `@`, `reset`, `access`, `refines` |
+| field | `leaky`, access modality | `@`, `reset`, `assumes`, `refines`, `requires`, `write requires`, `hardware write requires` |
+| schema | | `refines` |
+| variant | `inert`, `read` or `write` | `~`, `requires` (within a field) |
+| group | | `@` |
+
+Registers have no `requires`: clock and power domains are grouped by peripheral.
 
 ## Properties
 
@@ -270,14 +288,26 @@ On a field:
 - `write requires ...` is its *affordance* entitlement space.
 - `hardware write requires ...` is its *hardware affordance* entitlement space.
 
-Each is a value: written at most once, and unified as any value is. A second clause could add a pattern to the space or
-an entitlement to every pattern, and nothing would say which; so a template whose instances add to a space leaves it
+`write requires` is permitted on fields with write access, and `hardware write requires` on `volatile store` fields
+alone: a hardware affordance decides only whether the field is resolvable.
+
+On a peripheral, `requires` is the peripheral's ontological entitlement space. On a variant, written within a field,
+`requires` is the variant's *statewise* entitlement space: the field may inhabit the variant only where the space is
+satisfied. The item a space is written on *imposes* it.
+
+An unset space is a tautology: it imposes nothing.
+
+A space is a value: written at most once, and unified as any value is. A second clause could add a pattern to the space
+or an entitlement to every pattern, and nothing would say which; so a template whose instances add to a space leaves it
 unset.
 
 ### Entitlement spaces
 
 What follows `requires` is an entitlement space. `|` separates its patterns, and `&` joins a pattern's entitlements.
 There are no parentheses: `&` always joins first.
+
+A pattern is satisfied when each field it names inhabits one of the states it names for that field. A space is
+satisfied when any pattern of the space is.
 
 | written | meaning |
 |---|---|
@@ -312,7 +342,15 @@ store field foo @ 3
 
 ### Paths
 
-An entitlement names a state by its path, i.e. `en.Disabled`, `rcc.ahb1enr.dma1en.Enabled`.
+An entitlement names a state by its path, i.e. `en.Disabled`, `rcc.ahb1enr.dma1en.Enabled`. The state of a numeric field
+is a value, so a path naming it ends in a literal: `cndtr.ndt.0`, or `cndtr.ndt.{0, 1}`. A value is discrete, since
+each entitlement is generated as a separate trait implementation: a path names no range. A literal may also name the
+variant of an enumerated field by discriminant, `ccr.en.1`, and fails validation if no variant the field exposes has
+that discriminant.
+
+A statewise or ontological space cannot name a state in which hardware may write the field, as hardware could change the
+field while the space relies on the state, unseen by software. Where `en` has `hardware write requires en.Enabled`, a
+space may name `en.Disabled`, and not `en.Enabled`.
 
 Paths are scoped lexically. A path's first name is looked up outward from the item the path belongs to: among the item's
 siblings, then its parent's siblings, and so on up to the device, or to the boundary of the [template](#templates) the
