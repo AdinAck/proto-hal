@@ -1,443 +1,319 @@
-use std::fmt::Display;
+//! The model components related to diagnostics emitted while validating a [model](crate).
 
-use colored::Colorize;
-use derive_more::{AsRef, Deref};
-use indexmap::{IndexMap, IndexSet};
-use ters::ters;
+use std::{fmt::Display, ops::Range};
+
+use diagnostic::{Class, Code, Diagnostic, Label, conjunction};
+use source::{Span, Spanned};
 
 use crate::{
-    entitlement::{self, Entitlement},
-    field::{Field, FieldNode},
-    model::{Model, View},
-    register::RegisterNode,
-    variant::VariantNode,
+    Node, WideWord, Word, WordSize,
+    field::{Domain, Field},
+    peripheral::Peripheral,
+    register::Register,
+    schema::Schema,
 };
 
-/// Elaborates diagnostics which may be emitted during model composition or
-/// validation.
-#[ters]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Diagnostic {
-    #[get]
-    rank: Rank,
-    #[get]
-    kind: Kind,
-    #[get]
-    message: String,
-    notes: Vec<String>,
-    #[get]
-    context: Context,
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub enum Kind {
-    // structural
-    Exists,
-
-    // physical
-    AddressUnaligned = 1000,
-    Overlap,
+/// A diagnostic kind of the structure of a model.
+///
+/// *Note: The associated [`Code`] of the diagnostic Kind is derived from the enum discriminant.*
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Structure {
+    /// A name given to more than one sibling.
+    Duplicate = 1,
+    /// A schema without variants.
+    EmptySchema,
+    /// A schema no field uses.
+    UnusedSchema,
+    /// A word size exceeding the permitted range.
+    InvalidWordSize,
+    /// An address that is not word aligned.
+    AddressUnaligned,
+    /// An address outside the permitted address space.
+    AddressOutOfRange,
+    /// Peripherals occupying the same addresses.
+    PeripheralOverlap,
+    /// Registers occupying the same bytes.
+    RegisterOverlap,
+    /// Fields occupying the same bits.
+    FieldOverlap,
+    /// A field domain exceeding the parent register domain.
     ExceedsDomain,
-    ExpectedReset,
-    InvalidReset,
-
-    // stasis
-    Unresolvable = 2000,
-    ReadCannotBeInert,
-    InvalidEntitlements,
-    TautologicalEntitlements,
-
-    // lexical
-    Reserved = 3000,
-
-    // custom
-    Custom = 9000,
+    /// An access width that does not divide the word size.
+    InvalidAccessWidth,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum Rank {
-    Warning,
-    Error,
+impl diagnostic::Kind for Structure {
+    const CLASS: Class = Class::Structural;
+
+    fn code(self) -> Code {
+        Code::new(self as u16)
+    }
 }
 
-impl Diagnostic {
-    pub fn new(rank: Rank, kind: Kind, message: impl Into<String>, context: Context) -> Self {
-        Self {
-            rank,
-            kind,
-            message: message.into(),
-            notes: Default::default(),
-            context,
-        }
+/// "{node} `{name}` is defined more than once".
+pub fn duplicate(node: Node, name: &Spanned<String>, first: Span) -> Diagnostic {
+    Diagnostic::error(
+        Structure::Duplicate,
+        format!("{node} `{}` is defined more than once", **name),
+        Label::new("duplicate definition here", name.span),
+    )
+    .supporting_label(Label::new("first definition here", first))
+}
+
+/// "schema `{name}` has no variants", or "schema has no variants".
+pub fn empty_schema(schema: &Schema) -> Diagnostic {
+    Diagnostic::warning(
+        Structure::EmptySchema,
+        format!("{} has no variants", self::schema(schema)),
+        Label::new(
+            "declared here",
+            schema.name.as_ref().map_or(schema.span, |name| name.span),
+        ),
+    )
+}
+
+// TODO: a correct frontend shouldn't produce unused schemas, so this diagnostic is caused by a frontend bug, and should
+//       indicate as such, as rustc does for internal compiler errors
+/// "schema `{name}` is never used", or "schema is never used".
+pub fn unused_schema(schema: &Schema) -> Diagnostic {
+    Diagnostic::warning(
+        Structure::UnusedSchema,
+        format!("{} is never used", self::schema(schema)),
+        Label::new(
+            "declared here",
+            schema.name.as_ref().map_or(schema.span, |name| name.span),
+        ),
+    )
+}
+
+/// Produce a description of the provided schema for use in diagnostic messages, such as "schema `foo`", or "schema"
+/// when it has no name.
+fn schema(schema: &Schema) -> String {
+    match &schema.name {
+        Some(name) => format!("schema `{}`", **name),
+        None => "schema".to_string(),
     }
+}
 
-    /// {level} [foo] already exists and was overridden
-    pub fn exists(offending: &impl Display, context: Context) -> Self {
-        let level = context.level();
-        let offending = format!("{offending}").bold();
+/// "word size must be from {min} to {max} bytes".
+///
+/// note: "word size `{word size}` does not satisfy `{min} <= word size <= {max}`"
+pub fn invalid_word_size(word_size: &Spanned<Word>) -> Diagnostic {
+    let (min, max) = WordSize::SIZES.into_inner();
 
-        Self::new(
-            Rank::Warning,
-            Kind::Exists,
-            format!("{level} [{offending}] already exists and was overridden"),
-            context,
-        )
-    }
+    Diagnostic::error(
+        Structure::InvalidWordSize,
+        format!("word size must be from {min} to {max} bytes"),
+        Label::new("invalid word size", word_size.span),
+    )
+    .note(format!(
+        "word size `{}` does not satisfy `{min} <= word size <= {max}`",
+        **word_size
+    ))
+}
 
-    /// address must be word aligned
-    ///
-    /// note: address {address} does not satisfy: address % 4 == 0
-    pub fn address_unaligned(address: u32, context: Context) -> Self {
-        let level = context.level();
-        let address = format!("0x{address:08x}").bold();
+/// "{node} address must be word aligned".
+///
+/// note: "address `{address}` does not satisfy `address % {word size} == 0`"
+pub fn address_unaligned(node: Node, address: &Spanned<Word>, word_size: WordSize) -> Diagnostic {
+    Diagnostic::error(
+        Structure::AddressUnaligned,
+        format!("{node} address must be word aligned"),
+        Label::new("unaligned address", address.span),
+    )
+    .note(format!(
+        "address `{}` does not satisfy `address % {word_size} == 0`",
+        self::address(WideWord::from(**address), word_size)
+    ))
+}
 
-        Self::new(
-            Rank::Error,
-            Kind::AddressUnaligned,
-            format!("{level} address must be word aligned"),
-            context,
-        )
-        .notes([format!(
-            "address {address} does not satisfy: address % 4 == 0"
-        )])
-    }
+/// "{node} address must reside within the address space".
+///
+/// note: "address `{address}` does not satisfy `address <= {last address}`"
+pub fn address_out_of_range(
+    node: Node,
+    address: Spanned<WideWord>,
+    word_size: WordSize,
+) -> Diagnostic {
+    Diagnostic::error(
+        Structure::AddressOutOfRange,
+        format!("{node} address must reside within the address space"),
+        Label::new("out-of-range address", address.span),
+    )
+    .note(format!(
+        "address `{}` does not satisfy `address <= {}`",
+        self::address(*address, word_size),
+        self::address(WideWord::from(word_size.last_address()), word_size)
+    ))
+}
 
-    /// [lhs] and [rhs] overlap, occupying {occupied}
-    pub fn overlap(
-        lhs: &impl Display,
-        rhs: &impl Display,
-        occupied: &impl Display,
-        context: Context,
-    ) -> Self {
-        let level = context.child_level();
-        let lhs = format!("{lhs}").bold();
-        let rhs = format!("{rhs}").bold();
-        let occupied = format!("{occupied}").bold();
+/// "peripherals {names} overlap, occupying `{region}`".
+///
+/// Labels each of the affected registers (those occupying the overlap region) with "register
+/// `{peripheral}::{register}` overlaps".
+///
+/// # Panics
+///
+/// If no peripherals are provided.
+pub fn peripheral_overlap<'a>(
+    peripherals: impl IntoIterator<Item = (&'a Peripheral, impl IntoIterator<Item = &'a Register>)>,
+    region: impl Display,
+) -> Diagnostic {
+    let peripherals = peripherals
+        .into_iter()
+        .map(|(peripheral, registers)| (peripheral, registers.into_iter().collect::<Vec<_>>()))
+        .collect::<Vec<_>>();
 
-        Self::new(
-            Rank::Error,
-            Kind::Overlap,
-            format!("{level}s [{lhs}] and [{rhs}] overlap, occupying {occupied}"),
-            context,
-        )
-    }
-
-    /// [foo] with domain {offending_domain} exceeds parent [bar] with domain {parent_domain}
-    pub fn exceeds_domain(
-        offending: &impl Display,
-        offending_domain: &impl Display,
-        parent_domain: &impl Display,
-        context: Context,
-    ) -> Self {
-        let level = context.level();
-        let child_level = context.child_level();
-        let offending_domain = format!("{offending_domain}").bold();
-        let parent_domain = format!("{parent_domain}").bold();
-
-        Self::new(
-            Rank::Error,
-            Kind::ExceedsDomain,
-            format!(
-                "{child_level} [{offending}] with domain {offending_domain} exceeds parent {level} with domain {parent_domain}"
-            ),
-            context,
-        )
-    }
-
-    /// a reset value must be specified for registers containing resolvable fields
-    ///
-    /// note: resolvable fields: [...]
-    pub fn expected_reset<'cx>(register: &View<'cx, RegisterNode>, context: Context) -> Self {
-        let resolvable_fields = register
-            .fields()
-            .filter(|field| field.is_resolvable())
-            .map(|field| field.ident().to_string().bold().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        Self::new(
-            Rank::Error,
-            Kind::ExpectedReset,
-            "a reset value must be specified",
-            context,
-        )
-        .notes([
-            "reset values must be specified for registers containing resolvable fields".to_string(),
-            format!("resolvable fields in this register: [{resolvable_fields}]"),
-        ])
-    }
-
-    /// no variants of field [{field}] correspond to reset value {field_reset}
-    pub fn invalid_reset<'cx>(
-        field: &View<'cx, FieldNode>,
-        variants: impl Iterator<Item = View<'cx, VariantNode>>,
-        field_reset: u32,
-        register_reset: u32,
-        context: Context,
-    ) -> Self {
-        let variants = variants
-            .map(|variant| {
-                format!(
-                    "{}: {}",
-                    variant.type_name().to_string().bold(),
-                    format!("0x{:x}", variant.bits).bold()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        Self::new(
-            Rank::Error,
-            Kind::InvalidReset,
-            format!(
-                "no variants of field [{}] correspond to reset value {}",
-                field.ident().to_string().bold(),
-                field_reset.to_string().bold(),
-            ),
-            context,
-        )
-        .notes([
-            format!(
-                "register reset value: {}",
-                format!("0x{:x}", register_reset).bold(),
-            ),
-            format!("field variants: [{variants}]"),
-        ])
-    }
-
-    /// entitlement [foo] targets field [bar] which is unresolvable and as such cannot be entitled to
-    pub fn unresolvable(
-        model: &Model,
-        entitlement: &Entitlement,
-        field: &Field,
-        context: Context,
-    ) -> Self {
-        Self::new(
-            Rank::Error,
-            Kind::Unresolvable,
-            format!(
-                "entitlement [{}] targets field [{}] which is unresolvable and as such cannot be entitled to",
-                entitlement.to_string(model).bold(),
-                field.ident().to_string().bold()
-            ),
-            context,
-        )
-    }
-
-    /// read-only variants cannot be inert
-    pub fn read_cannot_be_inert(context: Context) -> Self {
-        Self::new(
-            Rank::Error,
-            Kind::ReadCannotBeInert,
-            "read-only variants cannot be inert",
-            context,
-        )
-    }
-
-    /// entitlement pattern {pattern} contradicts {axis} entitlement space {space}
-    pub fn invalid_entitlements(
-        model: &Model,
-        pattern: &entitlement::Pattern,
-        axis: &entitlement::Axis,
-        space: &entitlement::Space,
-        context: Context,
-    ) -> Self {
-        let axis = match axis {
-            entitlement::Axis::Statewise => "statewise",
-            entitlement::Axis::Affordance => "affordant",
-            entitlement::Axis::Ontological => "ontological",
-        };
-
-        Self::new(
-            Rank::Error,
-            Kind::InvalidEntitlements,
-            format!(
-                "entitlement pattern {} contradicts {axis} entitlement space {}",
-                pattern.to_string(model),
-                space.to_string(model)
-            ),
-            context,
-        )
-    }
-
-    /// entitlement pattern {pattern} is a tautology
-    /// note: a tautological pattern is a pattern which is always satisfied, this defeats the purpose of applying
-    ///       entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
-    ///       patterns override all other patterns in the same space which effectively removes all other patterns.
-    ///       this is likely not the intended behavior and should be removed
-    pub fn tautological_entitlements(
-        model: &Model,
-        pattern: &entitlement::Pattern,
-        context: Context,
-    ) -> Self {
-        Self::new(
-            Rank::Warning,
-            Kind::TautologicalEntitlements,
-            format!(
-                "entitlement pattern {} is a tautology",
-                pattern.to_string(model),
-            ),
-            context,
-        )
-        .notes(["a tautological pattern is a pattern which is always satisfied, this defeats the purpose of applying
-        entitlement constraints as it is equivalent to having no entitlements at all. additionally, tautological
-        patterns override all other patterns in the same space which effectively removes all other patterns.
-        this pattern was likely created accidentally and should be removed"])
-    }
-
-    /// "foo" is a reserved keyword for {level}s
-    ///
-    /// note: reserved keywords: [...]
-    pub fn reserved<R: AsRef<str>>(
-        offending: &impl Display,
-        bank: impl Iterator<Item = R>,
-        context: Context,
-    ) -> Self {
-        let level = context.level().to_string();
-        let offending = format!("{offending}").bold();
-
-        let reserved = bank
-            .map(|r| r.as_ref().bold().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        Self::new(
-            Rank::Error,
-            Kind::Reserved,
-            format!("\"{offending}\" is a reserved keyword for {level}s"),
-            context,
-        )
-        .notes([format!("reserved {level} keywords: [{reserved}]")])
-    }
-
-    pub fn notes<I>(mut self, notes: I) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        self.notes
-            .extend(notes.into_iter().map(|e| e.as_ref().to_string()));
-
-        self
-    }
-
-    pub fn report(diagnostics: &Diagnostics) -> String {
-        let mut diagnostic_groups = IndexMap::new();
-
-        for diagnostic in diagnostics {
-            diagnostic_groups
-                .entry(diagnostic.context.clone())
-                .or_insert(vec![])
-                .push(diagnostic);
-        }
-
-        diagnostic_groups
+    let diagnostic = overlap(
+        Structure::PeripheralOverlap,
+        Node::Peripheral,
+        peripherals
             .iter()
-            .map(|(context, diagnostics)| {
-                let diagnostics = diagnostics
-                    .iter()
-                    .map(|diagnostic| diagnostic.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+            .map(|(peripheral, ..)| (&peripheral.name, peripheral.address.span)),
+        region,
+    );
 
-                if context.is_empty() {
-                    diagnostics.to_string()
-                } else {
-                    format!("in {context}:\n{diagnostics}")
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    }
+    peripherals
+        .iter()
+        .flat_map(|(peripheral, registers)| {
+            registers.iter().map(move |register| (peripheral, register))
+        })
+        .fold(diagnostic, |diagnostic, (peripheral, register)| {
+            diagnostic.supporting_label(Label::new(
+                format!(
+                    "register `{}::{}` overlaps",
+                    *peripheral.name, *register.name
+                ),
+                register.offset.span,
+            ))
+        })
 }
 
-impl Display for Diagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let notes = if !self.notes.is_empty() {
-            format!(
-                "\n{}",
-                self.notes
-                    .iter()
-                    .map(|note| format!("  {}: {note}", "note".bright_blue().bold()))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        } else {
-            String::new()
-        };
-
-        let code = format!("{:04}", self.kind as u32);
-
-        let header = match &self.rank {
-            Rank::Warning => format!("warning[W{code}]").yellow().bold(),
-            Rank::Error => format!("error[E{code}]").red().bold(),
-        };
-
-        write!(f, "{header}: {}{notes}", self.message)
-    }
+/// "registers {names} overlap, occupying `{region}`".
+///
+/// # Panics
+///
+/// If no registers are provided.
+pub fn register_overlap<'a>(
+    registers: impl IntoIterator<Item = &'a Register>,
+    region: impl Display,
+) -> Diagnostic {
+    overlap(
+        Structure::RegisterOverlap,
+        Node::Register,
+        registers
+            .into_iter()
+            .map(|register| (&register.name, register.offset.span)),
+        region,
+    )
 }
 
-pub type Diagnostics = IndexSet<Diagnostic>;
-
-impl From<Diagnostic> for Diagnostics {
-    fn from(diagnostic: Diagnostic) -> Self {
-        IndexSet::from([diagnostic])
-    }
+/// "fields {names} overlap, occupying `{region}`".
+///
+/// # Panics
+///
+/// If no fields are provided.
+pub fn field_overlap<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+    region: impl Display,
+) -> Diagnostic {
+    overlap(
+        Structure::FieldOverlap,
+        Node::Field,
+        fields
+            .into_iter()
+            .map(|field| (&field.name, field.domain.span)),
+        region,
+    )
 }
 
-#[ters]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, AsRef, Deref)]
-pub struct Context {
-    #[get]
-    path: Vec<String>,
+/// "field `{name}` with domain `{domain}` exceeds parent register with domain `{register}`".
+pub fn exceeds_domain(field: &Field, register: Domain) -> Diagnostic {
+    Diagnostic::error(
+        Structure::ExceedsDomain,
+        format!(
+            "field `{}` with domain `{}` exceeds parent register with domain `{register}`",
+            *field.name, *field.domain
+        ),
+        Label::new("exceeding field domain", field.domain.span),
+    )
 }
 
-#[expect(clippy::new_without_default)]
-impl Context {
-    pub fn new() -> Self {
-        Context { path: Vec::new() }
-    }
-
-    pub fn with_path(path: impl IntoIterator<Item = String>) -> Self {
-        Self {
-            path: path.into_iter().collect(),
-        }
-    }
-
-    pub fn and(mut self, ident: String) -> Self {
-        self.path.push(ident);
-        self
-    }
-
-    fn level(&self) -> &str {
-        match self.path.len() {
-            1 => "peripheral",
-            2 => "register",
-            3 => "field",
-            4 => "variant",
-            _ => "",
-        }
-    }
-    fn child_level(&self) -> &str {
-        match self.path.len() {
-            1 => "register",
-            2 => "field",
-            3 => "variant",
-            _ => "",
-        }
-    }
+/// "access width `{width}` does not divide the word size `{word size}`".
+pub fn invalid_access_width(width: &Spanned<Word>, word_size: WordSize) -> Diagnostic {
+    Diagnostic::error(
+        Structure::InvalidAccessWidth,
+        format!(
+            "access width `{}` does not divide the word size `{word_size}`",
+            **width
+        ),
+        Label::new("invalid access width", width.span),
+    )
 }
 
-impl Display for Context {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.path
-                .iter()
-                .map(|segment| segment.bold().to_string())
-                .collect::<Vec<_>>()
-                .join("/")
-        )
-    }
+/// Create a diagnostic of the provided kind, labelling where each of the provided occupants was placed. The occupants
+/// are siblings of the provided node kind, overlapping in the provided region.
+fn overlap<'a>(
+    kind: Structure,
+    node: Node,
+    occupants: impl IntoIterator<Item = (&'a Spanned<String>, Span)>,
+    region: impl Display,
+) -> Diagnostic {
+    let occupants = occupants.into_iter().collect::<Vec<_>>();
+    let ((first, placement), others) = occupants.split_first().expect("an overlap has occupants");
+
+    let diagnostic = Diagnostic::error(
+        kind,
+        format!(
+            "{node}s {} overlap, occupying `{region}`",
+            conjunction(occupants.iter().map(|(name, ..)| format!("`{}`", **name)))
+        ),
+        Label::new(format!("`{}` placed here", **first), *placement),
+    );
+
+    others
+        .iter()
+        .fold(diagnostic, |diagnostic, (name, placement)| {
+            diagnostic.supporting_label(Label::new(format!("`{}` placed here", **name), *placement))
+        })
+}
+
+/// Display the provided address, padded to the word size and grouped into four digits, for use in diagnostic messages,
+/// such as "0x0000_0004". An address outside the [address space](crate#address-space) is padded to whole groups, such
+/// as "0x0001_0000_0000".
+fn address(address: WideWord, word_size: WordSize) -> String {
+    let digits = format!("{address:x}");
+    let word_width = usize::from(word_size.bytes()) * 2; // each character is half a byte
+
+    let width = if digits.len() > word_width {
+        digits.len().next_multiple_of(4)
+    } else {
+        word_width
+    };
+
+    let digits = format!("{digits:0>width$}");
+
+    let groups = digits
+        .as_bytes()
+        .rchunks(4)
+        .rev()
+        .map(|group| str::from_utf8(group).expect("hex digits are ascii"))
+        .collect::<Vec<_>>();
+
+    format!("0x{}", groups.join("_"))
+}
+
+/// Display the provided range of bytes, padded to the word size and grouped into four digits, for use in diagnostic
+/// messages, such as "0x0000_0004..0x0000_0008".
+pub(crate) fn format_bytes(range: &Range<WideWord>, word_size: WordSize) -> String {
+    format!(
+        "{}..{}",
+        address(range.start, word_size),
+        address(range.end, word_size)
+    )
+}
+
+/// Display the provided range of bits for use in diagnostic messages, such as "3:2".
+pub(crate) fn format_bits(range: &Range<WideWord>) -> String {
+    format!("{}:{}", range.end - 1, range.start)
 }

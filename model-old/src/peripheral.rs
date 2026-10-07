@@ -1,0 +1,304 @@
+use std::ops::Range;
+
+use derive_more::{AsRef, Deref, From};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
+use indexmap::IndexMap;
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, quote};
+use syn::{Ident, Path, parse_quote};
+
+use crate::{
+    Node,
+    diagnostic::{Context, Diagnostic, Diagnostics},
+    entitlement::{self, codegen::generate_entitlements},
+    group::{PeripheralGroupIndex, PeripheralGroupNode},
+    model::View,
+    register::RegisterIndex,
+};
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deref, From)]
+pub struct PeripheralIndex(pub(super) Ident);
+
+#[derive(Debug, Clone, Deref, AsRef)]
+pub struct PeripheralNode {
+    #[deref]
+    #[as_ref]
+    pub(super) peripheral: Peripheral,
+    pub(super) registers: IndexMap<Ident, RegisterIndex>,
+    pub(super) group: Option<PeripheralGroupIndex>,
+}
+
+impl Node for PeripheralNode {
+    type Index = PeripheralIndex;
+}
+
+impl PeripheralNode {
+    pub(super) fn add_child_index(&mut self, index: RegisterIndex, child_ident: Ident) {
+        self.registers.insert(child_ident, index);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Peripheral {
+    pub ident: Ident,
+    pub base_addr: u32,
+    pub docs: Vec<String>,
+
+    pub leaky: bool,
+}
+
+impl Peripheral {
+    pub fn new(ident: impl AsRef<str>, base_addr: u32) -> Self {
+        Self {
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
+            base_addr,
+            docs: Vec::new(),
+            leaky: false,
+        }
+    }
+
+    pub fn docs<I>(mut self, docs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.docs
+            .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
+
+        self
+    }
+
+    /// Mark the fields in this peripheral as *leaky*.
+    ///
+    /// This is useful when this model component is unsound because:
+    /// 1. The HAL author knows the description is incomplete.
+    /// 1. proto-hal is incapable of properly encapsulating
+    ///    the invariances of the fields in this peripheral.
+    ///
+    /// This will cause all interactions with the fields in this peripheral to be `unsafe`.
+    pub fn leaky(self) -> Self {
+        Self {
+            leaky: true,
+            ..self
+        }
+    }
+
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
+    }
+
+    pub fn type_name(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
+    }
+}
+
+impl<'cx> View<'cx, PeripheralNode> {
+    pub fn width(&self) -> u32 {
+        self.registers()
+            .max_by(|lhs, rhs| lhs.offset.cmp(&rhs.offset))
+            .map(|register| register.offset + 4)
+            .unwrap_or(0)
+    }
+
+    /// The domain of the device in which the peripheral occupies.
+    #[inline]
+    pub fn domain(&self) -> Range<u32> {
+        self.base_addr..(self.base_addr + self.width())
+    }
+
+    pub fn path(&self) -> TokenStream {
+        self.path_segment().to_token_stream()
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, PeripheralGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_peripheral_group(group.clone()))
+    }
+
+    pub fn validate(&self, context: &Context) -> Diagnostics {
+        let mut diagnostics = Diagnostics::new();
+        let new_context = context.clone().and(self.ident().to_string());
+
+        if !self.base_addr.is_multiple_of(4) {
+            diagnostics.insert(Diagnostic::address_unaligned(
+                self.base_addr,
+                new_context.clone(),
+            ));
+        }
+
+        let mut sorted_registers = self.registers().collect::<Vec<_>>();
+        sorted_registers.sort_by_key(|register| register.offset);
+
+        for window in sorted_registers.windows(2) {
+            let lhs = &window[0];
+            let rhs = &window[1];
+
+            if lhs.offset + 4 > rhs.offset {
+                diagnostics.insert(Diagnostic::overlap(
+                    &lhs.ident(),
+                    &rhs.ident(),
+                    &format!("0x{:x}...0x{:x}", rhs.offset, lhs.offset + 3),
+                    new_context.clone(),
+                ));
+            }
+        }
+
+        for register in &sorted_registers {
+            diagnostics.extend(register.validate(&new_context));
+        }
+
+        diagnostics
+    }
+}
+
+// codegen
+impl<'cx> View<'cx, PeripheralNode> {
+    fn generate_registers(&self) -> TokenStream {
+        let standalone = self
+            .registers()
+            .filter(|register| register.group.is_none())
+            .fold(quote! {}, |mut acc, register| {
+                acc.extend(register.generate());
+
+                acc
+            });
+
+        let grouped = self
+            .model
+            .register_groups()
+            .fold(quote! {}, |mut acc, group| {
+                acc.extend(group.generate());
+
+                acc
+            });
+
+        quote! {
+            #standalone
+            #grouped
+        }
+    }
+
+    fn generate_masked(
+        &self,
+        ontological_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        ontological_entitlements?;
+
+        Some(quote! {
+            pub struct Masked {
+                _sealed: (),
+            }
+
+            impl ::proto_hal::stasis::Conjure for Masked {
+                unsafe fn conjure() -> Self {
+                    Self { _sealed: () }
+                }
+            }
+        })
+    }
+
+    fn generate_reset(&self) -> TokenStream {
+        let register_idents = self
+            .registers()
+            .map(|register| register.ident())
+            .collect::<Vec<_>>();
+
+        let register_modules = self.registers().map(|register| register.path_segment());
+
+        quote! {
+            pub struct Reset {
+                #(
+                    pub #register_idents: #register_modules::Reset,
+                )*
+            }
+
+            impl ::proto_hal::stasis::Conjure for Reset {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        #(
+                            #register_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        )*
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_dynamic(&self) -> TokenStream {
+        let register_idents = self
+            .registers()
+            .map(|register| register.ident())
+            .collect::<Vec<_>>();
+
+        let register_modules = self.registers().map(|register| register.path_segment());
+
+        quote! {
+            pub struct Dynamic {
+                #(
+                    pub #register_idents: #register_modules::Dynamic,
+                )*
+            }
+
+            impl ::proto_hal::stasis::Conjure for Dynamic {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        #(
+                            #register_idents: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                        )*
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_entitlements(
+        &self,
+        ontological_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        let ontological_entitlements = ontological_entitlements?;
+
+        Some(generate_entitlements(
+            self.model,
+            &quote! { Reset },
+            [(ontological_entitlements, entitlement::Axis::Ontological)],
+        ))
+    }
+}
+
+impl<'cx> View<'cx, PeripheralNode> {
+    pub fn generate(&self) -> TokenStream {
+        let mut body = quote! {};
+
+        let module = self.ident();
+
+        let ontological_entitlements = self.ontological_entitlements();
+
+        body.extend(self.generate_registers());
+        body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
+        body.extend(self.generate_reset());
+        body.extend(self.generate_dynamic());
+        body.extend(self.generate_entitlements(ontological_entitlements.as_deref().copied()));
+
+        let docs = &self.docs;
+
+        quote! {
+            #(#[doc = #docs])*
+            #[allow(clippy::module_inception)]
+            pub mod #module {
+                #body
+            }
+        }
+    }
+}

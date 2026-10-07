@@ -1,0 +1,639 @@
+pub mod access;
+pub mod numericity;
+
+use std::ops::Range;
+
+use derive_more::{AsRef, Deref};
+use heck::{ToPascalCase as _, ToSnakeCase as _};
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote};
+use syn::{Ident, LitInt, Path, parse_quote};
+
+use crate::{
+    Node,
+    diagnostic::{Context, Diagnostic, Diagnostics},
+    entitlement::{self, codegen::generate_entitlements},
+    field::{access::Access, numericity::Numericity},
+    group::{FieldGroupIndex, FieldGroupNode},
+    model::View,
+    register::RegisterIndex,
+};
+
+use super::variant::Variant;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deref)]
+pub struct FieldIndex(pub(super) usize);
+
+#[derive(Debug, Clone, Deref, AsRef)]
+pub struct FieldNode {
+    pub(super) parent: RegisterIndex,
+    #[deref]
+    #[as_ref]
+    pub(super) field: Field,
+    pub access: access::Source,
+    pub(super) group: Option<FieldGroupIndex>,
+}
+
+impl Node for FieldNode {
+    type Index = FieldIndex;
+}
+
+impl FieldNode {
+    pub(crate) fn get_reset(&self, register_reset: u32) -> u32 {
+        let mask = u32::MAX >> (32 - self.width);
+        (register_reset >> self.offset) & mask
+    }
+}
+
+impl<'cx> View<'cx, FieldNode> {
+    pub fn resolvable(&self) -> Option<&Numericity> {
+        // TODO: external resolving effects nor external *unresolving* effects can currently be expressed
+        // TODO: so both possibilities are ignored for now
+
+        match self.access.access() {
+            Access::Read(..) | Access::Write(..) | Access::ReadWrite(..) => None,
+            Access::Store(store) => Some(&store.numericity),
+            Access::VolatileStore(volatile_store)
+                if self
+                    .hardware_write_entitlements()
+                    .is_some_and(|space| !space.is_tautology(self.model)) =>
+            {
+                Some(&volatile_store.numericity)
+            }
+            Access::VolatileStore(..) => {
+                // if hardware invariably has access, then the field is unresolvable
+                None
+            }
+        }
+    }
+
+    pub fn is_resolvable(&self) -> bool {
+        self.resolvable().is_some()
+    }
+
+    pub(crate) fn reset_ty(
+        &self,
+        path: &TokenStream,
+        register_reset: Option<u32>,
+    ) -> Option<TokenStream> {
+        let Some(read) = self.access.access().get_read() else {
+            return Some(quote! { ::proto_hal::stasis::Dynamic });
+        };
+
+        if !self.is_resolvable() {
+            return Some(quote! { ::proto_hal::stasis::Dynamic });
+        }
+
+        let register_reset =
+            register_reset.expect("fields which are all of: [readable, resolvable, unentitled] must have a reset value specified");
+
+        let reset = self.get_reset(register_reset);
+
+        match &read {
+            Numericity::Numeric(numeric) => {
+                let (.., ty) = numeric.ty(self.width);
+                let reset = LitInt::new(&reset.to_string(), Span::call_site());
+
+                Some(quote! { ::proto_hal::stasis::#ty<#reset> })
+            }
+            Numericity::Enumerated(enumerated) => {
+                let ty = enumerated
+                    .variants(self.model)
+                    .find(|variant| variant.bits == reset)?
+                    .type_name();
+
+                Some(quote! { #path::#ty })
+            }
+        }
+    }
+
+    pub fn path(&self) -> TokenStream {
+        let parents = self.parents().1.path();
+        let segment = self.path_segment();
+
+        quote! { #parents::#segment }
+    }
+
+    pub fn path_segment(&self) -> Path {
+        let module = self.ident();
+
+        if let Some(group) = self.group() {
+            let group = group.module_name();
+            parse_quote! { #group::#module }
+        } else {
+            parse_quote! { #module }
+        }
+    }
+
+    pub fn group(&self) -> Option<View<'cx, FieldGroupNode>> {
+        self.group
+            .as_ref()
+            .map(|group| self.model.get_field_group(group.clone()))
+    }
+
+    pub fn validate(&self, context: &Context) -> Diagnostics {
+        let new_context = context.clone().and(self.ident.clone().to_string());
+        let mut diagnostics = Diagnostics::new();
+
+        let validate_numericity = |numericity: &Numericity, diagnostics: &mut Diagnostics| {
+            match numericity {
+                Numericity::Numeric(..) => {}
+                Numericity::Enumerated(enumerated) => {
+                    let mut sorted_variants = enumerated.variants(self.model).collect::<Vec<_>>();
+                    sorted_variants.sort_by_key(|variant| variant.bits);
+
+                    let variant_limit = (1u64 << self.width) - 1;
+
+                    for variant in &sorted_variants {
+                        if variant.bits as u64 > variant_limit {
+                            diagnostics.insert(Diagnostic::exceeds_domain(
+                                &variant.type_name(),
+                                &variant.bits,
+                                &format!("...0x{:x}", variant_limit),
+                                new_context.clone(),
+                            ));
+                        }
+                    }
+
+                    // validate variant adjacency
+                    for window in sorted_variants.windows(2) {
+                        let lhs = &window[0];
+                        let rhs = &window[1];
+
+                        if lhs.bits == rhs.bits {
+                            diagnostics.insert(Diagnostic::overlap(
+                                &lhs.type_name(),
+                                &rhs.type_name(),
+                                &lhs.bits,
+                                new_context.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+        };
+
+        for access in [
+            self.access.access().get_read(),
+            self.access.access().get_write(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_numericity(access, &mut diagnostics);
+
+            if let Numericity::Enumerated(enumerated) = &access {
+                for variant in enumerated.variants(self.model) {
+                    diagnostics.extend(variant.validate(&new_context));
+                }
+            }
+        }
+
+        // inert doesn't make sense for read-only
+        if let Some(read) = self.access.access().get_read()
+            && !self.access.access().is_write()
+            && let Numericity::Enumerated(enumerated) = read
+            && enumerated.variants(self.model).any(|variant| variant.inert)
+        {
+            diagnostics.insert(Diagnostic::read_cannot_be_inert(new_context.clone()));
+        }
+
+        // TODO: these are old...
+        let reserved = ["reset", "_new_state", "_old_state"];
+
+        // TODO: check module name
+        if reserved.contains(&self.ident().to_string().as_str()) {
+            diagnostics.insert(Diagnostic::reserved(
+                &self.ident(),
+                reserved.iter(),
+                new_context.clone(),
+            ));
+        }
+
+        diagnostics
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Field {
+    pub ident: Ident,
+    pub offset: u8,
+    pub width: u8,
+    pub docs: Vec<String>,
+
+    pub leaky: bool,
+}
+
+impl Field {
+    pub fn new(ident: impl AsRef<str>, offset: u8, width: u8) -> Self {
+        Self {
+            ident: Ident::new(ident.as_ref(), Span::call_site()),
+            offset,
+            width,
+            docs: Vec::new(),
+            leaky: false,
+        }
+    }
+
+    /// Create a new field positioned at the provided index. The offset is the field width multiplied by the index.
+    /// If the offset exceeds the register width, it wraps.
+    ///
+    /// ## Example
+    ///
+    /// Width 4:
+    ///
+    /// ```ignore
+    /// | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+    /// ^ bit 0                  bit 31 ^
+    ///
+    /// | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+    /// ^ bit 0                        bit 31 ^
+    /// ```
+    pub fn new_indexed(ident: impl AsRef<str>, index: u8, width: u8) -> Self {
+        Self::new_indexed_wrapping(ident, index, 32, width)
+    }
+
+    /// Create a new field positioned at the provided index, up to the provided wrap index. The offset is the field
+    /// width multiplied by the index. If the offset exceeds the wrap index, it wraps.
+    ///
+    /// ## Example
+    ///
+    /// Width 4, wrap at 4:
+    ///
+    /// ```ignore
+    /// | 0 | 1 | 2 | 3 | - | - | - | - |
+    /// ^ bit 0         ^ bit 16 bit 31 ^
+    ///
+    /// | 4 | 5 | 6 | 7 | - | - | - | - |
+    /// ^ bit 0         ^ bit 16 bit 31 ^
+    /// ```
+    pub fn new_indexed_wrapping(ident: impl AsRef<str>, index: u8, wrap: u8, width: u8) -> Self {
+        Self::new(ident, (index * width) % 32.min(wrap * width), width)
+    }
+
+    pub fn docs<I>(mut self, docs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.docs
+            .extend(docs.into_iter().map(|doc| doc.as_ref().to_string()));
+
+        self
+    }
+
+    /// Mark this field as *leaky*.
+    ///
+    /// This is useful when this model component is unsound because:
+    /// 1. The HAL author knows the description is incomplete.
+    /// 1. proto-hal is incapable of properly encapsulating
+    ///    the invariances of the field.
+    ///
+    /// This will cause all interactions with this field to be `unsafe`.
+    pub fn leaky(self) -> Self {
+        Self {
+            leaky: true,
+            ..self
+        }
+    }
+
+    pub fn ident(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_snake_case(), Span::call_site())
+    }
+
+    pub fn type_name(&self) -> Ident {
+        Ident::new(&self.ident.to_string().to_pascal_case(), Span::call_site())
+    }
+
+    /// The domain of the parent register in which the field occupies.
+    #[inline]
+    pub fn domain(&self) -> Range<u8> {
+        self.offset..(self.offset + self.width)
+    }
+
+    pub fn overlaps_with(&self, other: &Field) -> bool {
+        self.domain().start < other.domain().end && self.domain().end > other.domain().start
+    }
+}
+
+// codegen
+impl<'cx> View<'cx, FieldNode> {
+    fn generate_states(&self) -> TokenStream {
+        let mut out = quote! {};
+
+        if let Some(access) = self.resolvable()
+            && let Numericity::Enumerated(enumerated) = &access
+        {
+            let variants = enumerated.variants(self.model);
+
+            match &self.access {
+                access::Source::Inherent(..) => {
+                    variants.for_each(|variant| out.extend(variant.generate(self.clone())));
+                }
+                access::Source::Linked { parent, .. } => {
+                    let path = parent.clone().path(self.model);
+                    let states = variants.map(|variant| variant.type_name());
+
+                    out.extend(quote! {
+                        pub use #path::{#(#states,)*};
+                    });
+                }
+            }
+        }
+
+        out
+    }
+
+    fn generate_marker(&self) -> TokenStream {
+        quote! { pub struct Field; }
+    }
+
+    fn generate_container(&self) -> TokenStream {
+        let ident = self.type_name();
+
+        let into_dynamic = if self.is_resolvable() {
+            Some(quote! {
+                pub fn into_dynamic(self) -> #ident<::proto_hal::stasis::Dynamic> {
+                    #ident {
+                        state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                    }
+                }
+            })
+        } else {
+            None
+        };
+
+        let concrete_impl = if into_dynamic.is_some() {
+            Some(quote! {
+                impl<S> #ident<S> {
+                    #into_dynamic
+                }
+            })
+        } else {
+            None
+        };
+
+        quote! {
+            pub struct #ident<S> {
+                state: S,
+            }
+
+            #concrete_impl
+
+            impl<S> ::proto_hal::stasis::Conjure for #ident<S>
+            where
+                S: ::proto_hal::stasis::Conjure,
+            {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        state: unsafe { ::proto_hal::stasis::Conjure::conjure() },
+                    }
+                }
+            }
+
+            impl<S> ::core::ops::Deref for #ident<S> {
+                type Target = S;
+
+                fn deref(&self) -> &S {
+                    &self.state
+                }
+            }
+        }
+    }
+
+    fn generate_repr(&self) -> Option<TokenStream> {
+        let variant_enum = |variants: Vec<&Variant>, ident| {
+            let variant_idents = variants
+                .iter()
+                .map(|variant| variant.type_name())
+                .collect::<Vec<_>>();
+            let variant_bits = variants
+                .iter()
+                .map(|variant| variant.bits)
+                .collect::<Vec<_>>();
+
+            let is_variant_idents = variants
+                .iter()
+                .map(|variant| format_ident!("is_{}", variant.ident()));
+
+            quote! {
+                #[derive(Clone, Copy)]
+                #[repr(u32)]
+                pub enum #ident {
+                    #(
+                        #variant_idents = #variant_bits,
+                    )*
+                }
+
+                impl #ident {
+                    /// # Safety
+                    /// If the source bits do not correspond to any variants of this field,
+                    /// the behavior of any code dependent on the value of this field state
+                    /// will be rendered unsound.
+                    pub unsafe fn from_bits(bits: u32) -> Self {
+                        match bits {
+                            #(
+                                #variant_bits => Self::#variant_idents,
+                            )*
+                            _ => unsafe { ::core::hint::unreachable_unchecked() },
+                        }
+                    }
+
+                    #(
+                        pub fn #is_variant_idents(&self) -> bool {
+                            matches!(self, Self::#variant_idents)
+                        }
+                    )*
+                }
+            }
+        };
+
+        match &self.access {
+            access::Source::Inherent(access) => match (access.get_read(), access.get_write()) {
+                (Some(Numericity::Enumerated(read)), None) => {
+                    let variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("ReadVariant"),
+                    );
+
+                    Some(quote! {
+                        pub use ReadVariant as Variant;
+
+                        #variant_enum
+                    })
+                }
+                (None, Some(Numericity::Enumerated(write))) => {
+                    let variant_enum = variant_enum(
+                        write.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("WriteVariant"),
+                    );
+
+                    Some(quote! {
+                        pub use WriteVariant as Variant;
+
+                        #variant_enum
+                    })
+                }
+                (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write)))
+                    if read == write =>
+                {
+                    let variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("Variant"),
+                    );
+
+                    Some(quote! {
+                        pub use Variant as ReadVariant;
+                        pub use Variant as WriteVariant;
+
+                        #variant_enum
+                    })
+                }
+                (Some(Numericity::Enumerated(read)), Some(Numericity::Enumerated(write))) => {
+                    let read_variant_enum = variant_enum(
+                        read.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("ReadVariant"),
+                    );
+
+                    let write_variant_enum = variant_enum(
+                        write.variants(self.model).map(|view| &***view).collect(),
+                        format_ident!("WriteVariant"),
+                    );
+
+                    Some(quote! {
+                        #read_variant_enum
+                        #write_variant_enum
+                    })
+                }
+                (..) => None,
+            },
+            access::Source::Linked { parent, access, .. } => {
+                let path = parent.clone().path(self.model);
+
+                match (access.get_read(), access.get_write()) {
+                    (Some(..), None) | (None, Some(..)) => Some(quote! {
+                        pub use crate::#path::Variant;
+                    }),
+                    (Some(..), Some(..)) => Some(quote! {
+                        pub use crate::#path::ReadVariant;
+                        pub use crate::#path::WriteVariant;
+                    }),
+                    (..) => None,
+                }
+            }
+        }
+    }
+
+    fn generate_masked(
+        &self,
+        ontological_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        ontological_entitlements?;
+
+        Some(quote! {
+            pub struct Masked {
+                _sealed: (),
+            }
+
+            impl ::proto_hal::stasis::Conjure for Masked {
+                unsafe fn conjure() -> Self {
+                    Self {
+                        _sealed: (),
+                    }
+                }
+            }
+        })
+    }
+
+    fn generate_state_impls(&self) -> Option<TokenStream> {
+        let Some(numericity) = self.resolvable() else {
+            None?
+        };
+
+        match numericity {
+            Numericity::Numeric(numeric) => {
+                let (raw_ty, ty) = numeric.ty(self.width);
+
+                Some(quote! {
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::State<Field> for ::proto_hal::stasis::#ty<V> {}
+                    unsafe impl<const V: #raw_ty> ::proto_hal::stasis::Physical<Field> for ::proto_hal::stasis::#ty<V> {
+                        const VALUE: u32 = V as _;
+                    }
+                })
+            }
+            Numericity::Enumerated(enumerated) => {
+                let variant_values = enumerated.variants(self.model).map(|variant| variant.bits);
+                let variants = enumerated
+                    .variants(self.model)
+                    .map(|variant| variant.type_name());
+                Some(quote! {
+                    #(
+                        impl ::proto_hal::stasis::Conjure for #variants {
+                            unsafe fn conjure() -> Self {
+                                #variants
+                            }
+                        }
+
+                        unsafe impl ::proto_hal::stasis::State<Field> for #variants {}
+                        unsafe impl ::proto_hal::stasis::Physical<Field> for #variants {
+                            const VALUE: u32 = #variant_values;
+                        }
+                    )*
+                })
+            }
+        }
+    }
+
+    fn generate_entitlements(
+        &self,
+        ontological_entitlements: Option<&entitlement::Space>,
+        write_entitlements: Option<&entitlement::Space>,
+    ) -> Option<TokenStream> {
+        if ontological_entitlements.is_none() && write_entitlements.is_none() {
+            None?
+        }
+
+        let spaces = ontological_entitlements
+            .into_iter()
+            .map(|space| (space, entitlement::Axis::Ontological))
+            .chain(
+                write_entitlements
+                    .into_iter()
+                    .map(|space| (space, entitlement::Axis::Affordance)),
+            );
+
+        Some(generate_entitlements(self.model, &quote! { Field }, spaces))
+    }
+
+    pub fn generate(&self) -> TokenStream {
+        let ident = &self.ident;
+
+        let ontological_entitlements = self.ontological_entitlements();
+        let write_entitlements = self.write_entitlements();
+
+        let mut body = quote! {};
+
+        body.extend(self.generate_states());
+        body.extend(self.generate_marker());
+        body.extend(self.generate_container());
+        body.extend(self.generate_repr());
+        body.extend(self.generate_masked(ontological_entitlements.as_deref().copied()));
+        body.extend(self.generate_state_impls());
+        body.extend(self.generate_entitlements(
+            ontological_entitlements.as_deref().copied(),
+            write_entitlements.as_deref().copied(),
+        ));
+
+        let docs = &self.docs;
+
+        // final module
+        quote! {
+            #(
+                #[doc = #docs]
+            )*
+            pub mod #ident {
+                #body
+            }
+        }
+    }
+}
