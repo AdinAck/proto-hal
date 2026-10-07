@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-phm = { package = "proto-hal-model", path = "../../../model" }
+phm = { package = "proto-hal-model-old", path = "../../../model-old" }

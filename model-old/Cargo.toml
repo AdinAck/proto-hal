@@ -1,21 +1,21 @@
 [package]
-name = "proto-hal-build"
+name = "proto-hal-model-old"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 colored = { workspace = true }
-derive_more.workspace = true
+derive_more = { workspace = true }
 indexmap = { workspace = true }
 heck = { workspace = true }
-model = { package = "proto-hal-model-old", path = "../model-old", default-features = false }
+log = "0.4.27"
+prettyplease = "0.2.32"
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
 ters = { workspace = true }
+tiva = { workspace = true }
 
 [features]
 default = ["integrated"]
-macros = []
 integrated = []
-interrupts = []
