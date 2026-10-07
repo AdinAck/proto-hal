@@ -1,4 +1,11 @@
 //! Rich diagnostics emitted by multiple stages of the MIOML language.
+//!
+//! # Children
+//!
+//! A diagnostic may contain *children*, which are diagnostics detailing why the parent was emitted. A child keeps a
+//! separate [`Id`], but is emitted only as part of the parent, so a child is not counted as a separate diagnostic.
+//!
+//! *Note: Children are nested one level deep, so a child contains no children.*
 
 #![deny(missing_docs)]
 
@@ -20,6 +27,8 @@ pub struct Diagnostic {
     pub supporting_labels: Vec<Label>,
     /// The diagnostic's notes.
     pub notes: Vec<String>,
+    /// The diagnostic's [children](crate#children).
+    pub children: Vec<Diagnostic>,
 }
 
 impl Diagnostic {
@@ -49,6 +58,7 @@ impl Diagnostic {
             primary_label,
             supporting_labels: Vec::new(),
             notes: Vec::new(),
+            children: Vec::new(),
         }
     }
 
@@ -61,6 +71,21 @@ impl Diagnostic {
     /// Attach a note to the diagnostic.
     pub fn note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
+        self
+    }
+
+    /// Attach a [child](crate#children) to the diagnostic.
+    ///
+    /// # Panics
+    ///
+    /// If the provided child contains children.
+    pub fn child(mut self, child: Diagnostic) -> Self {
+        assert!(
+            child.children.is_empty(),
+            "children may be nested at most one level deep"
+        );
+
+        self.children.push(child);
         self
     }
 
@@ -170,24 +195,33 @@ pub fn closest<T: AsRef<str>>(found: &str, candidates: impl IntoIterator<Item = 
         .map(|(.., candidate)| candidate)
 }
 
-/// Join the provided items into a list with "and", for use in diagnostic messages, such as "`a`, `b`, and `c`".
+/// Join the provided items into a list with "and", for use in diagnostic messages, such as "`a`, `b`, and `c`". A list
+/// of more than three items names only the first two, such as "`a`, `b`, and 2 others".
 pub fn conjunction(items: impl IntoIterator<Item = impl Display>) -> String {
-    list(items, "and")
-}
-
-/// Join the provided items into a list with "or", for use in diagnostic messages, such as "`a`, `b`, or `c`".
-pub fn disjunction(items: impl IntoIterator<Item = impl Display>) -> String {
-    list(items, "or")
-}
-
-/// Join the provided items into a list with `word`, separating three or more with commas.
-fn list(items: impl IntoIterator<Item = impl Display>, word: &str) -> String {
     let items = items
         .into_iter()
         .map(|item| item.to_string())
         .collect::<Vec<_>>();
 
     match items.as_slice() {
+        [first, second, _, _, ..] => format!("{first}, {second}, and {} others", items.len() - 2),
+        items => list(items, "and"),
+    }
+}
+
+/// Join the provided items into a list with "or", for use in diagnostic messages, such as "`a`, `b`, or `c`".
+pub fn disjunction(items: impl IntoIterator<Item = impl Display>) -> String {
+    let items = items
+        .into_iter()
+        .map(|item| item.to_string())
+        .collect::<Vec<_>>();
+
+    list(&items, "or")
+}
+
+/// Join the provided items into a list with `word`, separating three or more with commas.
+fn list(items: &[String], word: &str) -> String {
+    match items {
         [] => String::new(),
         [only] => only.clone(),
         [first, second] => format!("{first} {word} {second}"),
@@ -264,6 +298,23 @@ mod tests {
     }
 
     #[test]
+    fn children() {
+        let child = diagnostic(Kind::Bar);
+
+        similar_asserts::assert_eq!(
+            expected: vec![child.clone()],
+            found: diagnostic(Kind::Foo).child(child).children,
+            "expected a diagnostic to contain the child attached to it",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "children may be nested at most one level deep")]
+    fn grandchildren() {
+        diagnostic(Kind::Foo).child(diagnostic(Kind::Bar).child(diagnostic(Kind::Bar)));
+    }
+
+    #[test]
     fn id() {
         for (id, expected) in [
             (
@@ -330,6 +381,16 @@ mod tests {
             (["a"].as_slice(), "a", "a"),
             (["a", "b"].as_slice(), "a and b", "a or b"),
             (["a", "b", "c"].as_slice(), "a, b, and c", "a, b, or c"),
+            (
+                ["a", "b", "c", "d"].as_slice(),
+                "a, b, and 2 others",
+                "a, b, c, or d",
+            ),
+            (
+                ["a", "b", "c", "d", "e"].as_slice(),
+                "a, b, and 3 others",
+                "a, b, c, d, or e",
+            ),
         ] {
             similar_asserts::assert_eq!(
                 expected: (conjoined.to_string(), disjoined.to_string()),
@@ -337,5 +398,15 @@ mod tests {
                 "expected {items:?} to be joined into a conjunction and a disjunction",
             );
         }
+    }
+
+    fn diagnostic(kind: Kind) -> Diagnostic {
+        let span = Span {
+            source: 0,
+            start: 0,
+            end: 0,
+        };
+
+        Diagnostic::error(kind, "foo", Label::new("foo", span))
     }
 }
